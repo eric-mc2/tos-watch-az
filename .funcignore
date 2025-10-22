@@ -1,10 +1,36 @@
+# Git files
 .git*
+.gitignore
+
+# VS Code files
 .vscode/
+
+# Azure Functions local files
 local.settings.json
+.azure/
+
+# Testing
 tests/
-.venv/
-*.pyc
-__pycache__/
 .pytest_cache/
 .coverage
+
+# Python environments and cache
+.venv/
+.env
+venv/
+env/
+ENV/
+*.pyc
+__pycache__/
+.python_packages/
+
+# Logs and temporary files
 *.log
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+bin/
+obj/
+dist/
+build/

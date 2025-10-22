@@ -14,7 +14,7 @@ def seed():
     with open('seed_urls/static_urls.json', 'r') as f:
         urls = f.read()
     blob_service_client = get_blob_service_client()
-    ensure_container(blob_service_client, 'documents')
+    ensure_container('documents')
     blob_client = blob_service_client.get_blob_client(
                 container='documents', 
                 blob='static_urls.json'
