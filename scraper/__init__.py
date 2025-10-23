@@ -5,20 +5,18 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import azure.functions as func
-from shared.blob_utils import get_blob_service_client, ensure_container, check_blob
+from shared.blob_utils import (ensure_container, check_blob, load_json_blob, upload_json_blob, upload_html_blob)
 from azure.storage.blob import ContentSettings
 import chardet  # Add this import for encoding detection
 from urllib.error import HTTPError
 
-# TODO: This is why it is always breaking. Switch back to local emulator and keep trying.
-#  ERROR:root:Failed to process snapshot 20230205114406 for https://safety.google/intl/en/security/built-in-protection/: 'dict' object has no attribute 'cache_control'
-# Also locally I am finally seeing the logging.info but not seeing it in azure :(
-
-# Configure logging at module level for Azure Functions
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+az_logger = logging.getLogger('azure.*')
+az_logger.setLevel(logging.WARNING)
 
 def decode_html(resp):
     # Handle encoding properly
@@ -94,49 +92,12 @@ def sanitize_path_component(path_component):
 def load_urls(input_container_name, input_blob_name):
      # Download the URLs file from blob storage
      # Validate URL
-    try:
-        blob_service_client = get_blob_service_client()
-        blob_client = blob_service_client.get_blob_client(container=input_container_name, blob=input_blob_name)
-        urls_data = blob_client.download_blob().readall()
-        urls = json.loads(urls_data.decode('utf-8'))
-        logging.info(f"Loaded URLs from blob storage: {input_container_name}/{input_blob_name}")
-    except Exception as e:
-        logging.error(f"Failed to load URLs from blob storage: {e}")
-        raise
-    finally:
-        if blob_service_client:
-            blob_service_client.close()
-
+    urls = load_json_blob(input_container_name, input_blob_name)
     for company, url_list in urls.items():
         for url in url_list:
             if not validate_url(url):
                 raise ValueError(f"Invalid URL format: {url}")
     return urls
-
-def upload_html_blob(cleaned_html, output_container_name, blob_name):
-    try:
-        blob_service_client = get_blob_service_client()
-        # Upload to blob storage with explicit UTF-8 encoding
-        blob_client = blob_service_client.get_blob_client(
-            container=output_container_name, 
-            blob=blob_name
-        )
-        # Ensure we upload as UTF-8 bytes
-        html_bytes = cleaned_html.encode('utf-8')
-        blob_client.upload_blob(
-            html_bytes, 
-            overwrite=True,
-            content_settings=ContentSettings(
-                content_type='text/html; charset=utf-8',
-                cache_control='max-age=2592000'
-            )
-        )
-    except Exception as e:
-        logging.error(f"Error uploading html to blob: {e}")
-        raise e
-    finally:
-        if blob_service_client:
-            blob_service_client.close()
 
 def get_wayback_snapshots(input_container_name="documents", input_blob_name="static_urls.json", output_container_name="documents"):
     """
@@ -151,6 +112,7 @@ def get_wayback_snapshots(input_container_name="documents", input_blob_name="sta
     company_processed = 0
     total_processed = 0
     company_pending = len(urls)
+    retries = 2
     
     for company, url_list in urls.items():
         logging.info(f"Processing {len(url_list)} URLs for {company}")
@@ -161,14 +123,17 @@ def get_wayback_snapshots(input_container_name="documents", input_blob_name="sta
                 total_processed += 1
             except Exception as e:
                 logging.error(f"Failed to process URL {url} for {company}: {e}")
-                raise e
+                if retries:
+                    retries -= 1
+                else:
+                    raise e
         
         company_pending -= 1
         logging.info(f"Completed {company}: {company_processed} processed, {company_pending} pending")
     
     logging.info(f"Total processing complete: {company_processed} companies, {total_processed} total.")
         
-def get_wayback_metadata(url, company):
+def scrape_wayback_metadata(url):
     api_url = f"http://web.archive.org/cdx/search/cdx"
     params = {
         'url': url,
@@ -188,6 +153,19 @@ def get_wayback_metadata(url, company):
         logging.error(f"Failed to parse JSON response for {url}: {e}")
         raise e
 
+    return data
+    
+def get_wayback_metadata(url, company):  
+    url_path = sanitize_urlpath(url)
+    blob_name = f"wayback-snapshots/{company}/{url_path}/metadata.json"
+    
+    if check_blob('documents', blob_name):
+        logging.debug(f"Using cached wayback metadata from {blob_name}")
+        data = load_json_blob('documents', blob_name)
+    else:
+        data = scrape_wayback_metadata(url)    
+        upload_json_blob(data, 'documents', blob_name) 
+    
     if len(data) <= 1:
         logging.info(f"Found 0 snapshots for {url}")
         return None
@@ -220,6 +198,16 @@ def get_wayback_metadata(url, company):
         sample = snapshots.head(N)
     return sample
 
+def sanitize_urlpath(url):
+    # Parse URL for file structure
+    from urllib.parse import urlparse
+    from pathlib import Path
+    parsed_url = urlparse(url)
+    url_path = parsed_url.path if parsed_url.path != '/' else parsed_url.netloc
+    url_path = Path(url_path).parts[-1] or 'index'
+    url_path = sanitize_path_component(url_path)
+    return url_path
+
 def get_wayback_snapshot(url, company, output_container_name):
     """
     Get wayback snapshots for a single URL and save to blob storage
@@ -228,48 +216,49 @@ def get_wayback_snapshot(url, company, output_container_name):
     if data is None:
         return
 
-    # Parse URL for file structure
-    from urllib.parse import urlparse
-    from pathlib import Path
-    parsed_url = urlparse(url)
-    url_path = parsed_url.path if parsed_url.path != '/' else parsed_url.netloc
-    url_path = Path(url_path).parts[-1] or 'index'
-    url_path = sanitize_path_component(url_path)
+    url_path = sanitize_urlpath(url)
     
     # Track success/failure for this URL
     snapshots_saved = 0
+    retries = 1
     
     # Now actually download the snap html and save to blob storage
     for timestamp, original_url in zip(data['timestamp'], data['original']):
         snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
         blob_name = f"wayback-snapshots/{company}/{url_path}/{timestamp}.html"
 
-        if check_blob(output_container_name, blob_name):
-            logging.info(f"Blob {output_container_name}/{blob_name} exists. Skipping.")
-            continue
-        
-        # Add headers to mimic a real browser
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
-        }
-        
-        logging.debug(f"Requesting wayback html for {original_url}/{timestamp}")
-        resp = requests.get(snap_url, timeout=30, headers=headers)
-        resp.raise_for_status()
+        try:
+            if check_blob(output_container_name, blob_name):
+                logging.info(f"Blob {output_container_name}/{blob_name} exists. Skipping.")
+                continue
+            
+            # Add headers to mimic a real browser
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
+            }
+            
+            logging.debug(f"Requesting wayback html for {original_url}/{timestamp}")
+            resp = requests.get(snap_url, timeout=30, headers=headers)
+            resp.raise_for_status()
 
-        logging.debug(f"Testing html encoding.")
-        html_content, detected_encoding = decode_html(resp)
-                    
-        # Extract and clean the HTML with encoding info
-        logging.debug("Cleaning html.")
-        cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
-        
-        logging.debug("Uploading blob: {company}/{original_url}/{timestamp}")
-        upload_html_blob(cleaned_html, output_container_name, blob_name)
-                    
-        snapshots_saved += 1
-        logging.info(f"Saved snapshot to blob: {output_container_name}/{blob_name}")
+            logging.debug(f"Testing html encoding.")
+            html_content, detected_encoding = decode_html(resp)
+                        
+            # Extract and clean the HTML with encoding info
+            logging.debug("Cleaning html.")
+            cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
+            
+            logging.debug("Uploading blob: {company}/{original_url}/{timestamp}")
+            upload_html_blob(cleaned_html, output_container_name, blob_name)
+                        
+            snapshots_saved += 1
+            logging.info(f"Saved snapshot to blob: {output_container_name}/{blob_name}")
+        except Exception as e:
+            if retries: 
+                retries -= 1
+            else:
+                raise e
             
     logging.info(f"URL {url} complete: {snapshots_saved} saved")
             
@@ -277,11 +266,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Starting wayback snapshot collection process.')
 
     try:
-        # Process the wayback snapshots
-        get_wayback_snapshots()
-        
+        get_wayback_snapshots()        
         return func.HttpResponse(
-            f"Successfully processed wayback snapshots", #. Input: {input_container}/{input_blob}, Output: {output_container}",
+            f"Successfully processed wayback snapshots",
             status_code=200
         )
         

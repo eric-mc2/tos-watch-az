@@ -2,6 +2,11 @@ from azure.storage.blob import BlobServiceClient
 import os
 import logging
 
+logging.basicConfig(
+    level=logging.WARNING,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 def get_blob_service_client():
     """Get blob service client from connection string environment variable"""
     connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
@@ -41,3 +46,60 @@ def check_blob(output_container_name, blob_name):
     finally:
         if client:
             client.close()
+
+def load_blob(container, name):
+    try:
+        blob_service_client = get_blob_service_client()
+        blob_client = blob_service_client.get_blob_client(container=container, blob=name)
+        data = blob_client.download_blob().readall()
+        logging.info(f"Loaded blob storage: {container}/{name}")
+    except Exception as e:
+        logging.error(f"Failed to load blob {container}/{name}: {e}")
+        raise e
+    finally:
+        if blob_service_client:
+            blob_service_client.close()
+    return data
+
+def load_json_blob(container, name):
+    data = load_blob(container, name)
+    try:
+        json_data = json.loads(data.decode('utf-8'))
+    except Exception as e:
+        logging.error(f"Invalid json blob {name}: {e}")
+        raise e
+    return json_data
+
+def upload_blob(data, container, blob_name, content_type):
+    try:
+        blob_service_client = get_blob_service_client()
+        # Upload to blob storage with explicit UTF-8 encoding
+        blob_client = blob_service_client.get_blob_client(
+            container=container, 
+            blob=blob_name
+        )
+        # Ensure we upload as UTF-8 bytes
+        blob_client.upload_blob(
+            data, 
+            overwrite=True,
+            content_settings=ContentSettings(
+                content_type=content_type,
+                cache_control='max-age=2592000'
+            )
+        )
+    except Exception as e:
+        logging.error(f"Error uploading blob: {e}")
+        raise e
+    finally:
+        if blob_service_client:
+            blob_service_client.close()
+
+def upload_json_blob(data, output_container_name, blob_name):
+    data_bytes = data.encode('utf-8')
+    content_type = 'application/json; charset=utf-8'
+    upload_blob(data_bytes, output_container_name, blob_name, content_type)
+
+def upload_html_blob(cleaned_html, output_container_name, blob_name):
+    html_bytes = cleaned_html.encode('utf-8')
+    content_type = 'text/html; charset=utf-8'
+    upload_blob(html_bytes, output_container_name, blob_name, content_type)
