@@ -1,11 +1,11 @@
 from azure.storage.blob import BlobServiceClient
 import os
 import logging
+from azure.storage.blob import ContentSettings
+import json
+from src.log_utils import setup_logger
 
-logging.basicConfig(
-    level=logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logger = setup_logger(logging.INFO)
 
 def get_blob_service_client():
     """Get blob service client from connection string environment variable"""
@@ -23,12 +23,12 @@ def ensure_container(output_container_name):
         client = get_blob_service_client()
         container_client = client.get_container_client(output_container_name)
         if container_client.exists():
-            logging.debug(f"Output container {output_container_name} already exists.")
+            logger.debug(f"Output container {output_container_name} already exists.")
         else:
             container_client.create_container()
-            logging.info(f"Created output container: {output_container_name}")
+            logger.info(f"Created output container: {output_container_name}")
     except Exception as e:
-        logging.error(f"Output container {output_container_name} creation failed: {e}")
+        logger.error(f"Output container {output_container_name} creation failed: {e}")
         raise e
     finally:
         if client:
@@ -41,7 +41,7 @@ def check_blob(output_container_name, blob_name):
         blob_client = container_client.get_blob_client(blob_name)
         return blob_client.exists()
     except Exception as e:
-        logging.error(f"Existence check for {output_container_name}/{blob_name} failed.")
+        logger.error(f"Existence check for {output_container_name}/{blob_name} failed.")
         raise e
     finally:
         if client:
@@ -52,9 +52,9 @@ def load_blob(container, name):
         blob_service_client = get_blob_service_client()
         blob_client = blob_service_client.get_blob_client(container=container, blob=name)
         data = blob_client.download_blob().readall()
-        logging.info(f"Loaded blob storage: {container}/{name}")
+        logger.info(f"Loaded blob storage: {container}/{name}")
     except Exception as e:
-        logging.error(f"Failed to load blob {container}/{name}: {e}")
+        logger.error(f"Failed to load blob {container}/{name}: {e}")
         raise e
     finally:
         if blob_service_client:
@@ -66,7 +66,7 @@ def load_json_blob(container, name):
     try:
         json_data = json.loads(data.decode('utf-8'))
     except Exception as e:
-        logging.error(f"Invalid json blob {name}: {e}")
+        logger.error(f"Invalid json blob {name}: {e}")
         raise e
     return json_data
 
@@ -88,7 +88,7 @@ def upload_blob(data, container, blob_name, content_type):
             )
         )
     except Exception as e:
-        logging.error(f"Error uploading blob: {e}")
+        logger.error(f"Error uploading blob: {e}")
         raise e
     finally:
         if blob_service_client:

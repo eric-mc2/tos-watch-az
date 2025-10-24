@@ -9,7 +9,10 @@
     },
     "logLevel": {
       "default": "Information",
-      "Function": "Information"
+      "Function": "Information",
+      "Host": "Information",
+      "Azure.Storage.Blobs": "Warning",
+      "Azure.Core": "Warning"
     },
     "console": {
       "isEnabled": true
