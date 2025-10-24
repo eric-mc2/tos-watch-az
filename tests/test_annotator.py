@@ -1,5 +1,6 @@
 from src.annotator import annotate_doc
 from src.doctree import parse_html
+
 def test_parse():
     html = """
     <html>

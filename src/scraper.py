@@ -255,20 +255,3 @@ def get_wayback_snapshot(url, company, output_container_name):
                 raise e
             
     logger.info(f"URL {url} complete: {snapshots_saved} saved")
-            
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logger.info('Starting wayback snapshot collection process.')
-
-    try:
-        get_wayback_snapshots()        
-        return func.HttpResponse(
-            f"Successfully processed wayback snapshots",
-            status_code=200
-        )
-        
-    except Exception as e:
-        logger.error(f"Error processing wayback snapshots: {e}")
-        return func.HttpResponse(
-            f"Error processing wayback snapshots: {str(e)}",
-            status_code=500
-        )

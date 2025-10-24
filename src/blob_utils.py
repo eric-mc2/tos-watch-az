@@ -4,8 +4,19 @@ import logging
 from azure.storage.blob import ContentSettings
 import json
 from src.log_utils import setup_logger
+from collections import namedtuple
+from pathlib import Path
 
 logger = setup_logger(logging.INFO)
+
+def parse_blob_path(path: str):
+    blob_path = Path(path)
+    Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
+    return Parts(
+        blob_path.parts[0],
+        blob_path.parts[1],
+        blob_path.parts[2],
+        blob_path.stem)
 
 def get_blob_service_client():
     """Get blob service client from connection string environment variable"""
@@ -19,6 +30,7 @@ def get_blob_service_client():
     return client
 
 def ensure_container(output_container_name):
+    client = None
     try:
         client = get_blob_service_client()
         container_client = client.get_container_client(output_container_name)
