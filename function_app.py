@@ -61,6 +61,33 @@ def single_diff(req: func.HttpRequest) -> func.HttpResponse:
     return _http_wrap(diff_single, "single diff", req.params['blob_name'])
 
 
+@app.blob_trigger(arg_name="input_blob", 
+                path="documents/diff/{company}/{policy}/{timestamp}.json",
+                connection="AZURE_STORAGE_CONNECTION_STRING")
+@app.blob_output(arg_name="output_blob",
+                path="documents/prompts/{company}/{policy}/{timestamp}.txt",
+                connection="AZURE_STORAGE_CONNECTION_STRING")
+def summary_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
+    """Use language model to summarize diff."""
+    from src.summarizer import create_prompt, is_diff
+    blob = input_blob.read()
+    if is_diff(blob):
+        prompt = create_prompt(blob)
+        output_blob.set(prompt)
+
+# @app.blob_trigger(arg_name="input_blob", 
+#                 path="documents/prompts/{company}/{policy}/{timestamp}.json",
+#                 connection="AZURE_STORAGE_CONNECTION_STRING")
+# @app.blob_output(arg_name="output_blob",
+#                 path="documents/summary/{company}/{policy}/{timestamp}.json",
+#                 connection="AZURE_STORAGE_CONNECTION_STRING")
+# def summarize_diff(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
+#     """Use language model to summarize diff."""
+#     from src.summarizer import summarize
+#     summary = summarize(input_blob.read())
+#     output_blob.set(summary)
+
+
 def _http_wrap(task, taskname, *args, **kwargs):
     logger.info(f"Starting {task}")
     try:

@@ -9,3 +9,5 @@ pandas
 beautifulsoup4
 chardet
 gensim
+anthropic
+pytest
