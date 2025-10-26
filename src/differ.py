@@ -55,19 +55,12 @@ def _diff_sequence(a, b):
 
 
 def _list_container():
-    client = None
-    try:
-        client = get_blob_service_client()
-        container = client.get_container_client('documents')
-        directory = {}
-        for name in container.list_blob_names(name_starts_with="annotated/"):
-            parts = parse_blob_path(name)
-            policies = directory.setdefault(parts.company, {})
-            snaps = policies.setdefault(parts.policy, [])
-            snaps.append(name)
-        return directory
-    except Exception as e:
-        logger.error("Failed to list directory: ", e)
-    finally:
-        if client:
-            client.close()
+    client = get_blob_service_client()
+    container = client.get_container_client('documents')
+    directory = {}
+    for name in container.list_blob_names(name_starts_with="annotated/"):
+        parts = parse_blob_path(name)
+        policies = directory.setdefault(parts.company, {})
+        snaps = policies.setdefault(parts.policy, [])
+        snaps.append(name)
+    return directory
