@@ -10,7 +10,8 @@ from pathlib import Path
 logger = setup_logger(logging.INFO)
 _client = None
 
-def parse_blob_path(path: str):
+def parse_blob_path(path: str, container: str = "documents"):
+    path = path.removeprefix(f"{container}/")
     blob_path = Path(path)
     Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
     return Parts(
@@ -49,7 +50,17 @@ def check_blob(output_container_name, blob_name) -> bool:
 def load_blob(container, name) -> str:
     blob_service_client = get_blob_service_client()
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
-    data = blob_client.download_blob().readall()
+    if blob_client.exists():
+        data = blob_client.download_blob().readall()
+    elif name.startswith(container):
+        logger.warning(f"Blob {container}/{name} does not exist! Retrying with stripped container name.")
+        name = name.removeprefix(f"{container}/")
+        blob_client = blob_service_client.get_blob_client(container=container, blob=name)
+        if blob_client.exists():
+            data = blob_client.download_blob().readall()
+        else:
+            raise ValueError(f"Blob {container}/{name} does not exist!")
+
     logger.info(f"Loaded blob storage: {container}/{name}")
     return data
 
@@ -61,6 +72,15 @@ def load_json_blob(container, name) -> dict:
         logger.error(f"Invalid json blob {name}: {e}")
         raise e
     return json_data
+
+def load_text_blob(container, name) -> dict:
+    data = load_blob(container, name)
+    try:
+        txt = data.decode('utf-8')
+    except Exception as e:
+        logger.error(f"Error decoding text blob {name}: {e}")
+        raise e
+    return txt
 
 def upload_blob(data, container, blob_name, content_type) -> None:
     blob_service_client = get_blob_service_client()

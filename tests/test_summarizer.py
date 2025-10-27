@@ -1,8 +1,7 @@
 import os
 import pytest
 import json
-from src.blob_utils import load_json_blob
-from src.summarizer import summarize, is_diff, create_prompt
+from src.summarizer import summarize, is_diff, create_prompt, parse_response_json
 
 @pytest.fixture()
 def setup():
@@ -11,12 +10,6 @@ def setup():
         for key,val in settings['Values'].items():
             os.environ[key] = val
             
-# def test_summary(setup):
-#     # blob = load_json_blob('documents','diff/google/built-in-protection/20240227211728.json')
-#     blob = load_json_blob('documents','diff/google/built-in-protection/20201125192228.json')
-#     summary = summarize(json.dumps(blob))
-#     print(summary)
-
 def test_is_diff(setup):
     diff = {}
     assert not is_diff(json.dumps(diff))
@@ -39,3 +32,22 @@ def test_prompt(setup):
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
     prompt = create_prompt(json.dumps(diff))
     assert 'UNCHANGED' not in prompt and 'NEW' in prompt and 'OLD' in prompt
+
+def test_summary(setup):
+    diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
+                      {'tag': 'replace', 'before': ['We are good!'], 'after': ['We are evil.']}]}
+    prompt = create_prompt(json.dumps(diff))
+    summary = summarize(prompt)
+    print(summary)
+
+def test_parse(setup):
+    with open('data/20240421054440.txt') as f:
+        data = json.load(f)
+    with open('data/20240421054440.txt') as f:
+        data_str = f.read()
+    resp = parse_response_json(data_str)
+    for key in data:
+        assert key in resp
+    for key in resp:
+        assert key in data
+        assert data[key] == resp[key] 

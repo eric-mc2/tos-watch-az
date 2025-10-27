@@ -3,6 +3,7 @@ import json
 import logging
 from src.log_utils import setup_logger
 import os
+from src.chat_parser import extract_json_from_response
 
 logger = setup_logger(logging.DEBUG)
 _client = None
@@ -83,24 +84,28 @@ def is_diff(diff_str: str) -> str:
 
 def create_prompt(diff_str: str) -> str:
     diff = _structure_diff(diff_str)
-    prompt = [SYSTEM_PROMPT, diff]
-    prompt = '\n'.join(prompt)
-    logger.debug(f"Prompting: {prompt}")
+    prompt = diff
+    # prompt = [SYSTEM_PROMPT, diff]
+    # prompt = '\n'.join(prompt)
     return prompt
 
 def summarize(prompt: str) -> str:
     client = get_client()
     response = client.messages.create(
         model = "claude-3-5-haiku-20241022",
-        max_tokens = max(1000, len(prompt)),
+        max_tokens = 1000,
+        system = [{
+            "type": "text",
+            "text": SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"}
+        }],
         messages = [
             dict(role = "user",
                 content = prompt,
             ),
         ]
     )
-    output = _parse_response(response)
-    return json.dumps(output, indent=2)
+    return _parse_response(response)
 
 
 def _parse_response(resp: anthropic.types.message.Message) -> dict:
@@ -110,12 +115,14 @@ def _parse_response(resp: anthropic.types.message.Message) -> dict:
         raise ValueError("Empty LLM response")
     if len(resp.content) > 1:
         logger.warning("Multiple LLM outputs")
-    try:
-        output = json.loads(resp.content[0].text)
-        return output
-    except Exception as e:
-        logger.error(f"Failed to parse json {resp.content[0].text}")
-        raise e
+    return resp.content[0].text
+
+
+def parse_response_json(resp: str) -> dict:
+    result = extract_json_from_response(resp)
+    if not result['success']:
+        raise ValueError(f"Failed to parse json from chat. Error: {result['error']}. Original: {resp}")
+    return result['data']
     
 
 def _structure_diff(diff_str: str) -> str:

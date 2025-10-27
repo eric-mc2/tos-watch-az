@@ -8,14 +8,22 @@
       }
     },
     "logLevel": {
-      "default": "Information",
-      "Function": "Information",
-      "Host": "Information",
+      "default": "Debug",
+      "Function": "Debug",
+      "Host": "Debug",
       "Azure.Storage.Blobs": "Warning",
       "Azure.Core": "Warning"
     },
     "console": {
       "isEnabled": true
+    }
+  },
+  "extensions": {
+    "durableTask": {
+      "hubName": "RateLimitedHub",
+      "storageProvider": {
+        "connectionStringName": "AzureWebJobsStorage"
+      }
     }
   },
   "extensionBundle": {
