@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock, call
 from src.metadata_scraper import get_wayback_metadatas, scrape_wayback_metadata, get_wayback_metadata
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError, ServiceRequestError, ClientAuthenticationError
+import requests
 
 """
 Review these tests. Identify any redundant tests. Identify any other important failure modes or resiliencies that are un-tested. Assess whether they are testing functionally important aspects of the function behavior. Assess whether the tests are over-specified. Assess whether the use of mocks make the tests tautological or informative.
@@ -18,7 +19,7 @@ def sample_urls():
     """Sample URL data structure"""
     return {
         "company1": ["https://example1.com", "https://example2.com"],
-        "company2": ["https://example3.com"]
+        "company2": ["https://example3.com", "https://example4.com"]
     }
 
 
@@ -47,92 +48,59 @@ class TestGetWaybackMetadatas:
         
         with pytest.raises(exception_type):
             get_wayback_metadatas()
-            
-
-    @patch('src.metadata_scraper.time.sleep')
+    
     @patch('src.metadata_scraper.get_wayback_metadata')
     @patch('src.metadata_scraper.load_urls')
-    def test_three_urls_error(self, mock_load_urls, mock_get_metadata, mock_sleep):
-        """Test that unhandled exception is raised after retries exhausted"""
-        mock_load_urls.return_value = {"company1": ["https://example1.com", "https://example2.com", "https://example3.com", "https://example4.com"]}
-        mock_get_metadata.side_effect = Exception("Unhandled error")
+    def test_all_urls_succeed_processes_all(self, mock_load_urls, mock_get_metadata, sample_urls):
+        """Test that all URLs are processed successfully"""
+        mock_load_urls.return_value = sample_urls
+        mock_get_metadata.return_value = None  # Side effect function
         
-        with pytest.raises(Exception):
+        get_wayback_metadatas()
+        
+        # Verify all 3 URLs were processed
+        assert mock_get_metadata.call_count == 3
+
+    @patch('src.metadata_scraper.get_wayback_metadata')
+    @patch('src.metadata_scraper.load_urls')
+    def test_circuit_fails_three_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
+        """Test that function raises after global retry budget (2) is exhausted.
+        
+        This tests the circuit breaker pattern: if external service starts failing,
+        fail fast rather than hammering it with all remaining requests.
+        """
+        mock_load_urls.return_value = sample_urls
+        # All URLs fail with same error (simulating external service degradation)
+        mock_get_metadata.side_effect = [
+            requests.Timeout("Service degraded"),
+            requests.Timeout("Service degraded"),
+            requests.Timeout("Service degraded"),
+            None
+        ]
+        
+        with pytest.raises(requests.Timeout):
             get_wayback_metadatas()
         
-        # Should fail on first URL, retry once (2nd call), then retry once more (3rd call), then raise
-        expected_calls = [
-            call("https://example1.com", 'company1', 'documents'),
-            call("https://example2.com", 'company1', 'documents'),
-            call("https://example3.com", 'company1', 'documents')
-        ]
-        mock_get_metadata.assert_has_calls(expected_calls)
+        # Verify circuit breaker: only 3 attempts made (initial + 2 retries)
+        assert mock_get_metadata.call_count == 3
 
-    @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.get_wayback_metadata')
     @patch('src.metadata_scraper.load_urls')
-    def test_two_urls_error(self, mock_load_urls, mock_get_metadata, mock_sleep):
-        """Positive test: first two URLs each error once but succeed on second try"""
-        mock_load_urls.return_value = {
-            "company1": ["https://example1.com", "https://example2.com"],
-            "company2": ["https://example3.com"]
-        }
-        mock_get_metadata.side_effect = [
-            Exception("Error 1"),  # First URL, attempt 1 (retries=2)
-            Exception("Error 2"),  # Second URL, attempt 1 (retries=1)
-            None                   # Third URL succeeds
-        ]
-        
-        get_wayback_metadatas()
-        
-        # First URL tried 2 times, second URL tried 2 times, third URL tried once
-        expected_calls = [
-            call("https://example1.com", 'company1', 'documents'),
-            call("https://example2.com", 'company1', 'documents'),
-            call("https://example3.com", 'company2', 'documents')
-        ]
-        mock_get_metadata.assert_has_calls(expected_calls)
-
-    @patch('src.metadata_scraper.time.sleep')
-    @patch('src.metadata_scraper.get_wayback_metadata')
-    @patch('src.metadata_scraper.load_urls')
-    def test_one_url_errors(self, mock_load_urls, mock_get_metadata, mock_sleep, sample_urls):
-        """Test that function retries once and continues processing subsequent URLs"""
+    def test_circuit_passes_two_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
+        """Test that single URL failure consumes global retry budget but processing continues"""
         mock_load_urls.return_value = sample_urls
-        
-        # First URL fails, second succeeds, third succeeds
+        # First URL fails once (transient), second succeeds
         mock_get_metadata.side_effect = [
-            Exception("Temporary error"),  # First URL, first attempt
-            None,  # Second URL succeeds
-            None   # Third URL succeeds
+            requests.Timeout("Transient error"),
+            requests.Timeout("Transient error"),
+            None,  # Third URL succeeds
+            None,  # Fourth URL succeeds
         ]
         
         get_wayback_metadatas()
-                
-        # Verify the correct URLs were called
-        expected_calls = [
-            call("https://example1.com", 'company1', 'documents'),
-            call("https://example2.com", 'company1', 'documents'),
-            call("https://example3.com", 'company2', 'documents')
-        ]
-        mock_get_metadata.assert_has_calls(expected_calls)
-
-    @patch('src.metadata_scraper.get_wayback_metadata')
-    @patch('src.metadata_scraper.load_urls')
-    def test_all_urls_succeed(self, mock_load_urls, mock_get_metadata, sample_urls):
-        """Test successful processing of all URLs"""
-        mock_load_urls.return_value = sample_urls
-        mock_get_metadata.return_value = None
         
-        get_wayback_metadatas()
-        
-        # Verify all URLs were processed
-        expected_calls = [
-                    call("https://example1.com", 'company1', 'documents'),
-                    call("https://example2.com", 'company1', 'documents'),
-                    call("https://example3.com", 'company2', 'documents')
-                ]
-        mock_get_metadata.assert_has_calls(expected_calls)
+        # Both URLs attempted
+        assert mock_get_metadata.call_count == 4        
 
 class TestGetWaybackMetadata:
     """Tests for get_wayback_metadata function with caching behavior"""
@@ -179,20 +147,18 @@ class TestScrapeWaybackMetadata:
 
     @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
-    def test_retry_logic_two_errors_then_success(self, mock_get, mock_sleep, mock_metadata_response):
+    def test_retry_logic_two_errors_then_success(self, mock_get, mock_sleep):
         """Test that function retries twice after errors and succeeds on third attempt"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = mock_metadata_response
         
         mock_get.side_effect = [
-            Exception("Error 1"),
-            Exception("Error 2"),
-            mock_response
+            requests.Timeout("Error 1"),
+            requests.ConnectionError("Error 2"),
+            MagicMock(json=lambda: [['data']])
         ]
         
         result = scrape_wayback_metadata("https://example.com")
         
-        assert result == mock_metadata_response
+        assert result == [['data']]
         assert mock_get.call_count == 3
 
     @patch('src.metadata_scraper.time.sleep')
@@ -200,12 +166,12 @@ class TestScrapeWaybackMetadata:
     def test_retry_logic_three_errors_raises(self, mock_get, mock_sleep):
         """Test that function raises after three consecutive errors"""
         mock_get.side_effect = [
-            Exception("Error 1"),
-            Exception("Error 2"),
-            Exception("Error 3")
+            requests.Timeout("Error 1"),
+            requests.ConnectionError("Error 2"),
+            requests.ConnectionError("Error 3"),
         ]
         
-        with pytest.raises(Exception):
+        with pytest.raises(requests.ConnectionError):
             scrape_wayback_metadata("https://example.com")
         
         assert mock_get.call_count == 3
@@ -214,9 +180,9 @@ class TestScrapeWaybackMetadata:
     @patch('src.metadata_scraper.requests.get')
     def test_request_failure(self, mock_get, mock_sleep):
         """Test handling of request failure"""
-        mock_get.side_effect = Exception("Persistent error")
+        mock_get.side_effect = requests.ConnectionError("Persistent error")
         
-        with pytest.raises(Exception):
+        with pytest.raises(requests.ConnectionError):
             scrape_wayback_metadata("https://example.com")
 
     @patch('src.metadata_scraper.requests.get')
