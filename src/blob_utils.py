@@ -7,7 +7,7 @@ from src.log_utils import setup_logger
 from collections import namedtuple
 from pathlib import Path
 
-logger = setup_logger(logging.INFO)
+logger = setup_logger(__name__, logging.INFO)
 _client = None
 
 def parse_blob_path(path: str, container: str = "documents"):

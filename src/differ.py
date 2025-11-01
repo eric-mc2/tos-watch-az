@@ -6,7 +6,7 @@ from src.blob_utils import get_blob_service_client, parse_blob_path, load_json_b
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
 
-logger = setup_logger(logging.INFO)
+logger = setup_logger(__name__, logging.INFO)
 
 def diff_batch() -> None:
     directory = _list_container()

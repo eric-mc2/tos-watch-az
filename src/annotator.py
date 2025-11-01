@@ -7,7 +7,7 @@ from src.doctree import DocTree
 from src.docchunk import DocChunk
 
 
-logger = setup_logger(logging.INFO)
+logger = setup_logger(__name__, logging.INFO)
 
 def annotate_doc(company: str, policy: str, timestamp: str, tree:str) -> list[DocChunk]:
     """Read and parse text file."""

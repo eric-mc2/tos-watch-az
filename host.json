@@ -7,12 +7,28 @@
         "excludedTypes": "Request"
       }
     },
+    "fileLoggingMode": "always",
     "logLevel": {
-      "default": "Debug",
-      "Function": "Debug",
-      "Host": "Debug",
-      "Azure.Storage.Blobs": "Warning",
-      "Azure.Core": "Warning"
+      "default": "Error",
+      "Microsoft": "None",
+      "Worker": "None",
+      "Host": "Error",
+      "Host.Aggregator": "Warning",
+      "Function": "Error",
+      "Function.batch_diff.User": "Debug",
+      "Function.hello_world.User": "Debug",
+      "Function.scrape_snap_meta.User": "Debug",
+      "Function.seed_urls.User": "Debug",
+      "Function.single_diff.User": "Debug",
+      "Function.annotate_snap.User": "Debug",
+      "Function.parse_snap.User": "Debug",
+      "Function.parse_summary.User": "Debug",
+      "Function.scraper_blob_trigger.User": "Debug",
+      "Function.scraper_processor.User": "Debug",
+      "Function.setup_logger.User": "Debug",
+      "Function.summarizer_blob_trigger.User": "Debug",
+      "Function.summarizer_processor.User": "Debug",
+      "Function.summary_prompt.User": "Debug"
     },
     "console": {
       "isEnabled": true

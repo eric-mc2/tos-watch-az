@@ -5,7 +5,7 @@ from src.log_utils import setup_logger
 import os
 from src.chat_parser import extract_json_from_response
 
-logger = setup_logger(logging.DEBUG)
+logger = setup_logger(__name__, logging.DEBUG)
 _client = None
 
 def get_client():

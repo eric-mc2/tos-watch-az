@@ -1,8 +1,8 @@
 import logging
 
-def setup_logger(loglvl = logging.INFO):
+def setup_logger(name, loglvl = logging.INFO):
     log_fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    logging.basicConfig(level=logging.WARNING, format=log_fmt)
-    logger = logging.getLogger(__name__)
+    logging.basicConfig(level=loglvl, format=log_fmt)
+    logger = logging.getLogger(name)
     logger.setLevel(loglvl)
     return logger
