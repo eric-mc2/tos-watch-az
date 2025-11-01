@@ -4,9 +4,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 from src.log_utils import setup_logger
-from src.blob_utils import parse_blob_path, upload_blob, load_text_blob
+from src.blob_utils import parse_blob_path, upload_blob, load_text_blob, load_json_blob
+from src.rate_limiter import rate_limiter_entity, orchestrator_logic
 
-logger = setup_logger(logging.DEBUG)
+logger = setup_logger(__name__, logging.DEBUG)
+logging.getLogger('azure').setLevel(logging.WARNING)
 
 app = func.FunctionApp()
 
@@ -15,18 +17,25 @@ app = func.FunctionApp()
 WORKFLOW_CONFIGS = {
     "summarizer": {
         "rate_limit_rpm": 50,
-        "entity_name": "rate_limiter_entity_summarizer",
-        "orchestrator_name": "rate_limited_orchestrator_summarizer",
+        "entity_name": "summarizer_rate_limiter",
+        "orchestrator_name": "summarizer_orchestrator",
         "activity_name": "summarizer_processor"
     },
     "scraper": {
-        "rate_limit_rpm": 30,  # Different rate limit
-        "entity_name": "rate_limiter_entity_scraper",
-        "orchestrator_name": "rate_limited_orchestrator_scraper",
-        "activity_name": "scraper"
+        "rate_limit_rpm": 30,
+        "entity_name": "scraper_rate_limiter",
+        "orchestrator_name": "scraper_orchestrator",
+        "activity_name": "scraper_processor"
     }
 }
 
+@app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
+def hello_world(req: func.HttpRequest) -> func.HttpResponse:
+    logger.debug("Test logs debug")
+    logger.info("Test logs info")
+    logger.warning("Test logs warning")
+    logger.error("Test logs error")
+    return _http_wrap(lambda: "Hello world", "test")
 
 @app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
 def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
@@ -35,58 +44,50 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
     return _http_wrap(seed_main, "seed URLs")
 
 
-@app.route(route="scrape", auth_level=func.AuthLevel.FUNCTION)
-def scrape_snaps(req: func.HttpRequest) -> func.HttpResponse:
+@app.route(route="scrape_meta", auth_level=func.AuthLevel.FUNCTION)
+def scrape_snap_meta(req: func.HttpRequest) -> func.HttpResponse:
     """Collect wayback snapshots from static URL list"""
-    from src.scraper import get_wayback_snapshots
-    return _http_wrap(get_wayback_snapshots, "wayback snapshots")
+    from src.metadata_scraper import get_wayback_metadatas
+    return _http_wrap(get_wayback_metadatas, "wayback snapshots")
 
 
-# TODO: Implement these using sumamrizer as model
-# @app.durable_client_input(client_name="client")
-# def scraper_trigger_handler(req: func.HttpRequest, client: df.DurableOrchestrationClient):
-#     """Trigger that starts the scraper input workflow orchestration."""
-#     TODO: Wrap in for loop over urls?
-#     orchestration_input = {
-#         "blob_name": input_blob.name,
-#         "blob_uri": input_blob.uri,
-#         "workflow_type": "scraper"
-#     }
+# Each workflow gets its own orchestrator with specific input handling
+@app.orchestration_trigger(context_name="context")
+def scraper_orchestrator(context: df.DurableOrchestrationContext):
+    """Orchestrator specifically for scraper workflow."""
+    input_data = context.get_input()
+    logger.debug("Calling generic orchestrator logic with input data: %s", str(input_data))
+    return orchestrate(context, input_data)
+
+
+@app.blob_trigger(arg_name="input_blob", 
+                path="documents/wayback-snapshots/{company}/{policy}/metadata.json",
+                connection="AZURE_STORAGE_CONNECTION_STRING")
+@app.durable_client_input(client_name="client")
+async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
+    """Blob trigger that starts the scraper workflow orchestration."""
+    blob_name = input_blob.name.removeprefix("documents/")
+    orchestration_input = {
+        "blob_name": blob_name,
+        "workflow_type": "scraper"
+    }
+    instance_id = await client.start_new("scraper_orchestrator", None, orchestration_input)
+    logger.info(f"Started scraper orchestration with ID: '{instance_id}' for blob: {blob_name}")
     
-#     config = WORKFLOW_CONFIGS["scraper"]
-#     instance_id = client.start_new(config["orchestrator_name"], None, orchestration_input)
-#     logger.info(f"Started scraper input orchestration with ID: '{instance_id}' for blob: {input_blob.name}")
 
-
-# @app.activity_trigger(input_name="activity_input")
-# @app.blob_output(arg_name="output_blob",
-#                 path=WORKFLOW_CONFIGS["scraper"]["output_path"],
-#                 connection="AZURE_STORAGE_CONNECTION_STRING")
-# def process_blob_activity_scraper(activity_input: str, output_blob: func.Out[str]) -> str:
-#     """Activity function that processes blobs to scrape."""
-#     from src.scraper import main as scraper_main  # Different processing function
-    
-#     # Parse input data
-#     if isinstance(activity_input, str):
-#         input_data = json.loads(activity_input)
-#     else:
-#         input_data = activity_input
-    
-#     try:
-#         # Call different external service for processing
-#         content = load_json_blob('documents', input_data['blob_name'])
-#         processing_result = scraper_main(content)  # Different processing logic
+@app.activity_trigger(input_name="input_data")
+def scraper_processor(input_data: dict) -> str:
+    from src.snapshot_scraper import get_wayback_snapshots
         
-#         # Write result to output blob
-#         output_blob.set(processing_result)
+    try:
+        logger.debug("Calling scraper")
+        get_wayback_snapshots(input_data['blob_name'])
+        logger.info(f"Successfully scraped: {input_data['blob_name']}")
+        return "success"
         
-#         logger.info(f"Successfully scraped input blob: {input_data['blob_name']}")
-#         return processing_result
-        
-#     except Exception as e:
-#         logger.error(f"Error scraping input blob {input_data['blob_name']}: {str(e)}")
-#         raise
-
+    except Exception as e:
+        logger.error(f"Error scraping {input_data['blob_name']}: {str(e)}")
+        raise
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -151,109 +152,13 @@ def summary_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> 
         output_blob.set(prompt)
 
 
-# Shared Entity Function for Rate Limiting
-@app.entity_trigger(context_name="context")
-def generic_rate_limiter_entity(context: df.DurableEntityContext):
-    """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
-    entity_name = context.entity_key
-    
-    # Get configuration for this entity
-    config = None
-    for workflow, workflow_config in WORKFLOW_CONFIGS.items():
-        if workflow_config["entity_name"] == entity_name:
-            config = workflow_config
-            break
-
-    if not config:
-        logger.warning(f"Unknown rate limiter entity key {entity_name}")
-        context.set_result(False)
-        return
-    
-    rate_limit_rpm = config["rate_limit_rpm"]
-    
-    current_state = context.get_state(lambda: {
-        "tokens": rate_limit_rpm,
-        "last_refill": None,
-    })
-    
-    current_time_str = context.get_input()
-    current_time = datetime.fromisoformat(current_time_str) if current_time_str else datetime.now(timezone.utc)
-    
-    if current_state["last_refill"] is None:
-        current_state["last_refill"] = current_time.isoformat()
-        current_state["tokens"] = rate_limit_rpm
-    
-    else:
-        last_refill = datetime.fromisoformat(current_state["last_refill"])
-        
-        # Calculate time elapsed since last refill
-        time_elapsed = (current_time - last_refill).total_seconds()
-        
-        # Refill tokens based on elapsed time
-        if time_elapsed >= 60:
-            current_state["tokens"] = rate_limit_rpm
-            current_state["last_refill"] = current_time.isoformat()
-        
-    operation = context.operation_name
-    
-    if operation == "try_consume":
-        if current_state["tokens"] > 0:
-            current_state["tokens"] -= 1
-            context.set_result(True)
-        else:
-            context.set_result(False)
-    
-    elif operation == "get_status":
-        context.set_result(current_state)
-    
-    context.set_state(current_state)
-    logger.debug(f"Rate limiter finished with result: {context._result} and state: {context.get_state()}")
-
-
-# Shared Orchestrator Function
-def generic_rate_limited_orchestrator_logic(context: df.DurableOrchestrationContext, input_data: dict):
-    """Generic Orchestrator that enforces rate limiting using the durable entity."""
-    input_data = context.get_input()
-    workflow_type = input_data.get("workflow_type")
-    
-    if workflow_type not in WORKFLOW_CONFIGS:
-        raise ValueError(f"Unknown workflow type: {workflow_type}")
-    
-    config = WORKFLOW_CONFIGS[workflow_type]
-    entity_id = df.EntityId("generic_rate_limiter_entity", config["entity_name"])
-    
-    logger.debug(f"Executing orchestrator logic -> entity: {config['entity_name']}")
-
-    # Wait for rate limit token
-    while True:
-        allowed = yield context.call_entity(entity_id, "try_consume", context.current_utc_datetime.isoformat())
-        if allowed:
-            break
-        # Wait before retrying
-        retry_time = context.current_utc_datetime + timedelta(seconds=5)
-        yield context.create_timer(retry_time)
-    
-    logger.debug("Orchestrator passed rate limiter and calling next activity: %s", config["activity_name"])
-    # Process the blob with acquired rate token
-    result = yield context.call_activity(config["activity_name"], input_data)
-    return result
-
-
 # Each workflow gets its own orchestrator with specific input handling
 @app.orchestration_trigger(context_name="context")
-def rate_limited_orchestrator_summarizer(context: df.DurableOrchestrationContext):
+def summarizer_orchestrator(context: df.DurableOrchestrationContext):
     """Orchestrator specifically for summarizer workflow."""
     input_data = context.get_input()
     logger.debug("Calling generic orchestrator logic with input data: %s", str(input_data))
-    return generic_rate_limited_orchestrator_logic(context, input_data)
-
-
-@app.orchestration_trigger(context_name="context")  
-def rate_limited_orchestrator_scraper(context: df.DurableOrchestrationContext):
-    """Orchestrator for scraper workflow."""
-    input_data = context.get_input()
-    input_data["workflow_type"] = "scraper"
-    return generic_rate_limited_orchestrator_logic(context, input_data)
+    return orchestrate(context, input_data)
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -267,7 +172,7 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
         "blob_name": blob_name,
         "workflow_type": "summarizer"
     }
-    instance_id = await client.start_new("rate_limited_orchestrator_summarizer", None, orchestration_input)
+    instance_id = await client.start_new("summarizer_orchestrator", None, orchestration_input)
     logger.info(f"Started summarizer orchestration with ID: '{instance_id}' for blob: {blob_name}")
     
 
@@ -294,6 +199,7 @@ def summarizer_processor(input_data: dict) -> str:
         logger.error(f"Error summarizing blob {input_data['blob_name']}: {str(e)}")
         raise
 
+
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/summary_raw/{company}/{policy}/{timestamp}.txt",
                 connection="AZURE_STORAGE_CONNECTION_STRING",
@@ -305,6 +211,19 @@ def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]) -> N
     from src.summarizer import parse_response_json
     resp = parse_response_json(input_blob.read().decode())
     output_blob.set(json.dumps(resp, indent=2))
+
+
+# Shared Entity Function for Rate Limiting
+@app.entity_trigger(context_name="context")
+def generic_rate_limiter_entity(context: df.DurableEntityContext):
+    """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
+    rate_limiter_entity(context, WORKFLOW_CONFIGS)
+
+
+def orchestrate(context: df.DurableOrchestrationContext, input_data: dict):
+    """Generic Orchestrator that enforces rate limiting using the durable entity."""
+    orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
+
 
 def _http_wrap(task, taskname, *args, **kwargs) -> func.HttpResponse:
     logger.info(f"Starting {task}")

@@ -8,8 +8,9 @@ from src.blob_utils import (ensure_container, check_blob, load_json_blob, upload
 import chardet  # Add this import for encoding detection
 from urllib.error import HTTPError
 from src.log_utils import setup_logger
+from src.blob_utils import parse_blob_path
 
-logger = setup_logger(logging.INFO)
+logger = setup_logger(__name__, logging.INFO)
 
 
 def decode_html(resp):
@@ -46,6 +47,7 @@ def decode_html(resp):
     
     return html_content, detected_encoding
 
+
 def extract_main_text(html_content, encoding='utf-8'):
     """Extract main content from HTML with proper encoding handling"""
     # Parse with BeautifulSoup, explicitly handling encoding
@@ -64,104 +66,13 @@ def extract_main_text(html_content, encoding='utf-8'):
     body = soup.body
     return body.prettify() if body else soup.prettify()
 
-def validate_url(url):
-    """Validate URL format"""
-    from urllib.parse import urlparse
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except Exception:
-        return False
 
-def sanitize_path_component(path_component):
-    """Sanitize a path component for use in blob names"""
-    import re
-    # Replace invalid characters with underscores
-    sanitized = re.sub(r'[<>:"/\\|?*]', '_', path_component)
-    # Remove any leading/trailing whitespace and dots
-    sanitized = sanitized.strip(' .')
-    # Ensure it's not empty
-    return sanitized if sanitized else 'default'
-
-def load_urls(input_container_name, input_blob_name):
-     # Download the URLs file from blob storage
-     # Validate URL
-    urls = load_json_blob(input_container_name, input_blob_name)
-    for company, url_list in urls.items():
-        for url in url_list:
-            if not validate_url(url):
-                raise ValueError(f"Invalid URL format: {url}")
-    return urls
-
-def get_wayback_snapshots(input_container_name="documents", input_blob_name="static_urls.json", output_container_name="documents"):
-    """
-    Load URLs from blob storage and process each one
-    """
-    ensure_container(output_container_name)
-
-    urls = load_urls(input_container_name, input_blob_name)
-    logger.info(f"Found {len(urls)} companies with URLs to process")
-    
-    # Process each URL grouping
-    company_processed = 0
-    total_processed = 0
-    company_pending = len(urls)
-    retries = 2
-    
-    for company, url_list in urls.items():
-        logger.info(f"Processing {len(url_list)} URLs for {company}")
+def parse_wayback_metadata(blob_name):
+    logger.debug("Loading snap metadata from: %s", blob_name)
+    data = load_json_blob('documents', blob_name)
         
-        for url in url_list:
-            try:
-                get_wayback_snapshot(url, company, output_container_name)
-                total_processed += 1
-            except Exception as e:
-                logger.error(f"Failed to process URL {url} for {company}: {e}")
-                if retries:
-                    retries -= 1
-                else:
-                    raise e
-        
-        company_pending -= 1
-        logger.info(f"Completed {company}: {company_processed} processed, {company_pending} pending")
-    
-    logger.info(f"Total processing complete: {company_processed} companies, {total_processed} total.")
-        
-def scrape_wayback_metadata(url):
-    api_url = f"http://web.archive.org/cdx/search/cdx"
-    params = {
-        'url': url,
-        'output': 'json'
-    }
-
-    try:
-        response = requests.get(api_url, params=params, timeout=60)
-        response.raise_for_status()
-    except Exception as e:
-        logger.error(f"Failed to get metadata for {url}: {e}")
-        raise e
-
-    try:
-        data = response.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON response for {url}: {e}")
-        raise e
-
-    return data
-    
-def get_wayback_metadata(url, company):  
-    url_path = sanitize_urlpath(url)
-    blob_name = f"wayback-snapshots/{company}/{url_path}/metadata.json"
-    
-    if check_blob('documents', blob_name):
-        logger.debug(f"Using cached wayback metadata from {blob_name}")
-        data = load_json_blob('documents', blob_name)
-    else:
-        data = scrape_wayback_metadata(url)    
-        upload_json_blob(json.dumps(data), 'documents', blob_name) 
-    
     if len(data) <= 1:
-        logger.info(f"Found 0 snapshots for {url}")
+        logger.info(f"Found 0 snapshots for {blob_name}")
         return None
     
     # First row is headers, rest are snapshots
@@ -173,7 +84,7 @@ def get_wayback_metadata(url, company):
     # Snaps without timestamps are invalid for our purposes.
     mask = snapshots['timestamp'].notna() & (snapshots['timestamp']!='')
     snapshots = snapshots.loc[mask]
-    logger.info(f"Found {len(snapshots)} valid snapshots for {url}")
+    logger.info(f"Found {len(snapshots)} valid snapshots for {blob_name}")
 
     if len(snapshots) == 0:
         return None
@@ -187,31 +98,24 @@ def get_wayback_metadata(url, company):
         snapshots['timebin'] = bins
         sample = snapshots.groupby('timebin', observed=True).first()
     except Exception as e:
-        logger.error(f"Failed to sample snapshots for {url}: {e}")
+        logger.error(f"Failed to sample snapshots for {blob_name}: {e}")
         # Fallback: take first N snapshots
         sample = snapshots.head(N)
     return sample
 
-def sanitize_urlpath(url):
-    # Parse URL for file structure
-    from urllib.parse import urlparse
-    from pathlib import Path
-    parsed_url = urlparse(url)
-    url_path = parsed_url.path if parsed_url.path != '/' else parsed_url.netloc
-    url_path = Path(url_path).parts[-1] or 'index'
-    url_path = sanitize_path_component(url_path)
-    return url_path
 
-def get_wayback_snapshot(url, company, output_container_name):
+def get_wayback_snapshots(meta_blob_name):
     """
     Get wayback snapshots for a single URL and save to blob storage
     """
-    data = get_wayback_metadata(url, company)
+    data = parse_wayback_metadata(meta_blob_name)
     if data is None:
         return
 
-    url_path = sanitize_urlpath(url)
-    
+    parsed_path = parse_blob_path(meta_blob_name)
+    company = parsed_path[1]
+    policy = parsed_path[2]
+
     # Track success/failure for this URL
     snapshots_saved = 0
     retries = 1
@@ -219,11 +123,11 @@ def get_wayback_snapshot(url, company, output_container_name):
     # Now actually download the snap html and save to blob storage
     for timestamp, original_url in zip(data['timestamp'], data['original']):
         snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
-        blob_name = f"wayback-snapshots/{company}/{url_path}/{timestamp}.html"
+        blob_name = f"wayback-snapshots/{company}/{policy}/{timestamp}.html"
 
         try:
-            if check_blob(output_container_name, blob_name):
-                logger.info(f"Blob {output_container_name}/{blob_name} exists. Skipping.")
+            if check_blob('documents', blob_name):
+                logger.info(f"Blob 'documents'/{blob_name} exists. Skipping.")
                 continue
             
             # Add headers to mimic a real browser
@@ -244,14 +148,14 @@ def get_wayback_snapshot(url, company, output_container_name):
             cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
             
             logger.debug("Uploading blob: {company}/{original_url}/{timestamp}")
-            upload_html_blob(cleaned_html, output_container_name, blob_name)
+            upload_html_blob(cleaned_html, 'documents', blob_name)
                         
             snapshots_saved += 1
-            logger.info(f"Saved snapshot to blob: {output_container_name}/{blob_name}")
+            logger.info(f"Saved snapshot to blob: documents/{blob_name}")
         except Exception as e:
             if retries: 
                 retries -= 1
             else:
                 raise e
             
-    logger.info(f"URL {url} complete: {snapshots_saved} saved")
+    logger.info(f"URL {meta_blob_name} complete: {snapshots_saved} saved")
