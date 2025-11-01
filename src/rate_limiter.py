@@ -10,10 +10,11 @@ logger = setup_logger(__name__, logging.DEBUG)
 
 def rate_limiter_entity(context: df.DurableEntityContext, config: dict):
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
+    logger.debug(f"Calling rate limiter")
+    
     entity_name = context.entity_key
     
     # Get configuration for this entity
-    config = None
     for workflow, workflow_config in config.items():
         if workflow_config["entity_name"] == entity_name:
             config = workflow_config
@@ -67,7 +68,7 @@ def rate_limiter_entity(context: df.DurableEntityContext, config: dict):
 
 # Shared Orchestrator Function
 def orchestrator_logic(context: df.DurableOrchestrationContext, config: dict, input_data: dict):
-    """Generic Orchestrator that enforces rate limiting using the durable entity."""
+    """Generic Orchestrator that enforces rate limiting using the durable entity.."""
     input_data = context.get_input()
     workflow_type = input_data.get("workflow_type")
     
@@ -81,6 +82,7 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, config: dict, in
 
     # Wait for rate limit token
     while True:
+        logger.debug("Checking rate limiter")
         allowed = yield context.call_entity(entity_id, "try_consume", context.current_utc_datetime.isoformat())
         if allowed:
             break
