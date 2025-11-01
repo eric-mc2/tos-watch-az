@@ -6,6 +6,7 @@ import json
 from src.log_utils import setup_logger
 from collections import namedtuple
 from pathlib import Path
+from functools import lru_cache
 
 logger = setup_logger(__name__, logging.INFO)
 _client = None
@@ -32,6 +33,7 @@ def get_blob_service_client():
         raise ConnectionError(f"Failed to create BlobServiceClient: {e}")
     return _client
 
+@lru_cache(5)
 def ensure_container(output_container_name) -> None:
     client = get_blob_service_client()
     container_client = client.get_container_client(output_container_name)
@@ -100,11 +102,13 @@ def upload_blob(data, container, blob_name, content_type) -> None:
     )
     
 def upload_json_blob(data, output_container_name, blob_name) -> None:
+    ensure_container(output_container_name)
     data_bytes = data.encode('utf-8')
     content_type = 'application/json; charset=utf-8'
     upload_blob(data_bytes, output_container_name, blob_name, content_type)
 
 def upload_html_blob(cleaned_html, output_container_name, blob_name) -> None:
+    ensure_container(output_container_name)
     html_bytes = cleaned_html.encode('utf-8')
     content_type = 'text/html; charset=utf-8'
     upload_blob(html_bytes, output_container_name, blob_name, content_type)

@@ -1,11 +1,29 @@
 import logging
-from src.blob_utils import ensure_container, upload_json_blob
+from src.blob_utils import upload_json_blob
 from src.log_utils import setup_logger
+from src.scraper_utils import validate_url, sanitize_urlpath
+import json
 
 logger = setup_logger(__name__, logging.INFO)
-            
+
+
+def validate_urls(urls: dict):
+    for company, url in urls.items():
+        if not validate_url(url):
+            raise ValueError(f"Invalid url: {url}")
+        fp = sanitize_urlpath(url)
+        if not fp:
+            raise ValueError(f"Invalid url -> filename: {url} -> {fp}")
+
+
+def process_urls(urls: dict): 
+    validate_urls(urls)
+    text_content = json.dumps(urls, indent=2)
+    upload_json_blob(text_content, 'documents', 'static_urls.json')
+
+
 def main() -> None:
     with open('data/static_urls.json') as f:
         urls = f.read()
-    ensure_container('documents')
-    upload_json_blob(urls, 'documents', 'static_urls.json')
+    urls = json.loads(urls)
+    process_urls(urls)

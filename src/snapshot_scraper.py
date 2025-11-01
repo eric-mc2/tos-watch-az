@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import azure.functions as func
-from src.blob_utils import (ensure_container, check_blob, load_json_blob, upload_json_blob, upload_html_blob)
+from src.blob_utils import (check_blob, load_json_blob, upload_html_blob)
 import chardet  # Add this import for encoding detection
 from urllib.error import HTTPError
 from src.log_utils import setup_logger

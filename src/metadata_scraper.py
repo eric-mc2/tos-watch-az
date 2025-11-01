@@ -1,25 +1,29 @@
 import logging
 import json
 import requests
-from src.blob_utils import (ensure_container, check_blob, upload_json_blob)
+from src.blob_utils import (check_blob, upload_json_blob)
 from src.log_utils import setup_logger
 from src.scraper_utils import sanitize_urlpath, load_urls
+import time
 
 logger = setup_logger(__name__, logging.INFO)
 
-def scrape_wayback_metadata(url):
+def scrape_wayback_metadata(url, retries=2):
     api_url = f"http://web.archive.org/cdx/search/cdx"
     params = {
         'url': url,
         'output': 'json'
     }
-
     try:
         response = requests.get(api_url, params=params, timeout=60)
         response.raise_for_status()
     except Exception as e:
         logger.error(f"Failed to get metadata for {url}: {e}")
-        raise e
+        if retries:
+            time.sleep(2) # wait politely
+            return scrape_wayback_metadata(url, retries - 1)
+        else:
+            raise e
 
     try:
         data = response.json()
@@ -30,7 +34,7 @@ def scrape_wayback_metadata(url):
     return data
 
 
-def get_wayback_metadata(url, company, output_container_name):  
+def get_wayback_metadata(url, company, output_container_name):
     url_path = sanitize_urlpath(url)
     blob_name = f"wayback-snapshots/{company}/{url_path}/metadata.json"
     
@@ -45,8 +49,6 @@ def get_wayback_metadatas(input_container_name="documents", input_blob_name="sta
     """
     Load URLs from blob storage and process each one
     """
-    ensure_container(output_container_name)
-
     urls = load_urls(input_container_name, input_blob_name)
     logger.info(f"Found {len(urls)} companies with URLs to process")
     
