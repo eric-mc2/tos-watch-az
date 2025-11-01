@@ -23,12 +23,14 @@
       "Function.annotate_snap.User": "Debug",
       "Function.parse_snap.User": "Debug",
       "Function.parse_summary.User": "Debug",
-      "Function.scraper_blob_trigger.User": "Debug",
+      "Function.generic_rate_limiter_entity.User": "Debug",
+      "Function.scraper_blob_trigger.User": "Information",
+      "Function.scraper_orchestrator.User": "Debug",
       "Function.scraper_processor.User": "Debug",
-      "Function.setup_logger.User": "Debug",
       "Function.summarizer_blob_trigger.User": "Debug",
       "Function.summarizer_processor.User": "Debug",
-      "Function.summary_prompt.User": "Debug"
+      "Function.summary_prompt.User": "Debug",
+      "src": "Debug"
     },
     "console": {
       "isEnabled": true

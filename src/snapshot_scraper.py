@@ -154,8 +154,10 @@ def get_wayback_snapshots(meta_blob_name):
             logger.info(f"Saved snapshot to blob: documents/{blob_name}")
         except Exception as e:
             if retries: 
+                logger.warning(f"Error scraping URL. Retrying: {snap_url}")
                 retries -= 1
             else:
+                logger.error(f"Error scraping URL: {snap_url}")
                 raise e
             
     logger.info(f"URL {meta_blob_name} complete: {snapshots_saved} saved")

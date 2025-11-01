@@ -22,7 +22,7 @@ WORKFLOW_CONFIGS = {
         "activity_name": "summarizer_processor"
     },
     "scraper": {
-        "rate_limit_rpm": 30,
+        "rate_limit_rpm": 10,
         "entity_name": "scraper_rate_limiter",
         "orchestrator_name": "scraper_orchestrator",
         "activity_name": "scraper_processor"
@@ -54,10 +54,11 @@ def scrape_snap_meta(req: func.HttpRequest) -> func.HttpResponse:
 # Each workflow gets its own orchestrator with specific input handling
 @app.orchestration_trigger(context_name="context")
 def scraper_orchestrator(context: df.DurableOrchestrationContext):
-    """Orchestrator specifically for scraper workflow."""
+    """Orchestrator specifically for scraper workflow.."""
     input_data = context.get_input()
-    logger.debug("Calling generic orchestrator logic with input data: %s", str(input_data))
-    return orchestrate(context, input_data)
+    blob_name = input_data['blob_name']
+    logger.debug(f"Executing scraper orchestrator for blob: {blob_name}")
+    return orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -66,13 +67,14 @@ def scraper_orchestrator(context: df.DurableOrchestrationContext):
 @app.durable_client_input(client_name="client")
 async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
     """Blob trigger that starts the scraper workflow orchestration."""
+    logger.debug(f"Starting scraper orchestration for blob: {input_blob.name}")
     blob_name = input_blob.name.removeprefix("documents/")
     orchestration_input = {
-        "blob_name": blob_name,
+        "blob_name": blob_name, 
         "workflow_type": "scraper"
     }
     instance_id = await client.start_new("scraper_orchestrator", None, orchestration_input)
-    logger.info(f"Started scraper orchestration with ID: '{instance_id}' for blob: {blob_name}")
+    logger.debug(f"Started scraper orchestration for blob: {blob_name}")
     
 
 @app.activity_trigger(input_name="input_data")
@@ -157,8 +159,9 @@ def summary_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> 
 def summarizer_orchestrator(context: df.DurableOrchestrationContext):
     """Orchestrator specifically for summarizer workflow."""
     input_data = context.get_input()
-    logger.debug("Calling generic orchestrator logic with input data: %s", str(input_data))
-    return orchestrate(context, input_data)
+    blob_name = input_data['blob_name']
+    logger.debug(f"Executing summarizer orchestrator for blob: {blob_name}")
+    return orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -182,14 +185,14 @@ def summarizer_processor(input_data: dict) -> str:
         
     try:
         logger.debug("Loading prompt for summary from: %s", input_data['blob_name'])
-        prompt = load_text_blob ('documents', input_data['blob_name'])
+        prompt = load_text_blob('documents', input_data['blob_name'])
         
         logger.debug("Calling summarizer")
         summary_result = summarize(prompt)
         
         in_path = parse_blob_path(input_data['blob_name'])
         out_path = f"summary_raw/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
-        logger.debug("Uploading output blob {out_path}")
+        logger.debug(f"Uploading output blob {out_path}")
         upload_blob(summary_result, 'documents', out_path, "text/plain")
         
         logger.info(f"Successfully summarized blob: {input_data['blob_name']}")
@@ -217,12 +220,8 @@ def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]) -> N
 @app.entity_trigger(context_name="context")
 def generic_rate_limiter_entity(context: df.DurableEntityContext):
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
+    logger.debug(f"Triggering rate limiter with input: {context.entity_key}")
     rate_limiter_entity(context, WORKFLOW_CONFIGS)
-
-
-def orchestrate(context: df.DurableOrchestrationContext, input_data: dict):
-    """Generic Orchestrator that enforces rate limiting using the durable entity."""
-    orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
 
 
 def _http_wrap(task, taskname, *args, **kwargs) -> func.HttpResponse:
