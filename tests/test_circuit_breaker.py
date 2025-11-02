@@ -1,115 +1,265 @@
-# RUN THIS from azure root via $ python -m tests.test_rate_limiter
-
+"""
+Direct tests for the circuit_breaker_entity function.
+Tests entity logic in isolation using MockEntityContext.
+"""
+import unittest
 from datetime import datetime, timezone
-from tests.test_orchestration import TEST_CONFIG, MockOrchestrationContext, run_orchestrator
 
-def test_circuit_breaker():
-    """Test circuit breaker by submitting many tasks, failing some, and showing cancellation"""
-    print("\n" + "="*60)
-    print("CIRCUIT BREAKER TEST - SYSTEMIC FAILURE DETECTION")
-    print("="*60 + "\n")
-    print("Submitting 20 orchestrations concurrently.")
-    print("Items 5-7 will fail with FATAL errors.")
-    print("Expected: Circuit trips, remaining items are rejected.\n")
+
+class MockEntityContext:
+    """Mock DurableEntityContext for testing the circuit breaker entity"""
+    def __init__(self, entity_key, operation_name, input_data=None):
+        self.entity_key = entity_key
+        self.operation_name = operation_name
+        self._input = input_data
+        self._state = None
+        self._result = None
+        
+    def get_state(self, default_factory=None):
+        if self._state is None and default_factory:
+            self._state = default_factory()
+        return self._state
     
-    # Shared circuit breaker state (simulates durable storage)
-    circuit_breaker_state = {
-        "is_open": False,
-        "error_message": None,
-        "opened_at": None
-    }
+    def set_state(self, state):
+        self._state = state
     
-    # Rate limiter state (set high limit so it doesn't interfere)
-    entity_state = {
-        "tokens": 1000,
-        "last_refill": None
-    }
+    def get_input(self):
+        return self._input
     
-    # Create config with high rate limit
-    circuit_test_config = {
-        "test_workflow": {
-            "rate_limit_rpm": 1000,  # High limit so rate limiter doesn't interfere
-            "activity_name": "test_processor",
-            "max_retries": 2
+    def set_result(self, result):
+        self._result = result
+
+
+class TestCircuitBreakerEntity(unittest.TestCase):
+    """Test the circuit breaker entity directly"""
+    
+    def setUp(self):
+        """Set up initial state"""
+        self.initial_state = {
+            "is_open": False,
+            "error_message": None,
+            "opened_at": None
         }
-    }
     
-    items = [f"task_{i:02d}" for i in range(20)]
-    start_time = datetime.now(timezone.utc)
+    def test_get_status_when_closed(self):
+        """Test that get_status returns correct state when circuit is closed"""
+        print("\n" + "="*60)
+        print("TEST: Get Status When Closed")
+        print("="*60)
+        
+        from src.rate_limiter import circuit_breaker_entity
+        
+        state = self.initial_state.copy()
+        
+        context = MockEntityContext("test_workflow", "get_status", None)
+        context._state = state
+        circuit_breaker_entity(context)
+        
+        result = context._result
+        
+        print(f"  Circuit state: CLOSED")
+        print(f"  get_status() result: {result}")
+        
+        self.assertIsNotNone(result, "Status should be returned")
+        self.assertFalse(result['is_open'], "Circuit should be closed")
+        self.assertIsNone(result['error_message'], "No error message when closed")
+        
+        print(f"\n✓ Test passed: Status correctly shows closed circuit\n")
     
-    # Items that will fail with fatal errors
-    fatal_failure_items = {4, 5, 6}  # 0-indexed, so items 5-7 in display
+    def test_trip_opens_circuit(self):
+        """Test that trip operation opens the circuit"""
+        print("\n" + "="*60)
+        print("TEST: Trip Opens Circuit")
+        print("="*60)
+        
+        from src.rate_limiter import circuit_breaker_entity
+        
+        state = self.initial_state.copy()
+        
+        # Trip the circuit with an error message
+        error_msg = "FATAL: Database schema mismatch"
+        
+        print(f"  Initial state: CLOSED")
+        print(f"  Tripping circuit with error: {error_msg}")
+        
+        context = MockEntityContext("test_workflow", "trip", error_msg)
+        context._state = state
+        circuit_breaker_entity(context)
+        
+        state = context.get_state()
+        result = context._result
+        
+        print(f"  New state: {'OPEN' if state['is_open'] else 'CLOSED'}")
+        print(f"  Error message: {state['error_message']}")
+        print(f"  Trip result: {result}")
+        
+        self.assertTrue(result, "Trip operation should return True")
+        self.assertTrue(state['is_open'], "Circuit should be open after trip")
+        self.assertEqual(state['error_message'], error_msg, "Error message should be stored")
+        self.assertIsNotNone(state['opened_at'], "opened_at timestamp should be set")
+        
+        print(f"\n✓ Test passed: Circuit opened on trip\n")
     
-    for i, item in enumerate(items, 0):
-        item_start = datetime.now(timezone.utc)
+    def test_get_status_when_open(self):
+        """Test that get_status returns correct state when circuit is open"""
+        print("\n" + "="*60)
+        print("TEST: Get Status When Open")
+        print("="*60)
         
-        # Determine if this item should fail fatally
-        fail_count = 0
-        if i in fatal_failure_items:
-            fail_count = 999  # Always fail with non-retryable error
+        from src.rate_limiter import circuit_breaker_entity
         
-        # Create orchestration context
-        orch_context = MockOrchestrationContext(
-            "test_workflow", 
-            item, 
-            entity_state, 
-            circuit_breaker_state,
-            fail_count=fail_count
-        )
+        # Start with open circuit
+        error_msg = "FATAL: Systemic failure detected"
+        state = {
+            "is_open": True,
+            "error_message": error_msg,
+            "opened_at": datetime.now(timezone.utc).isoformat()
+        }
         
-        # Override call_activity to simulate fatal vs retryable errors
-        original_call_activity = orch_context.call_activity
-        def call_activity_with_fatal(activity_name, input_data):
-            if i in fatal_failure_items:
-                # Fatal error - will trip circuit breaker
-                raise Exception("FATAL: Database schema mismatch - incompatible data format")
-            return original_call_activity(activity_name, input_data)
+        print(f"  Circuit state: OPEN")
+        print(f"  Error: {state['error_message']}")
         
-        orch_context.call_activity = call_activity_with_fatal
+        context = MockEntityContext("test_workflow", "get_status", None)
+        context._state = state
+        circuit_breaker_entity(context)
         
-        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+        result = context._result
         
-        try:
-            # Run the orchestrator
-            result = run_orchestrator(orch_context, circuit_test_config)
+        print(f"  get_status() result: {result}")
+        
+        self.assertIsNotNone(result, "Status should be returned")
+        self.assertTrue(result['is_open'], "Status should show circuit is open")
+        self.assertEqual(result['error_message'], error_msg, "Error message should be included")
+        
+        print(f"\n✓ Test passed: Status correctly shows open circuit\n")
+    
+    def test_reset_closes_circuit(self):
+        """Test the reset operation closes the circuit"""
+        print("\n" + "="*60)
+        print("TEST: Reset Closes Circuit")
+        print("="*60)
+        
+        from src.rate_limiter import circuit_breaker_entity
+        
+        # Start with open circuit
+        state = {
+            "is_open": True,
+            "error_message": "FATAL: Previous error",
+            "opened_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        print(f"  Initial state: OPEN")
+        print(f"  Error: {state['error_message']}")
+        
+        context = MockEntityContext("test_workflow", "reset", None)
+        context._state = state
+        circuit_breaker_entity(context)
+        
+        state = context.get_state()
+        result = context._result
+        
+        print(f"  After reset: {'OPEN' if state['is_open'] else 'CLOSED'}")
+        print(f"  Reset result: {result}")
+        
+        self.assertTrue(result, "Reset operation should return True")
+        self.assertFalse(state['is_open'], "Circuit should be closed after reset")
+        self.assertIsNone(state['error_message'], "Error message should be cleared")
+        self.assertIsNone(state['opened_at'], "opened_at should be cleared")
+        
+        print(f"\n✓ Test passed: Reset operation works correctly\n")
+    
+    def test_multiple_trips(self):
+        """Test that multiple trips update the error message"""
+        print("\n" + "="*60)
+        print("TEST: Multiple Trips")
+        print("="*60)
+        
+        from src.rate_limiter import circuit_breaker_entity
+        
+        state = self.initial_state.copy()
+        
+        errors = [
+            "FATAL: Database connection failed",
+            "FATAL: Schema mismatch",
+            "FATAL: Critical system error"
+        ]
+        
+        for i, error in enumerate(errors, 1):
+            print(f"\n  Trip #{i}: {error}")
             
-            if orch_context.activity_called:
-                print(f"✓ [{elapsed:6.2f}s] Task {i+1:2d}/20: {item:10s} - PROCESSED")
-            else:
-                print(f"⚠ [{elapsed:6.2f}s] Task {i+1:2d}/20: {item:10s} - SKIPPED (no activity called)")
-                
-        except Exception as e:
-            error_msg = str(e)
+            context = MockEntityContext("test_workflow", "trip", error)
+            context._state = state
+            circuit_breaker_entity(context)
             
-            # Check if it's a circuit breaker rejection
-            if "Circuit breaker open" in error_msg:
-                print(f"🚫 [{elapsed:6.2f}s] Task {i+1:2d}/20: {item:10s} - REJECTED (circuit open)")
-            elif "FATAL" in error_msg:
-                print(f"💥 [{elapsed:6.2f}s] Task {i+1:2d}/20: {item:10s} - FAILED (fatal error, tripping circuit)")
-                print(f"\n{'─'*60}")
-                print(f"⚡ CIRCUIT BREAKER TRIPPED!")
-                print(f"   Reason: {circuit_breaker_state.get('error_message', 'Unknown')}")
-                print(f"   All subsequent tasks will be rejected")
-                print(f"{'─'*60}\n")
-            else:
-                print(f"✗ [{elapsed:6.2f}s] Task {i+1:2d}/20: {item:10s} - ERROR: {error_msg}")
+            state = context.get_state()
+            
+            self.assertTrue(state['is_open'], f"Circuit should be open after trip #{i}")
+            self.assertEqual(state['error_message'], error, f"Error message should be updated on trip #{i}")
+            
+            print(f"    State: OPEN, Message: {state['error_message']}")
         
-        # Small delay for readability
-        import time
-        time.sleep(0.05)
+        print(f"\n✓ Test passed: Multiple trips handled correctly\n")
     
-    print(f"\n{'='*60}")
-    print(f"Test completed!")
-    print(f"Total elapsed: {(datetime.now(timezone.utc) - start_time).total_seconds():.2f}s")
-    print(f"{'='*60}\n")
+    def test_is_retryable_error_function(self):
+        """Test the is_retryable_error helper function"""
+        print("\n" + "="*60)
+        print("TEST: is_retryable_error Helper Function")
+        print("="*60)
+        
+        from src.rate_limiter import is_retryable_error
+        
+        test_cases = [
+            ("Max retries exceeded with url: Connection refused", True),
+            ("Connection reset by peer", True),
+            ("Timeout waiting for response", True),
+            ("Too Many Requests", True),
+            ("HTTP 429 error", True),
+            ("Service unavailable 503", True),
+            ("Gateway timeout 504", True),
+            ("Connection pool is full", True),
+            ("FATAL: Database schema error", False),
+            ("FATAL: Invalid configuration", False),
+            ("Some random error", False),
+            ("Unexpected exception occurred", False),
+        ]
+        
+        for error_msg, expected in test_cases:
+            result = is_retryable_error(error_msg)
+            status = "✓" if result == expected else "✗"
+            print(f"  {status} '{error_msg[:50]}...' -> retryable={result} (expected={expected})")
+            self.assertEqual(result, expected, f"Incorrect classification for: {error_msg}")
+        
+        print(f"\n✓ Test passed: is_retryable_error works correctly\n")
     
-    # Show final circuit breaker state
-    print("Final circuit breaker state:")
-    print(f"  Is Open: {circuit_breaker_state['is_open']}")
-    print(f"  Error: {circuit_breaker_state.get('error_message', 'None')}")
-    print(f"  Opened At: {circuit_breaker_state.get('opened_at', 'N/A')}")
-    print()
+    def test_state_initialization_on_first_call(self):
+        """Test that entity initializes state correctly on first call"""
+        print("\n" + "="*60)
+        print("TEST: State Initialization")
+        print("="*60)
+        
+        from src.rate_limiter import circuit_breaker_entity
+        
+        # No pre-existing state
+        context = MockEntityContext("test_workflow", "get_status", None)
+        # Don't set context._state, let entity initialize it
+        
+        circuit_breaker_entity(context)
+        
+        state = context.get_state()
+        result = context._result
+        
+        print(f"  Initialized state: {state}")
+        
+        self.assertIsNotNone(state, "State should be initialized")
+        self.assertFalse(state['is_open'], "Should initialize as closed")
+        self.assertIsNone(state['error_message'], "Should have no error initially")
+        self.assertIsNone(state['opened_at'], "Should have no opened_at initially")
+        
+        print(f"\n✓ Test passed: State initialization works correctly\n")
 
 
 if __name__ == "__main__":
-    test_circuit_breaker()
+    # Run with verbose output
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestCircuitBreakerEntity)
+    runner = unittest.TextTestRunner(verbosity=2)
+    runner.run(suite)

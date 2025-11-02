@@ -176,7 +176,8 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, config: dict):
             break
         # Wait before retrying
         logger.warning(f"Throttling processing input: {blob_name}")
-        retry_time = context.current_utc_datetime + timedelta(seconds=5)
+        delay = workflow_config.get("delay", 5)
+        retry_time = context.current_utc_datetime + timedelta(seconds=delay)
         yield context.create_timer(retry_time)
     
     logger.debug("Orchestrator passed rate limiter and calling activity: %s", workflow_config["activity_name"])

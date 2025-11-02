@@ -17,11 +17,13 @@ app = func.FunctionApp()
 WORKFLOW_CONFIGS = {
     "summarizer": {
         "rate_limit_rpm": 50,
+        "delay": 2,
         "activity_name": "summarizer_processor",
         "max_retries": 3
     },
     "scraper": {
         "rate_limit_rpm": 5,  # Reduced from 10 to be more conservative
+        "delay": 2,
         "activity_name": "scraper_processor",
         "max_retries": 3
     }
