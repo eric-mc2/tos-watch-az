@@ -9,6 +9,7 @@ import chardet  # Add this import for encoding detection
 from urllib.error import HTTPError
 from src.log_utils import setup_logger
 from src.blob_utils import parse_blob_path
+import time
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -104,6 +105,50 @@ def parse_wayback_metadata(blob_name):
     return sample
 
 
+def scrape_wayback_snapshot(snap_url, blob_name, retries=2):
+    try:
+        # Add headers to mimic a real browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
+        }
+        resp = requests.get(snap_url, timeout=30, headers=headers)
+        resp.raise_for_status()
+        return resp
+    except Exception as e:
+        logger.error(f"Error scraping URL: {snap_url}")
+        if retries: 
+            time.sleep(2)
+            logger.warning(f"Retrying: {snap_url}")
+            return scrape_wayback_snapshot(snap_url, blob_name, retries-1)
+        else:
+            raise e
+
+
+def get_wayback_snapshot(company, policy, timestamp, original_url):
+    
+    snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
+    blob_name = f"wayback-snapshots/{company}/{policy}/{timestamp}.html"
+    
+    if check_blob('documents', blob_name):
+        # Don't try-cach this because want to fail fast if blob service is out.
+        logger.info(f"Blob 'documents'/{blob_name} exists. Skipping.")
+    else:
+        logger.debug(f"Requesting wayback html for {original_url}/{timestamp}")
+        resp = scrape_wayback_snapshot(snap_url, blob_name)
+        
+        logger.debug(f"Testing html encoding.")
+        html_content, detected_encoding = decode_html(resp)
+                    
+        # Extract and clean the HTML with encoding info
+        logger.debug("Cleaning html.")
+        cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
+        
+        logger.debug("Uploading blob: {company}/{original_url}/{timestamp}")
+        upload_html_blob(cleaned_html, 'documents', blob_name)
+        logger.info(f"Saved snapshot to blob: documents/{blob_name}")
+
+
 def get_wayback_snapshots(meta_blob_name):
     """
     Get wayback snapshots for a single URL and save to blob storage
@@ -118,46 +163,19 @@ def get_wayback_snapshots(meta_blob_name):
 
     # Track success/failure for this URL
     snapshots_saved = 0
-    retries = 1
+    retries = 2
     
     # Now actually download the snap html and save to blob storage
     for timestamp, original_url in zip(data['timestamp'], data['original']):
-        snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
-        blob_name = f"wayback-snapshots/{company}/{policy}/{timestamp}.html"
-
         try:
-            if check_blob('documents', blob_name):
-                logger.info(f"Blob 'documents'/{blob_name} exists. Skipping.")
-                continue
-            
-            # Add headers to mimic a real browser
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
-            }
-            
-            logger.debug(f"Requesting wayback html for {original_url}/{timestamp}")
-            resp = requests.get(snap_url, timeout=30, headers=headers)
-            resp.raise_for_status()
-
-            logger.debug(f"Testing html encoding.")
-            html_content, detected_encoding = decode_html(resp)
-                        
-            # Extract and clean the HTML with encoding info
-            logger.debug("Cleaning html.")
-            cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
-            
-            logger.debug("Uploading blob: {company}/{original_url}/{timestamp}")
-            upload_html_blob(cleaned_html, 'documents', blob_name)
-                        
+            get_wayback_snapshot(company, policy, timestamp, original_url)
             snapshots_saved += 1
-            logger.info(f"Saved snapshot to blob: documents/{blob_name}")
         except Exception as e:
-            if retries: 
-                logger.warning(f"Error scraping URL. Retrying: {snap_url}")
+            logger.error(f"Failed to scrape SNAP {timestamp} of URL {original_url}: {e}")
+            if retries:
                 retries -= 1
             else:
-                logger.error(f"Error scraping URL: {snap_url}")
                 raise e
             
+
     logger.info(f"URL {meta_blob_name} complete: {snapshots_saved} saved")

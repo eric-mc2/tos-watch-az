@@ -8,12 +8,13 @@ logger = setup_logger(__name__, logging.INFO)
 
 
 def validate_urls(urls: dict):
-    for company, url in urls.items():
-        if not validate_url(url):
-            raise ValueError(f"Invalid url: {url}")
-        fp = sanitize_urlpath(url)
-        if not fp:
-            raise ValueError(f"Invalid url -> filename: {url} -> {fp}")
+    for company, urls in urls.items():
+        for url in urls:
+            if not validate_url(url):
+                raise ValueError(f"Invalid url: {url}")
+            fp = sanitize_urlpath(url)
+            if not fp:
+                raise ValueError(f"Invalid url -> filename: {url} -> {fp}")
 
 
 def process_urls(urls: dict): 

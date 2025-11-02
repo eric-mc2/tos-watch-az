@@ -21,18 +21,10 @@ def scrape_wayback_metadata(url, retries=2):
         logger.error(f"Failed to get metadata for {url}: {e}")
         if retries:
             time.sleep(2) # wait politely
+            logger.warning(f"Retrying: {url}")
             return scrape_wayback_metadata(url, retries - 1)
         else:
             raise e
-
-    try:
-        data = response.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON response for {url}: {e}")
-        raise e
-
-    return data
-
 
 def get_wayback_metadata(url, company, output_container_name):
     url_path = sanitize_urlpath(url)
@@ -41,7 +33,12 @@ def get_wayback_metadata(url, company, output_container_name):
     if check_blob('documents', blob_name):
         logger.debug(f"Using cached wayback metadata from {blob_name}")
     else:
-        data = scrape_wayback_metadata(url)    
+        resp = scrape_wayback_metadata(url)    
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response for {url}: {e}")
+            raise e
         upload_json_blob(json.dumps(data), output_container_name, blob_name)
 
 

@@ -89,7 +89,7 @@ def scraper_processor(input_data: dict) -> str:
         
     except Exception as e:
         logger.error(f"Error scraping {input_data['blob_name']}: {str(e)}")
-        raise
+        raise e
 
 
 @app.blob_trigger(arg_name="input_blob", 
