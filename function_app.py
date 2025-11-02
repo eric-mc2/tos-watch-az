@@ -1,8 +1,8 @@
 import azure.functions as func
 from azure import durable_functions as df
-from datetime import datetime, timedelta, timezone
 import json
 import logging
+from src.stages import Stage
 from src.log_utils import setup_logger
 from src.blob_utils import parse_blob_path, upload_blob, load_text_blob, load_json_blob, upload_text_blob
 from src.rate_limiter import rate_limiter_entity, orchestrator_logic, circuit_breaker_entity
@@ -26,6 +26,7 @@ WORKFLOW_CONFIGS = {
         "max_retries": 3
     }
 }
+    
 
 @app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
 def hello_world(req: func.HttpRequest) -> func.HttpResponse:
@@ -50,7 +51,7 @@ def scrape_snap_meta(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/wayback-snapshots/{company}/{policy}/metadata.json",
+                path=f"documents/{Stage.SNAP.value}/{{company}}/{{policy}}/metadata.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 @app.durable_client_input(client_name="client")
 async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
@@ -66,24 +67,21 @@ async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableO
 @app.activity_trigger(input_name="input_data")
 def scraper_processor(input_data: dict) -> str:
     from src.snapshot_scraper import get_wayback_snapshots
-        
     try:
-        logger.debug("Calling scraper")
         get_wayback_snapshots(input_data['blob_name'])
         logger.info(f"Successfully scraped: {input_data['blob_name']}")
         return "success"
-        
     except Exception as e:
         logger.error(f"Error scraping {input_data['blob_name']}: {e}")
         raise
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/wayback-snapshots/{company}/{policy}/{timestamp}.html",
+                path=f"documents/{Stage.SNAP.value}/{{company}}/{{policy}}/{{timestamp}}.html",
                 connection="AZURE_STORAGE_CONNECTION_STRING",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
-                path="documents/parsed/{company}/{policy}/{timestamp}.json",
+                path=f"documents/{Stage.DOCTREE.value}/{{company}}/{{policy}}/{{timestamp}}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
     """Parse html snapshot into hierarchical doctree format."""
@@ -93,11 +91,11 @@ def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/parsed/{company}/{policy}/{timestamp}.json",
+                path=f"documents/{Stage.DOCTREE.value}/{{company}}/{{policy}}/{{timestamp}}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
-                path="documents/annotated/{company}/{policy}/{timestamp}.json",
+                path=f"documents/{Stage.DOCCHUNK.value}/{{company}}/{{policy}}/{{timestamp}}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
     """Annotate doctree with corpus-level metadata."""
@@ -125,13 +123,13 @@ def single_diff(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/diff/{company}/{policy}/{timestamp}.json",
+                path=f"documents/{Stage.DIFF.value}/{{company}}/{{policy}}/{{timestamp}}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
-                path="documents/prompts/{company}/{policy}/{timestamp}.txt",
+                path=f"documents/{Stage.PROMPT.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
-def summary_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
+def create_summarizer_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
     """Use language model to summarize diff."""
     from src.summarizer import create_prompt, is_diff
     blob = input_blob.read().decode()
@@ -146,7 +144,7 @@ def generic_orchestrator(context: df.DurableOrchestrationContext):
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/prompts/{company}/{policy}/{timestamp}.txt",
+                path=f"documents/{Stage.PROMPT.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 @app.durable_client_input(client_name="client")
 async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
@@ -171,7 +169,7 @@ def summarizer_processor(input_data: dict) -> str:
         summary_result = summarize(prompt)
         
         in_path = parse_blob_path(blob_name)
-        out_path = f"summary_raw/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
+        out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
         upload_text_blob(summary_result, 'documents', out_path)
         
         logger.info(f"Successfully summarized blob: {blob_name}")
@@ -184,11 +182,11 @@ def summarizer_processor(input_data: dict) -> str:
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/summary_raw/{company}/{policy}/{timestamp}.txt",
+                path=f"documents/{Stage.SUMMARY_RAW.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
                 connection="AZURE_STORAGE_CONNECTION_STRING",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
-                path="documents/summary_parsed/{company}/{policy}/{timestamp}.json",
+                path=f"documents/{Stage.SUMMARY_CLEAN.value}/{{company}}/{{policy}}/{{timestamp}}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
     from src.summarizer import parse_response_json

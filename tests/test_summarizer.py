@@ -27,7 +27,6 @@ def test_is_diff(setup):
     assert is_diff(json.dumps(diff))
     
 def test_prompt(setup):
-    # blob = load_json_blob('documents','diff/google/built-in-protection/20240227211728.json')
     diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
     prompt = create_prompt(json.dumps(diff))

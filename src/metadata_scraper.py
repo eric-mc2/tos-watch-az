@@ -1,10 +1,11 @@
 import logging
 import json
 import requests
+import time
 from src.blob_utils import (check_blob, upload_json_blob)
 from src.log_utils import setup_logger
 from src.scraper_utils import sanitize_urlpath, load_urls
-import time
+from src.stages import Stage
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -29,7 +30,7 @@ def scrape_wayback_metadata(url, retries=2):
 
 def get_wayback_metadata(url, company, output_container_name):
     url_path = sanitize_urlpath(url)
-    blob_name = f"wayback-snapshots/{company}/{url_path}/metadata.json"
+    blob_name = f"{Stage.SNAP.value}/{company}/{url_path}/metadata.json"
     
     if check_blob('documents', blob_name):
         logger.debug(f"Using cached wayback metadata from {blob_name}")

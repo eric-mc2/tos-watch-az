@@ -1,7 +1,7 @@
 import logging
-import json
 import requests
 import pandas as pd
+import time
 from bs4 import BeautifulSoup
 import azure.functions as func
 from src.blob_utils import (check_blob, load_json_blob, upload_html_blob)
@@ -9,7 +9,7 @@ import chardet  # Add this import for encoding detection
 from urllib.error import HTTPError
 from src.log_utils import setup_logger
 from src.blob_utils import parse_blob_path
-import time
+from src.stages import Stage
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -128,7 +128,7 @@ def scrape_wayback_snapshot(snap_url, blob_name, retries=2):
 def get_wayback_snapshot(company, policy, timestamp, original_url):
     
     snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
-    blob_name = f"wayback-snapshots/{company}/{policy}/{timestamp}.html"
+    blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
     
     if check_blob('documents', blob_name):
         # Don't try-cach this because want to fail fast if blob service is out.

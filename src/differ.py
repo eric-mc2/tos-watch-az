@@ -5,6 +5,7 @@ import json
 from src.blob_utils import get_blob_service_client, parse_blob_path, load_json_blob, upload_json_blob
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
+from src.stages import Stage
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -16,7 +17,7 @@ def diff_batch() -> None:
             for pair in pairs:
                 output = _diff_files(pair[0], pair[1])
                 outpath = parse_blob_path(pair[0])
-                outname = f"diff/{outpath.company}/{outpath.policy}/{outpath.timestamp}.json"
+                outname = f"{Stage.DIFF.value}{outpath.company}/{outpath.policy}/{outpath.timestamp}.json"
                 upload_json_blob(output, 'documents', outname)
 
 
@@ -29,7 +30,7 @@ def diff_single(input_name: str):
     if idx >= 1:
         other = snaps[idx - 1]
         output = _diff_files(input_name, other)
-        outname = f"diff/{parts.company}/{parts.policy}/{parts.timestamp}.json"
+        outname = f"{Stage.DIFF.value}{parts.company}/{parts.policy}/{parts.timestamp}.json"
         upload_json_blob(output, 'documents', outname)
 
 
@@ -58,7 +59,7 @@ def _list_container():
     client = get_blob_service_client()
     container = client.get_container_client('documents')
     directory = {}
-    for name in container.list_blob_names(name_starts_with="annotated/"):
+    for name in container.list_blob_names(name_starts_with=f"{Stage.DOCCHUNK.value}/"):
         parts = parse_blob_path(name)
         policies = directory.setdefault(parts.company, {})
         snaps = policies.setdefault(parts.policy, [])

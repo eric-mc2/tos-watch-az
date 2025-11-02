@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from src.log_utils import setup_logger
 
-logger = setup_logger(__name__, logging.DEBUG)
+logger = setup_logger(__name__, logging.INFO)
 
 def rate_limiter_entity(context: df.DurableEntityContext, config: dict):
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
@@ -38,7 +38,6 @@ def rate_limiter_entity(context: df.DurableEntityContext, config: dict):
         context.set_result(False)
         return
     
-    logger.debug(f"Using config: {workflow_config}")
     rate_limit_rpm = workflow_config["rate_limit_rpm"]
     
     current_state = context.get_state(lambda: {
@@ -143,7 +142,6 @@ def is_retryable_error(error_msg: str) -> bool:
     return any(pattern.lower() in error_msg.lower() for pattern in retryable_patterns)
 
 
-# Shared Orchestrator Function
 def orchestrator_logic(context: df.DurableOrchestrationContext, config: dict):
     """Generic Orchestrator that enforces rate limiting using the durable entity."""
     input_data = context.get_input()
