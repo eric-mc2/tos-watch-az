@@ -50,6 +50,7 @@ def check_blob(output_container_name, blob_name) -> bool:
     return blob_client.exists()
     
 def load_blob(container, name) -> str:
+    logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
     if blob_client.exists():
@@ -63,7 +64,7 @@ def load_blob(container, name) -> str:
         else:
             raise ValueError(f"Blob {container}/{name} does not exist!")
 
-    logger.info(f"Loaded blob storage: {container}/{name}")
+    logger.debug(f"Loaded blob storage: {container}/{name} ")
     return data
 
 def load_json_blob(container, name) -> dict:
@@ -72,7 +73,7 @@ def load_json_blob(container, name) -> dict:
         json_data = json.loads(data.decode('utf-8'))
     except Exception as e:
         logger.error(f"Invalid json blob {name}: {e}")
-        raise e
+        raise
     return json_data
 
 def load_text_blob(container, name) -> dict:
@@ -81,10 +82,12 @@ def load_text_blob(container, name) -> dict:
         txt = data.decode('utf-8')
     except Exception as e:
         logger.error(f"Error decoding text blob {name}: {e}")
-        raise e
+        raise
     return txt
 
 def upload_blob(data, container, blob_name, content_type) -> None:
+    logger.debug(f"Uploading blob to {container}/{blob_name}")
+    ensure_container(container)
     blob_service_client = get_blob_service_client()
     # Upload to blob storage with explicit UTF-8 encoding
     blob_client = blob_service_client.get_blob_client(
@@ -101,14 +104,17 @@ def upload_blob(data, container, blob_name, content_type) -> None:
         )
     )
     
+def upload_text_blob(data, output_container_name, blob_name) -> None:
+    data_bytes = data.encode('utf-8')
+    content_type = 'text/plain; charset=utf-8'
+    upload_blob(data_bytes, output_container_name, blob_name, content_type)
+
 def upload_json_blob(data, output_container_name, blob_name) -> None:
-    ensure_container(output_container_name)
     data_bytes = data.encode('utf-8')
     content_type = 'application/json; charset=utf-8'
     upload_blob(data_bytes, output_container_name, blob_name, content_type)
 
 def upload_html_blob(cleaned_html, output_container_name, blob_name) -> None:
-    ensure_container(output_container_name)
     html_bytes = cleaned_html.encode('utf-8')
     content_type = 'text/html; charset=utf-8'
     upload_blob(html_bytes, output_container_name, blob_name, content_type)

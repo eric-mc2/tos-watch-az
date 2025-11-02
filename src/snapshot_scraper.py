@@ -122,7 +122,7 @@ def scrape_wayback_snapshot(snap_url, blob_name, retries=2):
             logger.warning(f"Retrying: {snap_url}")
             return scrape_wayback_snapshot(snap_url, blob_name, retries-1)
         else:
-            raise e
+            raise
 
 
 def get_wayback_snapshot(company, policy, timestamp, original_url):
@@ -144,7 +144,6 @@ def get_wayback_snapshot(company, policy, timestamp, original_url):
         logger.debug("Cleaning html.")
         cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
         
-        logger.debug("Uploading blob: {company}/{original_url}/{timestamp}")
         upload_html_blob(cleaned_html, 'documents', blob_name)
         logger.info(f"Saved snapshot to blob: documents/{blob_name}")
 
@@ -175,7 +174,7 @@ def get_wayback_snapshots(meta_blob_name):
             if retries:
                 retries -= 1
             else:
-                raise e
+                raise
             
 
     logger.info(f"URL {meta_blob_name} complete: {snapshots_saved} saved")

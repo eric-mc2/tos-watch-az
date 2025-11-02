@@ -17,6 +17,7 @@ def scrape_wayback_metadata(url, retries=2):
     try:
         response = requests.get(api_url, params=params, timeout=60)
         response.raise_for_status()
+        return response
     except Exception as e:
         logger.error(f"Failed to get metadata for {url}: {e}")
         if retries:
@@ -24,7 +25,7 @@ def scrape_wayback_metadata(url, retries=2):
             logger.warning(f"Retrying: {url}")
             return scrape_wayback_metadata(url, retries - 1)
         else:
-            raise e
+            raise
 
 def get_wayback_metadata(url, company, output_container_name):
     url_path = sanitize_urlpath(url)
@@ -38,7 +39,7 @@ def get_wayback_metadata(url, company, output_container_name):
             data = resp.json()
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response for {url}: {e}")
-            raise e
+            raise
         upload_json_blob(json.dumps(data), output_container_name, blob_name)
 
 
@@ -65,7 +66,7 @@ def get_wayback_metadatas(input_container_name="documents", input_blob_name="sta
                 if retries:
                     retries -= 1
                 else:
-                    raise e
+                    raise
         
         logger.info(f"Completed {company}")
     

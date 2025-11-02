@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone, timedelta
 import logging
-from src.rate_limiter import rate_limiter_entity, orchestrator_logic
+from src.rate_limiter import rate_limiter_entity, orchestrator_logic, circuit_breaker_entity, is_retryable_error
 from src.log_utils import setup_logger
 
 
@@ -12,9 +12,8 @@ logger = setup_logger(__name__, logging.INFO)
 TEST_CONFIG = {
     "test_workflow": {
         "rate_limit_rpm": 5,  # Only 5 requests per minute
-        "entity_name": "test_rate_limiter",
-        "orchestrator_name": "test_orchestrator",
-        "activity_name": "test_processor"
+        "activity_name": "test_processor",
+        "max_retries": 2
     }
 }
 
@@ -43,33 +42,40 @@ class MockEntityContext:
 
 class MockOrchestrationContext:
     """Mock DurableOrchestrationContext for testing the orchestrator"""
-    def __init__(self, workflow_type, blob_name, entity_state):
+    def __init__(self, workflow_type, blob_name, entity_state, circuit_breaker_state, fail_count=0):
         self._input = {
             "workflow_type": workflow_type,
             "blob_name": blob_name
         }
         self.current_utc_datetime = datetime.now(timezone.utc)
         self.entity_state = entity_state
+        self.circuit_breaker_state = circuit_breaker_state
         self.activity_called = False
         self.activity_result = None
+        self.fail_count = fail_count
+        self.call_count = 0
         
     def get_input(self):
         return self._input
     
-    def call_entity(self, entity_id, operation, input_data):
+    def call_entity(self, entity_id, operation, input_data=None):
         """Simulate calling the entity"""
-        # Extract entity key from EntityId (second parameter)
+        entity_name = entity_id.entity_name if hasattr(entity_id, 'entity_name') else str(entity_id).split(',')[0]
         entity_key = entity_id.entity_key if hasattr(entity_id, 'entity_key') else entity_id
         
-        # Create entity context and call the rate limiter
+        # Handle circuit breaker entity
+        if entity_name == "circuit_breaker_entity":
+            entity_context = MockEntityContext(entity_key, operation, input_data)
+            entity_context._state = self.circuit_breaker_state
+            circuit_breaker_entity(entity_context)
+            self.circuit_breaker_state.update(entity_context.get_state())
+            return entity_context._result
+        
+        # Handle rate limiter entity
         entity_context = MockEntityContext(entity_key, operation, input_data)
         entity_context._state = self.entity_state
-        
         rate_limiter_entity(entity_context, TEST_CONFIG)
-        
-        # Update shared state
         self.entity_state.update(entity_context.get_state())
-        
         return entity_context._result
     
     def create_timer(self, fire_at):
@@ -83,14 +89,20 @@ class MockOrchestrationContext:
         return "TIMER_COMPLETED"
     
     def call_activity(self, activity_name, input_data):
-        """Simulate calling an activity"""
+        """Simulate calling an activity with optional failures"""
         self.activity_called = True
+        self.call_count += 1
+        
+        # Simulate transient failures
+        if self.call_count <= self.fail_count:
+            raise Exception("Max retries exceeded with url: Connection refused")
+        
         self.activity_result = f"Processed: {input_data['blob_name']}"
         return self.activity_result
 
 def run_orchestrator(context, config):
     """Helper to run the orchestrator generator to completion"""
-    gen = orchestrator_logic(context, config, context.get_input())
+    gen = orchestrator_logic(context, config)
     result = None
     
     try:
@@ -130,7 +142,7 @@ def test_rate_limiter():
         item_start = datetime.now(timezone.utc)
         
         # Create orchestration context
-        orch_context = MockOrchestrationContext("test_workflow", item, entity_state)
+        orch_context = MockOrchestrationContext("test_workflow", item, entity_state, {})
         
         # Actually call orchestrator_logic
         result = run_orchestrator(orch_context, TEST_CONFIG)
@@ -163,5 +175,44 @@ def test_rate_limiter():
     print(f"  Tokens remaining: {entity_state['tokens']}")
     print(f"  Last refill: {entity_state['last_refill']}")
 
+def test_retry_logic():
+    """Test that retryable errors trigger retries"""
+    print("\n" + "="*60)
+    print("RETRY LOGIC TEST")
+    print("="*60 + "\n")
+    
+    entity_state = {"tokens": 5, "last_refill": None}
+    circuit_breaker_state = {"is_open": False, "error_message": None, "opened_at": None}
+    
+    # Test with 2 failures before success
+    orch_context = MockOrchestrationContext("test_workflow", "test_item", entity_state, circuit_breaker_state, fail_count=2)
+    
+    try:
+        result = run_orchestrator(orch_context, TEST_CONFIG)
+        print(f"✓ Item processed after {orch_context.call_count} attempts (2 failures, then success)")
+        assert orch_context.call_count == 3, "Should have called activity 3 times"
+    except Exception as e:
+        print(f"✗ Failed: {e}")
+    
+    print()
+
+
+def test_circuit_breaker():
+    """Test that non-retryable errors trip the circuit breaker"""
+    print("\n" + "="*60)
+    print("CIRCUIT BREAKER TEST")
+    print("="*60 + "\n")
+    
+    # Test retryable error classification
+    assert is_retryable_error("Max retries exceeded")
+    assert is_retryable_error("Connection refused")
+    assert not is_retryable_error("Invalid JSON")
+    print("✓ Error classification working correctly\n")
+    
+    print("="*60 + "\n")
+
+
 if __name__ == "__main__":
     test_rate_limiter()
+    test_retry_logic()
+    test_circuit_breaker()

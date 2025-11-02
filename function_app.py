@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 from src.log_utils import setup_logger
-from src.blob_utils import parse_blob_path, upload_blob, load_text_blob, load_json_blob
-from src.rate_limiter import rate_limiter_entity, orchestrator_logic
+from src.blob_utils import parse_blob_path, upload_blob, load_text_blob, load_json_blob, upload_text_blob
+from src.rate_limiter import rate_limiter_entity, orchestrator_logic, circuit_breaker_entity
 
 logger = setup_logger(__name__, logging.DEBUG)
 logging.getLogger('azure').setLevel(logging.WARNING)
@@ -17,15 +17,13 @@ app = func.FunctionApp()
 WORKFLOW_CONFIGS = {
     "summarizer": {
         "rate_limit_rpm": 50,
-        "entity_name": "summarizer_rate_limiter",
-        "orchestrator_name": "summarizer_orchestrator",
-        "activity_name": "summarizer_processor"
+        "activity_name": "summarizer_processor",
+        "max_retries": 3
     },
     "scraper": {
-        "rate_limit_rpm": 10,
-        "entity_name": "scraper_rate_limiter",
-        "orchestrator_name": "scraper_orchestrator",
-        "activity_name": "scraper_processor"
+        "rate_limit_rpm": 5,  # Reduced from 10 to be more conservative
+        "activity_name": "scraper_processor",
+        "max_retries": 3
     }
 }
 
@@ -40,7 +38,7 @@ def hello_world(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
 def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
     """Post seed URLs to blob storage for scraping"""
-    from src.seeder import main as seed_main
+    from src.seeder import seed_urls as seed_main
     return _http_wrap(seed_main, "seed URLs")
 
 
@@ -51,30 +49,18 @@ def scrape_snap_meta(req: func.HttpRequest) -> func.HttpResponse:
     return _http_wrap(get_wayback_metadatas, "wayback snapshots")
 
 
-# Each workflow gets its own orchestrator with specific input handling
-@app.orchestration_trigger(context_name="context")
-def scraper_orchestrator(context: df.DurableOrchestrationContext):
-    """Orchestrator specifically for scraper workflow.."""
-    input_data = context.get_input()
-    blob_name = input_data['blob_name']
-    logger.debug(f"Executing scraper orchestrator for blob: {blob_name}")
-    return orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
-
-
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/wayback-snapshots/{company}/{policy}/metadata.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 @app.durable_client_input(client_name="client")
 async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
     """Blob trigger that starts the scraper workflow orchestration."""
-    logger.debug(f"Starting scraper orchestration for blob: {input_blob.name}")
     blob_name = input_blob.name.removeprefix("documents/")
     orchestration_input = {
         "blob_name": blob_name, 
         "workflow_type": "scraper"
     }
-    instance_id = await client.start_new("scraper_orchestrator", None, orchestration_input)
-    logger.debug(f"Started scraper orchestration for blob: {blob_name}")
+    await client.start_new("generic_orchestrator", None, orchestration_input)
     
 
 @app.activity_trigger(input_name="input_data")
@@ -88,8 +74,8 @@ def scraper_processor(input_data: dict) -> str:
         return "success"
         
     except Exception as e:
-        logger.error(f"Error scraping {input_data['blob_name']}: {str(e)}")
-        raise e
+        logger.error(f"Error scraping {input_data['blob_name']}: {e}")
+        raise
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -154,14 +140,9 @@ def summary_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> 
         output_blob.set(prompt)
 
 
-# Each workflow gets its own orchestrator with specific input handling
 @app.orchestration_trigger(context_name="context")
-def summarizer_orchestrator(context: df.DurableOrchestrationContext):
-    """Orchestrator specifically for summarizer workflow."""
-    input_data = context.get_input()
-    blob_name = input_data['blob_name']
-    logger.debug(f"Executing summarizer orchestrator for blob: {blob_name}")
-    return orchestrator_logic(context, WORKFLOW_CONFIGS, input_data)
+def generic_orchestrator(context: df.DurableOrchestrationContext):
+    return orchestrator_logic(context, WORKFLOW_CONFIGS)
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -175,8 +156,7 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
         "blob_name": blob_name,
         "workflow_type": "summarizer"
     }
-    instance_id = await client.start_new("summarizer_orchestrator", None, orchestration_input)
-    logger.info(f"Started summarizer orchestration with ID: '{instance_id}' for blob: {blob_name}")
+    await client.start_new("generic_orchestrator", None, orchestration_input)
     
 
 @app.activity_trigger(input_name="input_data")
@@ -184,22 +164,22 @@ def summarizer_processor(input_data: dict) -> str:
     from src.summarizer import summarize
         
     try:
-        logger.debug("Loading prompt for summary from: %s", input_data['blob_name'])
-        prompt = load_text_blob('documents', input_data['blob_name'])
+        blob_name = input_data['blob_name']
+        prompt = load_text_blob('documents', blob_name)
         
-        logger.debug("Calling summarizer")
+        logger.debug(f"Summarizing {blob_name}")
         summary_result = summarize(prompt)
         
-        in_path = parse_blob_path(input_data['blob_name'])
+        in_path = parse_blob_path(blob_name)
         out_path = f"summary_raw/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
-        logger.debug(f"Uploading output blob {out_path}")
-        upload_blob(summary_result, 'documents', out_path, "text/plain")
+        upload_text_blob(summary_result, 'documents', out_path)
         
-        logger.info(f"Successfully summarized blob: {input_data['blob_name']}")
+        logger.info(f"Successfully summarized blob: {blob_name}")
         return summary_result
         
     except Exception as e:
-        logger.error(f"Error summarizing blob {input_data['blob_name']}: {str(e)}")
+        blob_name = input_data.get('blob_name', 'unknown')
+        logger.error(f"Error summarizing blob {blob_name}: {e}")
         raise
 
 
@@ -220,8 +200,39 @@ def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]) -> N
 @app.entity_trigger(context_name="context")
 def generic_rate_limiter_entity(context: df.DurableEntityContext):
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
-    logger.debug(f"Triggering rate limiter with input: {context.entity_key}")
     rate_limiter_entity(context, WORKFLOW_CONFIGS)
+
+
+@app.entity_trigger(context_name="context")
+def circuit_breaker_entity_func(context: df.DurableEntityContext):
+    """Circuit breaker entity to halt processing on systemic failures."""
+    circuit_breaker_entity(context)
+
+
+@app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
+@app.durable_client_input(client_name="client")
+async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    """Manually reset a circuit breaker for a workflow type."""
+    workflow_type = req.params.get('workflow_type', 'scraper')
+    
+    entity_id = df.EntityId("circuit_breaker_entity_func", workflow_type)
+    
+    # Check if entity exists first
+    entity_state = await client.read_entity_state(entity_id)
+    
+    if not entity_state.entity_exists:
+        # Entity doesn't exist yet, just return success since there's nothing to reset
+        logger.info(f"Circuit breaker for {workflow_type} doesn't exist yet (never initialized)")
+        return func.HttpResponse(
+            f"Circuit breaker for {workflow_type} doesn't exist yet (no orchestrations have run)", 
+            status_code=200
+        )
+    
+    # Entity exists, signal it to reset
+    await client.signal_entity(entity_id, "reset")
+    
+    logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
+    return func.HttpResponse(f"Circuit breaker reset for {workflow_type}", status_code=200)
 
 
 def _http_wrap(task, taskname, *args, **kwargs) -> func.HttpResponse:
@@ -231,4 +242,4 @@ def _http_wrap(task, taskname, *args, **kwargs) -> func.HttpResponse:
         return func.HttpResponse(f"Successfully processed {taskname}", status_code=200)
     except Exception as e:
         logger.error(f"Error processing {taskname}: {e}")
-        return func.HttpResponse(f"Error processing {taskname}: {str(e)}", status_code=500)
+        return func.HttpResponse(f"Error processing {taskname}: {e}", status_code=500)

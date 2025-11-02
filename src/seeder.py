@@ -17,13 +17,15 @@ def validate_urls(urls: dict):
                 raise ValueError(f"Invalid url -> filename: {url} -> {fp}")
 
 
-def process_urls(urls: dict): 
+def process_urls(urls: dict):
+    # Note: this is separate to make the validate/upload logic testable
+    #       and separate from the hard-coded data which is hard to inject.
     validate_urls(urls)
     text_content = json.dumps(urls, indent=2)
     upload_json_blob(text_content, 'documents', 'static_urls.json')
 
 
-def main() -> None:
+def seed_urls() -> None:
     with open('data/static_urls.json') as f:
         urls = f.read()
     urls = json.loads(urls)
