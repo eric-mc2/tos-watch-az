@@ -55,26 +55,27 @@ def load_blob(container, name) -> str:
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
     if blob_client.exists():
         data = blob_client.download_blob().readall()
+        return data
     elif name.startswith(container):
         logger.warning(f"Blob {container}/{name} does not exist! Retrying with stripped container name.")
         name = name.removeprefix(f"{container}/")
         blob_client = blob_service_client.get_blob_client(container=container, blob=name)
         if blob_client.exists():
             data = blob_client.download_blob().readall()
+            return data
         else:
             raise ValueError(f"Blob {container}/{name} does not exist!")
-
-    logger.debug(f"Loaded blob storage: {container}/{name} ")
-    return data
+    else:
+        raise ValueError(f"Blob {container}/{name} does not exist!")
 
 def load_json_blob(container, name) -> dict:
     data = load_blob(container, name)
     try:
         json_data = json.loads(data.decode('utf-8'))
+        return json_data
     except Exception as e:
         logger.error(f"Invalid json blob {name}: {e}")
         raise
-    return json_data
 
 def load_text_blob(container, name) -> dict:
     data = load_blob(container, name)
