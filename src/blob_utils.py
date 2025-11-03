@@ -8,10 +8,11 @@ from collections import namedtuple
 from pathlib import Path
 from functools import lru_cache
 
+DEFAULT_CONTAINER = "documents"
 logger = setup_logger(__name__, logging.INFO)
 _client = None
 
-def parse_blob_path(path: str, container: str = "documents"):
+def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     path = path.removeprefix(f"{container}/")
     blob_path = Path(path)
     Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
@@ -43,13 +44,13 @@ def ensure_container(output_container_name) -> None:
         container_client.create_container()
         logger.info(f"Created output container: {output_container_name}")
 
-def check_blob(output_container_name, blob_name) -> bool:
+def check_blob(blob_name, container=DEFAULT_CONTAINER) -> bool:
     client = get_blob_service_client()
-    container_client = client.get_container_client(output_container_name)
+    container_client = client.get_container_client(container)
     blob_client = container_client.get_blob_client(blob_name)
     return blob_client.exists()
     
-def load_blob(container, name) -> str:
+def load_blob(name, container=DEFAULT_CONTAINER) -> str:
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
@@ -68,8 +69,8 @@ def load_blob(container, name) -> str:
     else:
         raise ValueError(f"Blob {container}/{name} does not exist!")
 
-def load_json_blob(container, name) -> dict:
-    data = load_blob(container, name)
+def load_json_blob(name, container=DEFAULT_CONTAINER) -> dict:
+    data = load_blob(name, container)
     try:
         json_data = json.loads(data.decode('utf-8'))
         return json_data
@@ -77,8 +78,8 @@ def load_json_blob(container, name) -> dict:
         logger.error(f"Invalid json blob {name}: {e}")
         raise
 
-def load_text_blob(container, name) -> dict:
-    data = load_blob(container, name)
+def load_text_blob(name, container=DEFAULT_CONTAINER) -> dict:
+    data = load_blob(name, container)
     try:
         txt = data.decode('utf-8')
     except Exception as e:
@@ -86,7 +87,7 @@ def load_text_blob(container, name) -> dict:
         raise
     return txt
 
-def upload_blob(data, container, blob_name, content_type) -> None:
+def upload_blob(data, blob_name, content_type, container=DEFAULT_CONTAINER) -> None:
     logger.debug(f"Uploading blob to {container}/{blob_name}")
     ensure_container(container)
     blob_service_client = get_blob_service_client()
@@ -105,17 +106,17 @@ def upload_blob(data, container, blob_name, content_type) -> None:
         )
     )
     
-def upload_text_blob(data, output_container_name, blob_name) -> None:
+def upload_text_blob(data, blob_name, container=DEFAULT_CONTAINER) -> None:
     data_bytes = data.encode('utf-8')
     content_type = 'text/plain; charset=utf-8'
-    upload_blob(data_bytes, output_container_name, blob_name, content_type)
+    upload_blob(data_bytes, blob_name, content_type, container)
 
-def upload_json_blob(data, output_container_name, blob_name) -> None:
+def upload_json_blob(data, blob_name, container=DEFAULT_CONTAINER) -> None:
     data_bytes = data.encode('utf-8')
     content_type = 'application/json; charset=utf-8'
-    upload_blob(data_bytes, output_container_name, blob_name, content_type)
+    upload_blob(data_bytes, blob_name, content_type, container)
 
-def upload_html_blob(cleaned_html, output_container_name, blob_name) -> None:
+def upload_html_blob(cleaned_html, blob_name, container=DEFAULT_CONTAINER) -> None:
     html_bytes = cleaned_html.encode('utf-8')
     content_type = 'text/html; charset=utf-8'
-    upload_blob(html_bytes, output_container_name, blob_name, content_type)
+    upload_blob(html_bytes, blob_name, content_type, container)

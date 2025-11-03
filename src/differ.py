@@ -2,7 +2,9 @@ import logging
 import difflib
 from itertools import pairwise
 import json
-from src.blob_utils import get_blob_service_client, parse_blob_path, load_json_blob, upload_json_blob, check_blob
+from src.blob_utils import (get_blob_service_client, parse_blob_path, 
+                            load_json_blob, upload_json_blob, 
+                            check_blob, DEFAULT_CONTAINER)
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
 from src.stages import Stage
@@ -23,15 +25,15 @@ def diff_batch() -> None:
                 logger.debug(f"Difffing {company}/{policy} : {before} <-> {after}")
                 manifest[after] = before
                 output = _diff_files(company, policy, before, after)
-                upload_json_blob(output, 'documents', outname)
+                upload_json_blob(output, outname)
                 _store_manifest(manifest, company, policy)
 
 
 def _get_manifest(company, policy):
     """Retrieve list of computed diffs (and reference points)."""
     manifest_name = f"{Stage.DIFF.value}/{company}/{policy}/manifest.json"
-    if check_blob('documents', manifest_name):
-        return load_json_blob('documents', manifest_name)
+    if check_blob(manifest_name):
+        return load_json_blob(manifest_name)
     else:
         return {}
 
@@ -39,15 +41,15 @@ def _get_manifest(company, policy):
 def _store_manifest(data, company, policy):
     """Upload list of computed diffs (and reference points)."""
     manifest_name = f"{Stage.DIFF.value}/{company}/{policy}/manifest.json"
-    return upload_json_blob(data, 'documents', manifest_name)
+    return upload_json_blob(data, manifest_name)
 
 
 def _diff_files(company, policy, before, after) -> str:
     """Compute difference between two DocChunk files (parsed html lines)."""
     filenamea = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{before}.json"
     filenameb = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{after}.json"
-    doca = load_json_blob('documents', filenamea)
-    docb = load_json_blob('documents', filenameb)
+    doca = load_json_blob(filenamea)
+    docb = load_json_blob(filenameb)
     txta = [DocChunk.from_str(x).text for x in doca]
     txtb = [DocChunk.from_str(x).text for x in docb]
     diff = _diff_sequence(txta, txtb)
@@ -70,7 +72,7 @@ def _diff_sequence(a, b):
 def _list_container() -> dict:
     """Represent container as dictionary."""
     client = get_blob_service_client()
-    container = client.get_container_client('documents')
+    container = client.get_container_client(DEFAULT_CONTAINER)
     directory = {}
     for name in container.list_blob_names(name_starts_with=f"{Stage.DOCCHUNK.value}/"):
         parts = parse_blob_path(name)

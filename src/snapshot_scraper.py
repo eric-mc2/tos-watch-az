@@ -70,7 +70,7 @@ def extract_main_text(html_content, encoding='utf-8'):
 
 def parse_wayback_metadata(blob_name):
     logger.debug("Loading snap metadata from: %s", blob_name)
-    data = load_json_blob('documents', blob_name)
+    data = load_json_blob(blob_name)
         
     if len(data) <= 1:
         logger.info(f"Found 0 snapshots for {blob_name}")
@@ -130,9 +130,9 @@ def get_wayback_snapshot(company, policy, timestamp, original_url):
     snap_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
     blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
     
-    if check_blob('documents', blob_name):
+    if check_blob(blob_name):
         # Don't try-cach this because want to fail fast if blob service is out.
-        logger.info(f"Blob 'documents'/{blob_name} exists. Skipping.")
+        logger.info(f"Blob {blob_name} exists. Skipping.")
     else:
         logger.debug(f"Requesting wayback html for {original_url}/{timestamp}")
         resp = scrape_wayback_snapshot(snap_url, blob_name)
@@ -144,8 +144,8 @@ def get_wayback_snapshot(company, policy, timestamp, original_url):
         logger.debug("Cleaning html.")
         cleaned_html = extract_main_text(html_content, encoding=detected_encoding or None)
         
-        upload_html_blob(cleaned_html, 'documents', blob_name)
-        logger.info(f"Saved snapshot to blob: documents/{blob_name}")
+        upload_html_blob(cleaned_html, blob_name)
+        logger.info(f"Saved snapshot to blob: {blob_name}")
 
 
 def get_wayback_snapshots(meta_blob_name):

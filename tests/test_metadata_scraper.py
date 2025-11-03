@@ -111,7 +111,7 @@ class TestGetWaybackMetadata:
         """Test that scraper is not called when blob already exists"""
         mock_blob_exists.return_value = True
         
-        get_wayback_metadata("https://example.com", "company1", "documents")
+        get_wayback_metadata("https://example.com", "company1")
         
         mock_blob_exists.assert_called_once()
         mock_scraper.assert_not_called()
@@ -124,7 +124,7 @@ class TestGetWaybackMetadata:
         mock_blob_exists.return_value = False
         mock_scraper.return_value = [["urlkey", "timestamp"]]
         
-        get_wayback_metadata("https://example.com", "company1", "documents")
+        get_wayback_metadata("https://example.com", "company1")
         
         mock_blob_exists.assert_called_once()
         mock_scraper.assert_called_once_with("https://example.com")

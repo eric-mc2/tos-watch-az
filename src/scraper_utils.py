@@ -42,10 +42,10 @@ def sanitize_path_component(path_component):
     return sanitized if sanitized else 'default'
 
 
-def load_urls(input_container_name, input_blob_name):
+def load_urls(input_blob_name):
      # Download the URLs file from blob storage
      # Validate URL
-    urls = load_json_blob(input_container_name, input_blob_name)
+    urls = load_json_blob(input_blob_name)
     for company, url_list in urls.items():
         for url in url_list:
             if not validate_url(url):

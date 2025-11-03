@@ -28,11 +28,11 @@ def scrape_wayback_metadata(url, retries=2):
         else:
             raise
 
-def get_wayback_metadata(url, company, output_container_name):
+def get_wayback_metadata(url, company):
     url_path = sanitize_urlpath(url)
     blob_name = f"{Stage.SNAP.value}/{company}/{url_path}/metadata.json"
     
-    if check_blob('documents', blob_name):
+    if check_blob(blob_name):
         logger.debug(f"Using cached wayback metadata from {blob_name}")
     else:
         resp = scrape_wayback_metadata(url)    
@@ -41,14 +41,14 @@ def get_wayback_metadata(url, company, output_container_name):
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response for {url}: {e}")
             raise
-        upload_json_blob(json.dumps(data), output_container_name, blob_name)
+        upload_json_blob(json.dumps(data), blob_name)
 
 
-def get_wayback_metadatas(input_container_name="documents", input_blob_name="static_urls.json", output_container_name="documents"):
+def get_wayback_metadatas(input_blob_name="static_urls.json"):
     """
     Load URLs from blob storage and process each one
     """
-    urls = load_urls(input_container_name, input_blob_name)
+    urls = load_urls(input_blob_name)
     logger.info(f"Found {len(urls)} companies with URLs to process")
     
     # Process each URL grouping
@@ -60,7 +60,7 @@ def get_wayback_metadatas(input_container_name="documents", input_blob_name="sta
         
         for url in url_list:
             try:
-                get_wayback_metadata(url, company, output_container_name)
+                get_wayback_metadata(url, company)
                 total_processed += 1
             except Exception as e:
                 logger.error(f"Failed to process URL {url} for {company}: {e}")

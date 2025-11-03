@@ -4,7 +4,7 @@ import json
 import logging
 from src.stages import Stage
 from src.log_utils import setup_logger
-from src.blob_utils import parse_blob_path, upload_blob, load_text_blob, load_json_blob, upload_text_blob
+from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob
 from src.rate_limiter import rate_limiter_entity, orchestrator_logic, circuit_breaker_entity
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -165,14 +165,14 @@ def summarizer_processor(input_data: dict) -> str:
         
     try:
         blob_name = input_data['blob_name']
-        prompt = load_text_blob('documents', blob_name)
+        prompt = load_text_blob(blob_name)
         
         logger.debug(f"Summarizing {blob_name}")
         summary_result = summarize(prompt)
         
         in_path = parse_blob_path(blob_name)
         out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
-        upload_text_blob(summary_result, 'documents', out_path)
+        upload_text_blob(summary_result, out_path)
         
         logger.info(f"Successfully summarized blob: {blob_name}")
         return summary_result

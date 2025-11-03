@@ -22,7 +22,7 @@ def process_urls(urls: dict):
     #       and separate from the hard-coded data which is hard to inject.
     validate_urls(urls)
     text_content = json.dumps(urls, indent=2)
-    upload_json_blob(text_content, 'documents', 'static_urls.json')
+    upload_json_blob(text_content, 'static_urls.json')
 
 
 def seed_urls() -> None:
