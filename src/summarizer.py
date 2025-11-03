@@ -1,8 +1,9 @@
 import anthropic
 import json
 import logging
-from src.log_utils import setup_logger
 import os
+from bleach import clean as bleach_clean
+from src.log_utils import setup_logger
 from src.chat_parser import extract_json_from_response
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -122,8 +123,16 @@ def parse_response_json(resp: str) -> dict:
     result = extract_json_from_response(resp)
     if not result['success']:
         raise ValueError(f"Failed to parse json from chat. Error: {result['error']}. Original: {resp}")
-    return result['data']
+    cleaned = sanitize_response(result['data'])
+    return cleaned
     
+def sanitize_response(data: dict|list|str) -> dict|list|str:
+    if isinstance(data, dict):
+        return {k: sanitize_response(v) for k,v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_response(v) for v in data]
+    elif isinstance(data, str):
+        return bleach_clean(str)
 
 def _structure_diff(diff_str: str) -> str:
     diff_obj = json.loads(diff_str)

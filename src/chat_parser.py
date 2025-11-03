@@ -2,7 +2,7 @@ import re
 import json
 from typing import Optional, Any
 
-def extract_json_from_response(response: str) -> Optional[Any]:
+def extract_json_from_response(response: str) -> dict:
     """
     Extract JSON with additional context about the extraction process.
     

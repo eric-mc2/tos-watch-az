@@ -5,7 +5,8 @@ from enum import Enum
 from bs4 import BeautifulSoup
 import json
 from typing import Optional
-from gensim.parsing.preprocessing import strip_multiple_whitespaces
+import re
+from bleach import clean as bleach_clean
 
 class SemLevel(Enum):
     CHILD = -1
@@ -32,6 +33,8 @@ SemTag = defaultdict(lambda: SemLevel.CHILD,
     h5 = SemLevel.FIXED_5,
     h6 = SemLevel.FIXED_6,
 )
+
+RE_WHITESPACE = re.compile(r"(\s)+", re.UNICODE)
 
 class DocTree:
     """Represents HTML text chunks as a tree. Allows reading in 'flat' mode 
@@ -170,7 +173,6 @@ class DocTree:
         return None
 
 def parse_html(content: str) -> str:
-    # TODO: Try/catch mal-formed HTML!
     html = BeautifulSoup(content, "html.parser")
     root = DocTree("", "root")
     root = _parse_doctree(html, root)
@@ -189,7 +191,8 @@ def _parse_doctree(html: PageElement, root: DocTree) -> DocTree:
         elif tag in ['text','script','footer']:
             continue
         elif elem.text and not elem.text.isspace():
-            text = strip_multiple_whitespaces(elem.text).strip()
+            text = bleach_clean(elem.text)
+            text = RE_WHITESPACE.sub(" ", text).strip()
             leaf = DocTree(text, tag)
             root.insert(leaf)
     return root
