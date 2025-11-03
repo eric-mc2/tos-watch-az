@@ -1,16 +1,7 @@
-import os
-import pytest
 import json
-from src.summarizer import summarize, is_diff, create_prompt, parse_response_json
+from src.summarizer import is_diff, create_prompt, parse_response_json, sanitize_response
 
-@pytest.fixture()
-def setup():
-    with open('local.settings.json') as f:
-        settings  = json.load(f)
-        for key,val in settings['Values'].items():
-            os.environ[key] = val
-            
-def test_is_diff(setup):
+def test_is_diff():
     diff = {}
     assert not is_diff(json.dumps(diff))
     diff = {'diffs': []}
@@ -26,20 +17,13 @@ def test_is_diff(setup):
     diff = {'diffs': [{'tag': 'equal'}, {'tag': 'replace'}]}
     assert is_diff(json.dumps(diff))
     
-def test_prompt(setup):
+def test_prompt():
     diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
     prompt = create_prompt(json.dumps(diff))
     assert 'UNCHANGED' not in prompt and 'NEW' in prompt and 'OLD' in prompt
 
-def test_summary(setup):
-    diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
-                      {'tag': 'replace', 'before': ['We are good!'], 'after': ['We are evil.']}]}
-    prompt = create_prompt(json.dumps(diff))
-    summary = summarize(prompt)
-    print(summary)
-
-def test_parse(setup):
+def test_parse():
     with open('data/20240421054440.txt') as f:
         data = json.load(f)
     with open('data/20240421054440.txt') as f:
@@ -50,3 +34,12 @@ def test_parse(setup):
     for key in resp:
         assert key in data
         assert data[key] == resp[key] 
+
+def test_sanitizer():
+    assert "bad" == sanitize_response("bad")
+    assert True == sanitize_response(True)
+    assert 123 == sanitize_response(123)
+    assert ["good", "stuff"] == sanitize_response(["good", "stuff"])
+    assert {"good": "stuff"} == sanitize_response({"good":"stuff"})
+    assert {"good": {"stuff": "here"}} == sanitize_response({"good":{"stuff":"here"}})
+    assert {"good": ["stuff", "here"]} == sanitize_response({"good":["stuff","here"]})

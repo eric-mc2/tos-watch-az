@@ -2,19 +2,19 @@ import logging
 from src.blob_utils import load_json_blob
 from src.log_utils import setup_logger
 from pathlib import Path
+from validators import url as is_valid
+from validators import ValidationError
 
 logger = setup_logger(__name__, logging.INFO)
 
 
 def validate_url(url):
     """Validate URL format"""
-    from urllib.parse import urlparse
     try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except Exception:
+        return is_valid(url)
+    except ValidationError as e:
         return False
-
+    
 
 def sanitize_urlpath(url):
     # Parse URL for file structure
@@ -34,6 +34,8 @@ def sanitize_path_component(path_component):
     sanitized = re.sub(r'[<>:"/\\|?*]', '_', path_component)
     # Remove any leading/trailing whitespace and dots
     sanitized = sanitized.strip(' .')
+    # Remove www
+    sanitized = sanitized.removeprefix("www.")
     # Remove file extension
     # Note we don't want to move domain names.
     for ext in [".html"]:

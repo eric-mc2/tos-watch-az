@@ -12,3 +12,4 @@ chardet
 anthropic
 pytest
 bleach
+validators

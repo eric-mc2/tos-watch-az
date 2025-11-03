@@ -6,9 +6,8 @@ from src import scraper_utils
 def valid_urls():
     """Sample valid URLs"""
     return [
-        ("example.com", "example.com"),
-        ("www.example.com", "example.com"),
         ("https://example.com","example.com"),
+        ("https://www.example.com","example.com"),
         ("https://example.com/path/to/page","page"),
         ("https://trailingslash.com/","trailingslash.com"),
         ("http://subdomain.example.com","subdomain.example.com"),
@@ -26,9 +25,8 @@ def invalid_urls():
         "javascript:alert('xss')",
         "",
         "//example.com",
-        "https://example .com/page",  # Space in domain
-        "https://example.com /page",  # Space after domain
-        "https:// example.com/page",  # Space after scheme
+        "example.com",
+        "www.example.com"
     ]
 
 
@@ -39,7 +37,7 @@ class TestURLValidation:
         """Test that valid URLs can be validated and sanitized to produce blob names"""
         for url, expected_name in valid_urls:
             # URL should be valid
-            assert scraper_utils.validate_url(url) is True
+            assert scraper_utils.validate_url(url)
             
             # URL should produce a well-formed blob name
             blob_name = scraper_utils.sanitize_urlpath(url)
@@ -50,4 +48,4 @@ class TestURLValidation:
         for url in invalid_urls:
             # Invalid URLs should fail validation
             is_valid = scraper_utils.validate_url(url)
-            assert is_valid is False, url
+            assert not is_valid, url

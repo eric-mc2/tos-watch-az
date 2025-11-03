@@ -2,12 +2,14 @@ import anthropic
 import json
 import logging
 import os
-from bleach import clean as bleach_clean
+from typing import Any
+from bleach.sanitizer import Cleaner
 from src.log_utils import setup_logger
 from src.chat_parser import extract_json_from_response
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client = None
+cleaner = Cleaner()
 
 def get_client():
     # Note: we don't need to close the client. In practice it's better to keep one single 
@@ -126,13 +128,15 @@ def parse_response_json(resp: str) -> dict:
     cleaned = sanitize_response(result['data'])
     return cleaned
     
-def sanitize_response(data: dict|list|str) -> dict|list|str:
+def sanitize_response(data: dict|list|str|Any) -> dict|list|str|Any:
     if isinstance(data, dict):
         return {k: sanitize_response(v) for k,v in data.items()}
     elif isinstance(data, list):
         return [sanitize_response(v) for v in data]
     elif isinstance(data, str):
-        return bleach_clean(str)
+        return cleaner.clean(data)
+    else:
+        return data
 
 def _structure_diff(diff_str: str) -> str:
     diff_obj = json.loads(diff_str)
