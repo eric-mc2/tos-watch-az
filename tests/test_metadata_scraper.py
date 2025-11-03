@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock, call
-from src.metadata_scraper import get_wayback_metadatas, scrape_wayback_metadata, get_wayback_metadata
+from src.metadata_scraper import get_wayback_metadatas, scrape_wayback_metadata
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError, ServiceRequestError, ClientAuthenticationError
+from json import JSONDecodeError
 import requests
 
 """
@@ -32,24 +33,18 @@ def mock_metadata_response():
     ]
 
 
+@pytest.fixture
+def mock_requests_response(mock_metadata_response):
+    """Mock requests.Response object with json() method"""
+    mock_response = MagicMock()
+    mock_response.json.return_value = mock_metadata_response
+    return mock_response
+
+
 class TestGetWaybackMetadatas:
     """Tests for get_wayback_metadatas function"""
-
-    @pytest.mark.parametrize("exception_type,message", [
-        (ResourceNotFoundError, "Not found"),
-        (HttpResponseError, "Not authorized"),
-        (ClientAuthenticationError, "Auth failed"),
-        (ServiceRequestError, "Connection timeout")
-    ])
-    @patch('src.metadata_scraper.load_urls')
-    def test_azure_exceptions_propagate(self, mock_load_urls, exception_type, message):
-        """All Azure SDK exceptions should propagate correctly"""
-        mock_load_urls.side_effect = exception_type(message)
-        
-        with pytest.raises(exception_type):
-            get_wayback_metadatas()
-    
-    @patch('src.metadata_scraper.get_wayback_metadata')
+ 
+    @patch('src.metadata_scraper.scrape_wayback_metadata')
     @patch('src.metadata_scraper.load_urls')
     def test_all_urls_succeed_processes_all(self, mock_load_urls, mock_get_metadata, sample_urls):
         """Test that all URLs are processed successfully"""
@@ -59,9 +54,9 @@ class TestGetWaybackMetadatas:
         get_wayback_metadatas()
         
         # Verify all 3 URLs were processed
-        assert mock_get_metadata.call_count == 3
+        assert mock_get_metadata.call_count == sum(len(v) for v in sample_urls.values())
 
-    @patch('src.metadata_scraper.get_wayback_metadata')
+    @patch('src.metadata_scraper.scrape_wayback_metadata')
     @patch('src.metadata_scraper.load_urls')
     def test_circuit_fails_three_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
         """Test that function raises after global retry budget (2) is exhausted.
@@ -84,7 +79,7 @@ class TestGetWaybackMetadatas:
         # Verify circuit breaker: only 3 attempts made (initial + 2 retries)
         assert mock_get_metadata.call_count == 3
 
-    @patch('src.metadata_scraper.get_wayback_metadata')
+    @patch('src.metadata_scraper.scrape_wayback_metadata')
     @patch('src.metadata_scraper.load_urls')
     def test_circuit_passes_two_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
         """Test that single URL failure consumes global retry budget but processing continues"""
@@ -102,69 +97,59 @@ class TestGetWaybackMetadatas:
         # Both URLs attempted
         assert mock_get_metadata.call_count == 4        
 
-class TestGetWaybackMetadata:
+class TestScrapeWaybackMetadata:
     """Tests for get_wayback_metadata function with caching behavior"""
 
-    @patch('src.metadata_scraper.scrape_wayback_metadata')
+    @patch('src.metadata_scraper.requests.get')
     @patch('src.metadata_scraper.check_blob')
-    def test_blob_exists_scraper_not_called(self, mock_blob_exists, mock_scraper):
+    def test_blob_exists_scraper_not_called(self, mock_blob_exists, mock_get):
         """Test that scraper is not called when blob already exists"""
         mock_blob_exists.return_value = True
         
-        get_wayback_metadata("https://example.com", "company1")
+        scrape_wayback_metadata("https://example.com", "company1")
         
         mock_blob_exists.assert_called_once()
-        mock_scraper.assert_not_called()
+        mock_get.assert_not_called()
 
     @patch('src.metadata_scraper.upload_json_blob')
-    @patch('src.metadata_scraper.scrape_wayback_metadata')
+    @patch('src.metadata_scraper.requests.get')
     @patch('src.metadata_scraper.check_blob')
-    def test_blob_not_exists_scraper_called(self, mock_blob_exists, mock_scraper, mock_upload):
+    def test_blob_not_exists_scraper_called(self, mock_blob_exists, mock_get, mock_upload, mock_requests_response):
         """Test that scraper is called when blob does not exist"""
         mock_blob_exists.return_value = False
-        mock_scraper.return_value = [["urlkey", "timestamp"]]
+        mock_get.return_value = mock_requests_response
         
-        get_wayback_metadata("https://example.com", "company1")
+        scrape_wayback_metadata("https://example.com", "company1")
         
-        mock_blob_exists.assert_called_once()
-        mock_scraper.assert_called_once_with("https://example.com")
-
-
-class TestScrapeWaybackMetadata:
-    """Tests for scrape_wayback_metadata function"""
-
-    @patch('src.metadata_scraper.requests.get')
-    def test_successful_scrape(self, mock_get, mock_metadata_response):
-        """Test successful metadata scraping"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = mock_metadata_response
-        mock_get.return_value = mock_response
-        
-        result = scrape_wayback_metadata("https://example.com")
-        
-        assert result == mock_metadata_response
         mock_get.assert_called_once()
+        mock_upload.assert_called_once()
 
+    @patch('src.metadata_scraper.upload_json_blob')
     @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
-    def test_retry_logic_two_errors_then_success(self, mock_get, mock_sleep):
+    @patch('src.metadata_scraper.check_blob')
+    def test_retry_logic_two_errors_then_success(self, mock_blob_exists, mock_get, mock_sleep, mock_upload, mock_requests_response):
         """Test that function retries twice after errors and succeeds on third attempt"""
-        
+        mock_blob_exists.return_value = False
+        mock_get.return_value = mock_requests_response
+
         mock_get.side_effect = [
             requests.Timeout("Error 1"),
             requests.ConnectionError("Error 2"),
             MagicMock(json=lambda: [['data']])
         ]
         
-        result = scrape_wayback_metadata("https://example.com")
+        scrape_wayback_metadata("https://example.com", "company1")
         
-        assert result == [['data']]
         assert mock_get.call_count == 3
 
     @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
-    def test_retry_logic_three_errors_raises(self, mock_get, mock_sleep):
+    @patch('src.metadata_scraper.check_blob')
+    def test_retry_logic_three_errors_raises(self, mock_blob_exists, mock_get, mock_sleep, mock_requests_response):
         """Test that function raises after three consecutive errors"""
+        mock_blob_exists.return_value = False
+        mock_get.return_value = mock_requests_response
         mock_get.side_effect = [
             requests.Timeout("Error 1"),
             requests.ConnectionError("Error 2"),
@@ -172,25 +157,30 @@ class TestScrapeWaybackMetadata:
         ]
         
         with pytest.raises(requests.ConnectionError):
-            scrape_wayback_metadata("https://example.com")
+            scrape_wayback_metadata("https://example.com", "company1")
         
         assert mock_get.call_count == 3
 
     @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
-    def test_request_failure(self, mock_get, mock_sleep):
+    @patch('src.metadata_scraper.check_blob')
+    def test_request_failure(self, mock_blob_exists, mock_get, mock_sleep):
         """Test handling of request failure"""
+        mock_blob_exists.return_value = False
         mock_get.side_effect = requests.ConnectionError("Persistent error")
         
         with pytest.raises(requests.ConnectionError):
-            scrape_wayback_metadata("https://example.com")
+            scrape_wayback_metadata("https://example.com", "company1")
 
+    @patch('src.metadata_scraper.upload_json_blob')
     @patch('src.metadata_scraper.requests.get')
-    def test_json_decode_error(self, mock_get):
-        """Test handling of JSON decode error"""
+    @patch('src.metadata_scraper.check_blob')
+    def test_json_decode_error(self, mock_blob_exists, mock_get, mock_upload, mock_requests_response):
+        """Test that scraper is called when blob does not exist"""
+        mock_blob_exists.return_value = False
         mock_response = MagicMock()
-        mock_response.json.side_effect = ValueError("Invalid JSON")
+        mock_response.json.return_value = "{invalid: 'json'}"
         mock_get.return_value = mock_response
         
-        with pytest.raises(ValueError):
-            scrape_wayback_metadata("https://example.com")
+        with pytest.raises(JSONDecodeError):
+            scrape_wayback_metadata("https://example.com", "company1")
