@@ -1,4 +1,9 @@
 import logging
+import os
+from datetime import datetime
+
+# Persist log path for lifespan of app
+LOG_PATH = os.path.join('logs', f"app-{datetime.now().strftime("%d-%m-%Y-%H-%M-%S")}.log")
 
 def setup_logger(name, loglvl = logging.INFO):
     log_fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -7,7 +12,8 @@ def setup_logger(name, loglvl = logging.INFO):
     logger.setLevel(loglvl)
     
     # Add file handler to tee logs to shared file
-    file_handler = logging.FileHandler('app.log')
+    os.makedirs('logs', exist_ok=True)
+    file_handler = logging.FileHandler(LOG_PATH)
     file_handler.setLevel(loglvl)
     file_handler.setFormatter(logging.Formatter(log_fmt))
     logger.addHandler(file_handler)
