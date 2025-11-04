@@ -6,6 +6,7 @@ import json
 
 logger = setup_logger(__name__, logging.INFO)
 
+URL_DATA = 'data/static_urls.json'
 
 def validate_urls(urls: dict):
     for company, urls in urls.items():
@@ -26,7 +27,7 @@ def process_urls(urls: dict):
 
 
 def seed_urls() -> None:
-    with open('data/static_urls.json') as f:
+    with open(URL_DATA) as f:
         urls = f.read()
     urls = json.loads(urls)
     process_urls(urls)

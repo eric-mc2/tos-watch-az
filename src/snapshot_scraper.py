@@ -3,10 +3,8 @@ import requests
 import pandas as pd
 import time
 from bs4 import BeautifulSoup
-import azure.functions as func
 from src.blob_utils import (check_blob, load_json_blob, upload_html_blob)
 import chardet  # Add this import for encoding detection
-from urllib.error import HTTPError
 from src.log_utils import setup_logger
 from src.blob_utils import parse_blob_path
 from src.stages import Stage

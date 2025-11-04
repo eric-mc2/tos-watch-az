@@ -1,5 +1,6 @@
 import json
 from src.summarizer import is_diff, create_prompt, parse_response_json, sanitize_response
+from pathlib import Path
 
 def test_is_diff():
     diff = {}
@@ -24,9 +25,10 @@ def test_prompt():
     assert 'UNCHANGED' not in prompt and 'NEW' in prompt and 'OLD' in prompt
 
 def test_parse():
-    with open('data/20240421054440.txt') as f:
+    root = Path(__file__).parent.parent.absolute()
+    with open(f'{root}/data/20240421054440.txt') as f:
         data = json.load(f)
-    with open('data/20240421054440.txt') as f:
+    with open(f'{root}/data/20240421054440.txt') as f:
         data_str = f.read()
     resp = parse_response_json(data_str)
     for key in data:
