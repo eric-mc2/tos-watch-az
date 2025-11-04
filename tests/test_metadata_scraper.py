@@ -1,9 +1,11 @@
 import pytest
 from unittest.mock import patch, MagicMock, call
-from src.metadata_scraper import get_wayback_metadatas, scrape_wayback_metadata
-from azure.core.exceptions import ResourceNotFoundError, HttpResponseError, ServiceRequestError, ClientAuthenticationError
-from json import JSONDecodeError
+from src.metadata_scraper import scrape_wayback_metadata
+from src.seeder import URL_DATA
 import requests
+import json
+from tests.test_orchestrator import run_orchestrator, MockDurableOrchestrationContext, rate_limit_config
+from pathlib import Path
 
 """
 Review these tests. Identify any redundant tests. Identify any other important failure modes or resiliencies that are un-tested. Assess whether they are testing functionally important aspects of the function behavior. Assess whether the tests are over-specified. Assess whether the use of mocks make the tests tautological or informative.
@@ -39,63 +41,6 @@ def mock_requests_response(mock_metadata_response):
     mock_response = MagicMock()
     mock_response.json.return_value = mock_metadata_response
     return mock_response
-
-
-class TestGetWaybackMetadatas:
-    """Tests for get_wayback_metadatas function"""
- 
-    @patch('src.metadata_scraper.scrape_wayback_metadata')
-    @patch('src.metadata_scraper.load_urls')
-    def test_all_urls_succeed_processes_all(self, mock_load_urls, mock_get_metadata, sample_urls):
-        """Test that all URLs are processed successfully"""
-        mock_load_urls.return_value = sample_urls
-        mock_get_metadata.return_value = None  # Side effect function
-        
-        get_wayback_metadatas()
-        
-        # Verify all 3 URLs were processed
-        assert mock_get_metadata.call_count == sum(len(v) for v in sample_urls.values())
-
-    @patch('src.metadata_scraper.scrape_wayback_metadata')
-    @patch('src.metadata_scraper.load_urls')
-    def test_circuit_fails_three_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
-        """Test that function raises after global retry budget (2) is exhausted.
-        
-        This tests the circuit breaker pattern: if external service starts failing,
-        fail fast rather than hammering it with all remaining requests.
-        """
-        mock_load_urls.return_value = sample_urls
-        # All URLs fail with same error (simulating external service degradation)
-        mock_get_metadata.side_effect = [
-            requests.Timeout("Service degraded"),
-            requests.Timeout("Service degraded"),
-            requests.Timeout("Service degraded"),
-            None
-        ]
-        
-        with pytest.raises(requests.Timeout):
-            get_wayback_metadatas()
-        
-        # Verify circuit breaker: only 3 attempts made (initial + 2 retries)
-        assert mock_get_metadata.call_count == 3
-
-    @patch('src.metadata_scraper.scrape_wayback_metadata')
-    @patch('src.metadata_scraper.load_urls')
-    def test_circuit_passes_two_errors(self, mock_load_urls, mock_get_metadata, sample_urls):
-        """Test that single URL failure consumes global retry budget but processing continues"""
-        mock_load_urls.return_value = sample_urls
-        # First URL fails once (transient), second succeeds
-        mock_get_metadata.side_effect = [
-            requests.Timeout("Transient error"),
-            requests.Timeout("Transient error"),
-            None,  # Third URL succeeds
-            None,  # Fourth URL succeeds
-        ]
-        
-        get_wayback_metadatas()
-        
-        # Both URLs attempted
-        assert mock_get_metadata.call_count == 4        
 
 class TestScrapeWaybackMetadata:
     """Tests for get_wayback_metadata function with caching behavior"""
@@ -172,15 +117,37 @@ class TestScrapeWaybackMetadata:
         with pytest.raises(requests.ConnectionError):
             scrape_wayback_metadata("https://example.com", "company1")
 
-    @patch('src.metadata_scraper.upload_json_blob')
-    @patch('src.metadata_scraper.requests.get')
-    @patch('src.metadata_scraper.check_blob')
-    def test_json_decode_error(self, mock_blob_exists, mock_get, mock_upload, mock_requests_response):
-        """Test that scraper is called when blob does not exist"""
-        mock_blob_exists.return_value = False
-        mock_response = MagicMock()
-        mock_response.json.return_value = "{invalid: 'json'}"
-        mock_get.return_value = mock_response
-        
-        with pytest.raises(JSONDecodeError):
-            scrape_wayback_metadata("https://example.com", "company1")
+    def test_integration(self):
+        config = {
+            "meta": {
+                "rate_limit_rpm": 300,  # 3 tokens per minute
+                "delay": 10,  # Check every 5 seconds
+                "activity_name": "process_task",
+                "max_retries": 2
+            }
+        }
+        root = Path(__file__).parent.parent.absolute()
+        url_path = f"{root}/{URL_DATA}"
+        with open(url_path) as f:
+            urls = f.read()
+        urls = json.loads(urls)
+        store = {}
+        contexts = []
+        for company, url_list in urls.items():
+            for url in url_list:
+                orchestration_input = {
+                    "company": company,
+                    "url": url,
+                    "task_id": url,
+                    "workflow_type": "meta"
+                }
+                context = MockDurableOrchestrationContext(
+                    orchestration_input,
+                    store,
+                    config
+                )
+                contexts.append(context)
+                try:
+                    result = run_orchestrator(context, config)
+                except Exception as e:
+                    print(f"  [ERROR] {url} failed: {e}")

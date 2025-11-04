@@ -4,7 +4,7 @@ Tests entity logic in isolation using MockEntityContext.
 """
 import unittest
 from datetime import datetime, timezone
-
+from src.circuit_breaker import circuit_breaker_entity
 
 class MockEntityContext:
     """Mock DurableEntityContext for testing the circuit breaker entity"""
@@ -36,24 +36,23 @@ class TestCircuitBreakerEntity(unittest.TestCase):
     def setUp(self):
         """Set up initial state"""
         self.initial_state = {
+            "strikes": 3,
             "is_open": False,
             "error_message": None,
             "opened_at": None
         }
     
-    def test_get_status_when_closed(self):
+    async def test_get_status_when_closed(self):
         """Test that get_status returns correct state when circuit is closed"""
         print("\n" + "="*60)
         print("TEST: Get Status When Closed")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         state = self.initial_state.copy()
         
         context = MockEntityContext("test_workflow", "get_status", None)
         context._state = state
-        circuit_breaker_entity(context)
+        await circuit_breaker_entity(context)
         
         result = context._result
         
@@ -66,14 +65,12 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: Status correctly shows closed circuit\n")
     
-    def test_trip_opens_circuit(self):
+    async def test_trip_opens_circuit(self):
         """Test that trip operation opens the circuit"""
         print("\n" + "="*60)
         print("TEST: Trip Opens Circuit")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         state = self.initial_state.copy()
         
         # Trip the circuit with an error message
@@ -84,7 +81,7 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         context = MockEntityContext("test_workflow", "trip", error_msg)
         context._state = state
-        circuit_breaker_entity(context)
+        await circuit_breaker_entity(context)
         
         state = context.get_state()
         result = context._result
@@ -100,17 +97,16 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: Circuit opened on trip\n")
     
-    def test_get_status_when_open(self):
+    async def test_get_status_when_open(self):
         """Test that get_status returns correct state when circuit is open"""
         print("\n" + "="*60)
         print("TEST: Get Status When Open")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         # Start with open circuit
         error_msg = "FATAL: Systemic failure detected"
         state = {
+            "strikes": 0,
             "is_open": True,
             "error_message": error_msg,
             "opened_at": datetime.now(timezone.utc).isoformat()
@@ -121,7 +117,7 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         context = MockEntityContext("test_workflow", "get_status", None)
         context._state = state
-        circuit_breaker_entity(context)
+        await circuit_breaker_entity(context)
         
         result = context._result
         
@@ -133,16 +129,15 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: Status correctly shows open circuit\n")
     
-    def test_reset_closes_circuit(self):
+    async def test_reset_closes_circuit(self):
         """Test the reset operation closes the circuit"""
         print("\n" + "="*60)
         print("TEST: Reset Closes Circuit")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         # Start with open circuit
         state = {
+            "strikes": 0,
             "is_open": True,
             "error_message": "FATAL: Previous error",
             "opened_at": datetime.now(timezone.utc).isoformat()
@@ -153,7 +148,7 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         context = MockEntityContext("test_workflow", "reset", None)
         context._state = state
-        circuit_breaker_entity(context)
+        await circuit_breaker_entity(context)
         
         state = context.get_state()
         result = context._result
@@ -168,14 +163,12 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: Reset operation works correctly\n")
     
-    def test_multiple_trips(self):
+    async def test_multiple_trips(self):
         """Test that multiple trips update the error message"""
         print("\n" + "="*60)
         print("TEST: Multiple Trips")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         state = self.initial_state.copy()
         
         errors = [
@@ -189,7 +182,7 @@ class TestCircuitBreakerEntity(unittest.TestCase):
             
             context = MockEntityContext("test_workflow", "trip", error)
             context._state = state
-            circuit_breaker_entity(context)
+            await circuit_breaker_entity(context)
             
             state = context.get_state()
             
@@ -200,7 +193,7 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: Multiple trips handled correctly\n")
     
-    def test_is_retryable_error_function(self):
+    async def test_is_retryable_error_function(self):
         """Test the is_retryable_error helper function"""
         print("\n" + "="*60)
         print("TEST: is_retryable_error Helper Function")
@@ -231,19 +224,17 @@ class TestCircuitBreakerEntity(unittest.TestCase):
         
         print(f"\n✓ Test passed: is_retryable_error works correctly\n")
     
-    def test_state_initialization_on_first_call(self):
+    async def test_state_initialization_on_first_call(self):
         """Test that entity initializes state correctly on first call"""
         print("\n" + "="*60)
         print("TEST: State Initialization")
         print("="*60)
-        
-        from src.rate_limiter import circuit_breaker_entity
-        
+                
         # No pre-existing state
         context = MockEntityContext("test_workflow", "get_status", None)
         # Don't set context._state, let entity initialize it
         
-        circuit_breaker_entity(context)
+        await circuit_breaker_entity(context)
         
         state = context.get_state()
         result = context._result

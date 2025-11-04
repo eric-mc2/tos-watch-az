@@ -3,12 +3,8 @@ from unittest.mock import MagicMock
 from datetime import datetime, timezone
 import time
 from azure import durable_functions as df
-from src.rate_limiter import (
-    orchestrator_logic,
-    rate_limiter_entity,
-    circuit_breaker_entity,
-)
-
+from src.rate_limiter import orchestrator_logic, rate_limiter_entity
+from src.circuit_breaker import circuit_breaker_entity
 
 class MockDurableEntityContext:
     """Mock entity context that maintains state across calls."""
@@ -102,16 +98,16 @@ class MockDurableOrchestrationContext:
     
     def call_activity(self, activity_name, input_data):
         """Mock activity call."""
-        blob_name = input_data.get("blob_name")
+        task_id = input_data.get("task_id")
         
         # Track call count
-        if blob_name not in self.activity_call_count:
-            self.activity_call_count[blob_name] = 0
-        self.activity_call_count[blob_name] += 1
+        if task_id not in self.activity_call_count:
+            self.activity_call_count[task_id] = 0
+        self.activity_call_count[task_id] += 1
         
         # Check if this task should fail
-        if blob_name in self.activity_results:
-            result = self.activity_results[blob_name]
+        if task_id in self.activity_results:
+            result = self.activity_results[task_id]
             if isinstance(result, Exception):
                 self.failure_count += 1
                 raise result
@@ -120,9 +116,9 @@ class MockDurableOrchestrationContext:
         
         # Default: succeed and print
         timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
-        print(f"  [{timestamp}] Processing task: {blob_name}")
+        print(f"  [{timestamp}] Processing task: {task_id}")
         self.success_count += 1
-        return {"status": "success", "blob_name": blob_name}
+        return {"status": "success", "task_id": task_id}
     
     def create_timer(self, fire_at):
         """Actually sleep until the specified time."""
@@ -225,7 +221,7 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
     for task_name in tasks:
         input_data = {
             "workflow_type": "test_workflow",
-            "blob_name": task_name
+            "task_id": task_name
         }
         
         context = MockDurableOrchestrationContext(
@@ -294,7 +290,7 @@ def test_circuit_breaker_trips_and_stops_processing(entity_state_store, circuit_
     for i, task_name in enumerate(tasks, 1):
         input_data = {
             "workflow_type": "test_workflow",
-            "blob_name": task_name
+            "task_id": task_name
         }
         
         context = MockDurableOrchestrationContext(
@@ -377,7 +373,7 @@ def test_workflow_isolation_separate_circuits(entity_state_store, isolation_conf
     for workflow_type, task_name in task_sequence:
         input_data = {
             "workflow_type": workflow_type,
-            "blob_name": task_name
+            "task_id": task_name
         }
         
         context = MockDurableOrchestrationContext(

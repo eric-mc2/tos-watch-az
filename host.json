@@ -2,6 +2,7 @@
   "version": "2.0",
   "logging": {
     "applicationInsights": {
+      "enableLiveMetrics": false,
       "samplingSettings": {
         "isEnabled": true,
         "excludedTypes": "Request"
