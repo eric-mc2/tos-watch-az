@@ -72,9 +72,8 @@ def orchestrator_logic(context: df.DurableOrchestrationContext):
         delay = input_data.get("throttle_delay", 5)
         retry_time = context.current_utc_datetime + timedelta(seconds=delay)
         if not context.is_replaying:
-            logger.warning(f"Throttling {workflow_type} retry at {retry_time} : {task_id}")
-        if task_id is None:
-            raise RuntimeError("task_id is None. config is %s. data is %s", json.dumps(input_data))
+            # This logs every poll. ==> A replay is for a failure, not a wake up.
+            logger.debug(f"Throttling {workflow_type} retry at {retry_time} : {task_id}")
         yield context.create_timer(retry_time)
     
     logger.debug("Orchestrator passed rate limiter and calling activity: %s", input_data["processor_name"])
@@ -82,7 +81,7 @@ def orchestrator_logic(context: df.DurableOrchestrationContext):
     try:
         result = yield context.call_activity(input_data["processor_name"], input_data)
         logger.debug(f"Successfully processed {task_id}")
-        yield result
+        return result # must signal runtime with explicit return
         
     except Exception as e:
         logger.error(f"Processor {workflow_type} failed {task_id}")
