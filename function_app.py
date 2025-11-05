@@ -204,8 +204,17 @@ def meta_processor(input_data: dict):
 @app.route("in_flight", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
-    resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances",
-                        params={"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]})
+    if "runtimeStatus" in req.params:
+        query = req.params["runtimeStatus"]
+        if query in df.OrchestrationRuntimeStatus._member_names_:
+            params = {"runtimeStatus": req.params["runtimeStatus"]}
+        else:
+            return func.HttpResponse(f"Invalid parameter runtimeStatus={query}. " \
+                                     f"Valid params are {df.OrchestrationRuntimeStatus._member_names_}",
+                                      status_code=400, mimetype="plain/text")
+    else:
+        params={"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]}
+    resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances", params)
     resp.raise_for_status()
     data = resp.json()
     formatted = dict(
@@ -244,18 +253,18 @@ def circuit_breaker(context: df.DurableEntityContext):
     return circuit_breaker_entity(context)
 
 
-# @app.route(route="check_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
-# @app.durable_client_input(client_name="client")
-# @pretty_error
-# async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-#     """Read breaker status."""
-#     from src.circuit_breaker import check_circuit_breaker as check_cb
-#     return await check_cb(req, client)
+@app.route(route="check_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    """Read breaker status."""
+    from src.circuit_breaker import check_circuit_breaker as check_cb
+    return await check_cb(req, client)
 
-# @app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
-# @app.durable_client_input(client_name="client")
-# @pretty_error
-# async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-#     """Manually reset a breaker."""
-#     from src.circuit_breaker import reset_circuit_breaker as reset_cb
-#     return await reset_cb(req, client)
+@app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    """Manually reset a breaker."""
+    from src.circuit_breaker import reset_circuit_breaker as reset_cb
+    return await reset_cb(req, client)

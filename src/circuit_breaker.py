@@ -50,7 +50,7 @@ def circuit_breaker_entity(context: df.DurableEntityContext):
         # Check if circuit is open
         context.set_result(not current_state['is_open'])
     else:
-        raise ValueError("Unknown operation {operation}")
+        raise ValueError(f"Unknown operation {operation}")
     
     context.set_state(current_state)
     
@@ -98,19 +98,10 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
         return func.HttpResponse("workflow_type not specified in http query string", status_code=400)
     
     workflow_type = req.params.get('workflow_type')
-    entity_id = df.EntityId("circuit_breaker", workflow_type)
-   
-    # Check if entity exists first
-    entity_state = await client.read_entity_state(entity_id) 
-    if not entity_state.entity_exists:
-        return func.HttpResponse(
-            f"Circuit breaker for {workflow_type} doesn't exist yet (no orchestrations have run)", 
-            status_code=200
-        )
     
-    # Entity exists, signal it to reset
+    # Whether it exists or not, we can signal it to reset.
     entity_id = df.EntityId("circuit_breaker", workflow_type)
-    await client.signal_entity(entity_id, "reset")
+    await client.signal_entity(entity_id, RESET)
     
     logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
     return func.HttpResponse(f"Circuit breaker reset for {workflow_type}", status_code=200)
