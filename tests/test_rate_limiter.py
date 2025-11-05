@@ -41,7 +41,7 @@ class TestRateLimiterEntity(unittest.TestCase):
     def test_initial_status(self):
 
         current_time_str = datetime.now().isoformat()
-        input_data = self.config.to_dict() | {"current_time": current_time_str}
+        input_data = self.config.to_dict() | {"last_success_time": current_time_str}
         context = MockEntityContext("test_workflow", GET_STATUS, input_data)
         rate_limiter_entity(context)
         
@@ -56,7 +56,7 @@ class TestRateLimiterEntity(unittest.TestCase):
 
         n_tasks = self.config.rate_limit_rpm - 1
         tasks = [datetime(2025, 1, 1, 12, 0, i).isoformat() for i in range(1,n_tasks+1)]
-        inputs = [self.config.to_dict() | {"current_time": t} for t in tasks]
+        inputs = [self.config.to_dict() | {"last_success_time": t} for t in tasks]
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, None)
         for i, data in enumerate(inputs):
             context._input = data
@@ -77,7 +77,7 @@ class TestRateLimiterEntity(unittest.TestCase):
     def test_tripped(self):
         n_tasks = self.config.rate_limit_rpm
         times = [datetime(2025, 1, 1, 12, 0, i).isoformat() for i in range(1, n_tasks+1)]
-        datas = [self.config.to_dict() | {"current_time": t} for t in times]
+        datas = [self.config.to_dict() | {"last_success_time": t} for t in times]
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, None)
         for i, data in enumerate(datas, 1):
             context._input = data
@@ -96,7 +96,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         
         context.operation_name = TRY_ACQUIRE
         next_time = datetime(2025, 1, 1, 12, 0, n_tasks+2).isoformat()
-        data = self.config.to_dict() | {"current_time": next_time}
+        data = self.config.to_dict() | {"last_success_time": next_time}
         context._input = data
         rate_limiter_entity(context)
         result = context._result
@@ -108,7 +108,7 @@ class TestRateLimiterEntity(unittest.TestCase):
     def test_reset(self):
         minute = 0
         burst_time = datetime(2025, 1, 1, 0, minute, 0).isoformat()
-        burst_data = self.config.to_dict() | {"current_time": burst_time}
+        burst_data = self.config.to_dict() | {"last_success_time": burst_time}
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, burst_data)
         context._input = burst_data
         
@@ -123,7 +123,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         
         # Next minute shifts to previous but not reset yet
         next_time = datetime(2025, 1, 1, 0, minute + 1, 0).isoformat()
-        next_data = self.config.to_dict() | {"current_time": next_time}
+        next_data = self.config.to_dict() | {"last_success_time": next_time}
         context._input = next_data
         rate_limiter_entity(context)
 
@@ -135,7 +135,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         
         # Next minute resets
         next_time = datetime(2025, 1, 1, 0, minute + 2, 0).isoformat()
-        next_data = self.config.to_dict() | {"current_time": next_time}
+        next_data = self.config.to_dict() | {"last_success_time": next_time}
         context._input = next_data
         rate_limiter_entity(context)
 

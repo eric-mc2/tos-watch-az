@@ -74,9 +74,9 @@ class MockDurableOrchestrationContext:
         entity_ctx.set_input(input_data)
         
         # Route to appropriate entity function
-        if entity_id.name == "generic_rate_limiter_entity":
+        if entity_id.name == "rate_limiter":
             rate_limiter_entity(entity_ctx)
-        elif entity_id.name == "circuit_breaker_entity_func":
+        elif entity_id.name == "circuit_breaker":
             circuit_breaker_entity(entity_ctx)
         else:
             raise ValueError(f"Unknown entity type: {entity_id.name}")
@@ -84,12 +84,12 @@ class MockDurableOrchestrationContext:
         allowed = entity_ctx.get_result()
         
         # Track throttling
-        if entity_id.name == "generic_rate_limiter_entity" and operation == TRY_ACQUIRE:
+        if entity_id.name == "rate_limiter" and operation == TRY_ACQUIRE:
             if not allowed:
                 self.throttled_count += 1
         
         # Track cancellation due to open circuit
-        if entity_id.name == "circuit_breaker_entity_func" and operation == GET_STATUS:
+        if entity_id.name == "circuit_breaker" and operation == GET_STATUS:
             if not allowed:
                 self.cancelled_count += 1
         

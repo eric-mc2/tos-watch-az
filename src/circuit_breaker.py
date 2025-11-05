@@ -4,15 +4,12 @@ from azure import durable_functions as df
 import json
 from datetime import datetime, timezone
 from src.log_utils import setup_logger
-from typing import Literal
 
-logger = setup_logger(__name__, logging.DEBUG)
+logger = setup_logger(__name__, logging.INFO)
 
 TRIP = "TRIP"
 RESET = "RESET"
 GET_STATUS = "GET_STATUS"
-Operations = Literal[TRIP, RESET, GET_STATUS]
-
 
 def circuit_breaker_entity(context: df.DurableEntityContext):
     """Circuit breaker entity to halt all processing on systemic failures."""
@@ -64,7 +61,7 @@ async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
         return func.HttpResponse("workflow_type not specified in http query string", status_code=400)
     
     workflow_type = req.params.get('workflow_type')
-    entity_id = df.EntityId("circuit_breaker_entity_func", workflow_type)
+    entity_id = df.EntityId("circuit_breaker", workflow_type)
     
     # Check if entity exists first
     entity_state = await client.read_entity_state(entity_id)
@@ -101,7 +98,7 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
         return func.HttpResponse("workflow_type not specified in http query string", status_code=400)
     
     workflow_type = req.params.get('workflow_type')
-    entity_id = df.EntityId("circuit_breaker_entity_func", workflow_type)
+    entity_id = df.EntityId("circuit_breaker", workflow_type)
    
     # Check if entity exists first
     entity_state = await client.read_entity_state(entity_id) 
@@ -112,7 +109,7 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
         )
     
     # Entity exists, signal it to reset
-    entity_id = df.EntityId("circuit_breaker_entity_func", workflow_type)
+    entity_id = df.EntityId("circuit_breaker", workflow_type)
     await client.signal_entity(entity_id, "reset")
     
     logger.info(f"Circuit breaker reset for workflow: {workflow_type}")

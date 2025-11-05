@@ -2,18 +2,14 @@ import logging
 from src.log_utils import setup_logger
 import azure.functions as func
 from azure import durable_functions as df
+import requests
 import json
 from requests import HTTPError, ConnectionError
 from random import random
-import traceback
-from functools import wraps
 from src.stages import Stage
 from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob
-from src.rate_limiter import rate_limiter_entity
-from src.orchestrator import orchestrator_logic
-from src.circuit_breaker import circuit_breaker_entity
-from src.scraper_utils import load_urls
 from src.app_utils import http_wrap, pretty_error
+from src.orchestrator import OrchData
 
 app = func.FunctionApp()
 
@@ -45,21 +41,14 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
 @pretty_error
 async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
     """Initiate wayback snapshots from static URL list"""
+    from src.scraper_utils import load_urls
     urls = load_urls(input_blob.name)
     logger.info(f"Found {len(urls)} companies with URLs to process")
-    counter = 0
     for company, url_list in urls.items():
         for url in url_list:
-            orchestration_input = {
-                "company": company,
-                "task_id": url,
-                "workflow_type": "meta"
-            }
+            orchestration_input = OrchData(company, url, "meta").to_dict()
             logger.info(f"Initiating orchestration for {company}/{url}")
-            await client.start_new("generic_orchestrator", None, orchestration_input)
-            counter += 1
-            if counter > 20:
-                return
+            await client.start_new("orchestrator", None, orchestration_input)
 
 
 @app.activity_trigger(input_name="input_data")
@@ -86,7 +75,7 @@ def meta_processor(input_data: dict):
 #         "task_id": blob_name, 
 #         "workflow_type": "scraper"
 #     }
-#     await client.start_new("generic_orchestrator", None, orchestration_input)
+#     await client.start_new("orchestrator", None, orchestration_input)
     
 
 # @http_wrap
@@ -171,7 +160,7 @@ def meta_processor(input_data: dict):
 #         "task_id": blob_name,
 #         "workflow_type": "summarizer"
 #     }
-#     await client.start_new("generic_orchestrator", None, orchestration_input)
+#     await client.start_new("orchestrator", None, orchestration_input)
     
 
 # @http_wrap
@@ -212,40 +201,61 @@ def meta_processor(input_data: dict):
 #     resp = parse_response_json(input_blob.read().decode())
 #     output_blob.set(json.dumps(resp, indent=2))
 
-
+@app.route("in_flight", auth_level=func.AuthLevel.FUNCTION)
+@http_wrap
+def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
+    resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances",
+                        params={"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]})
+    resp.raise_for_status()
+    data = resp.json()
+    formatted = dict(
+        count = len(data),
+        tasks = [dict(
+            name = t.get('name'),
+            status = t.get('runtimeStatus'),
+            created = t.get('createdTime'),
+            updated = t.get('lastUpdatedTime'),
+            input_data = t.get('input'),
+        ) for t in data]
+    )
+    return func.HttpResponse(json.dumps(formatted, indent=2), status_code=200, mimetype="application/json")
+    
+    
 @app.orchestration_trigger(context_name="context")
 @pretty_error
-def generic_orchestrator(context: df.DurableOrchestrationContext):
-    logger.debug(f"Control passed to generic_orchestrator: {context.get_input()}")
-    orchestrator_logic(context)
+def orchestrator(context: df.DurableOrchestrationContext):
+    from src.orchestrator import orchestrator_logic
+    return orchestrator_logic(context)
 
 
 @app.entity_trigger(context_name="context")
 @pretty_error
-def generic_rate_limiter_entity(context: df.DurableEntityContext):
+def rate_limiter(context: df.DurableEntityContext):
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
-    rate_limiter_entity(context)
+    from src.rate_limiter import rate_limiter_entity
+    return rate_limiter_entity(context)
 
 
 @app.entity_trigger(context_name="context")
 @pretty_error
-async def circuit_breaker_entity_func(context: df.DurableEntityContext):
+def circuit_breaker(context: df.DurableEntityContext):
     """Circuit breaker entity to halt processing on systemic failures."""
-    await circuit_breaker_entity(context)
+    from src.circuit_breaker import circuit_breaker_entity
+    return circuit_breaker_entity(context)
 
 
-@app.route(route="check_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
-@app.durable_client_input(client_name="client")
-@pretty_error
-async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    """Read breaker status."""
-    from src.circuit_breaker import check_circuit_breaker as check_cb
-    return await check_cb(req, client)
+# @app.route(route="check_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
+# @app.durable_client_input(client_name="client")
+# @pretty_error
+# async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+#     """Read breaker status."""
+#     from src.circuit_breaker import check_circuit_breaker as check_cb
+#     return await check_cb(req, client)
 
-@app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
-@app.durable_client_input(client_name="client")
-@pretty_error
-async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    """Manually reset a breaker."""
-    from src.circuit_breaker import reset_circuit_breaker as reset_cb
-    return await reset_cb(req, client)
+# @app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
+# @app.durable_client_input(client_name="client")
+# @pretty_error
+# async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+#     """Manually reset a breaker."""
+#     from src.circuit_breaker import reset_circuit_breaker as reset_cb
+#     return await reset_cb(req, client)
