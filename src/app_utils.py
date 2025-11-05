@@ -21,7 +21,7 @@ def http_wrap(app_func):
             return func.HttpResponse(f"Successfully processed {app_func.__name__}", status_code=200)
         except Exception as e:
             formatted = {
-                "app": {app_func.__name__},
+                "app": app_func.__name__,
                 "type": type(e).__name__,
                 "message": str(e),
                 "traceback": traceback.format_exc()
@@ -42,7 +42,7 @@ def pretty_error(app_func):
             return app_func(*args, **kwargs)
         except Exception as e:
             formatted = {
-                "app": {app_func.__name__},
+                "app": app_func.__name__,
                 "type": type(e).__name__,
                 "message": str(e),
                 "traceback": traceback.format_exc()
