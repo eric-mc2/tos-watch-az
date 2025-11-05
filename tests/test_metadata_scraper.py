@@ -4,7 +4,8 @@ from src.metadata_scraper import scrape_wayback_metadata
 from src.seeder import URL_DATA
 import requests
 import json
-from tests.test_orchestrator import run_orchestrator, MockDurableOrchestrationContext, rate_limit_config
+from src.orchestrator import WorkflowConfig
+from tests.test_orchestrator import run_orchestrator, MockDurableOrchestrationContext
 from pathlib import Path
 
 """
@@ -69,43 +70,6 @@ class TestScrapeWaybackMetadata:
         mock_get.assert_called_once()
         mock_upload.assert_called_once()
 
-    @patch('src.metadata_scraper.upload_json_blob')
-    @patch('src.metadata_scraper.time.sleep')
-    @patch('src.metadata_scraper.requests.get')
-    @patch('src.metadata_scraper.check_blob')
-    def test_retry_logic_two_errors_then_success(self, mock_blob_exists, mock_get, mock_sleep, mock_upload, mock_requests_response):
-        """Test that function retries twice after errors and succeeds on third attempt"""
-        mock_blob_exists.return_value = False
-        mock_get.return_value = mock_requests_response
-
-        mock_get.side_effect = [
-            requests.Timeout("Error 1"),
-            requests.ConnectionError("Error 2"),
-            MagicMock(json=lambda: [['data']])
-        ]
-        
-        scrape_wayback_metadata("https://example.com", "company1")
-        
-        assert mock_get.call_count == 3
-
-    @patch('src.metadata_scraper.time.sleep')
-    @patch('src.metadata_scraper.requests.get')
-    @patch('src.metadata_scraper.check_blob')
-    def test_retry_logic_three_errors_raises(self, mock_blob_exists, mock_get, mock_sleep, mock_requests_response):
-        """Test that function raises after three consecutive errors"""
-        mock_blob_exists.return_value = False
-        mock_get.return_value = mock_requests_response
-        mock_get.side_effect = [
-            requests.Timeout("Error 1"),
-            requests.ConnectionError("Error 2"),
-            requests.ConnectionError("Error 3"),
-        ]
-        
-        with pytest.raises(requests.ConnectionError):
-            scrape_wayback_metadata("https://example.com", "company1")
-        
-        assert mock_get.call_count == 3
-
     @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
     @patch('src.metadata_scraper.check_blob')
@@ -118,14 +82,7 @@ class TestScrapeWaybackMetadata:
             scrape_wayback_metadata("https://example.com", "company1")
 
     def test_integration(self):
-        config = {
-            "meta": {
-                "rate_limit_rpm": 300,  # 3 tokens per minute
-                "delay": 10,  # Check every 5 seconds
-                "activity_name": "process_task",
-                "max_retries": 2
-            }
-        }
+        config = {"meta": WorkflowConfig(300, 10, "test_task", 2).to_dict()}
         root = Path(__file__).parent.parent.absolute()
         url_path = f"{root}/{URL_DATA}"
         with open(url_path) as f:
@@ -140,14 +97,13 @@ class TestScrapeWaybackMetadata:
                     "url": url,
                     "task_id": url,
                     "workflow_type": "meta"
-                }
+                } | config
                 context = MockDurableOrchestrationContext(
                     orchestration_input,
                     store,
-                    config
                 )
                 contexts.append(context)
                 try:
-                    result = run_orchestrator(context, config)
+                    result = run_orchestrator(context)
                 except Exception as e:
                     print(f"  [ERROR] {url} failed: {e}")

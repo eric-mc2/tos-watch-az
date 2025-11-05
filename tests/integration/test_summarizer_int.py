@@ -2,10 +2,12 @@ import os
 import pytest
 import json
 from src.summarizer import summarize, create_prompt
+from pathlib import Path
 
 @pytest.fixture()
 def setup():
-    with open('local.settings.json') as f:
+    root = Path(__file__).parent.parent.parent.absolute()
+    with open(f'{root}/local.settings.json') as f:
         settings  = json.load(f)
         for key,val in settings['Values'].items():
             os.environ[key] = val
