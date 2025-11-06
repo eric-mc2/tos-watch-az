@@ -31,7 +31,7 @@ def get_blob_service_client():
     try:
         _client = BlobServiceClient.from_connection_string(connection_string)
     except Exception as e:
-        raise ConnectionError(f"Failed to create BlobServiceClient: {e}")
+        raise ConnectionError(f"Failed to create BlobServiceClient:\n{e}") from e
     return _client
 
 @lru_cache(5)
@@ -75,7 +75,7 @@ def load_json_blob(name, container=DEFAULT_CONTAINER) -> dict:
         json_data = json.loads(data.decode('utf-8'))
         return json_data
     except Exception as e:
-        logger.error(f"Invalid json blob {name}: {e}")
+        logger.error(f"Invalid json blob {name}:\n{e}")
         raise
 
 def load_text_blob(name, container=DEFAULT_CONTAINER) -> dict:
@@ -83,7 +83,7 @@ def load_text_blob(name, container=DEFAULT_CONTAINER) -> dict:
     try:
         txt = data.decode('utf-8')
     except Exception as e:
-        logger.error(f"Error decoding text blob {name}: {e}")
+        logger.error(f"Error decoding text blob {name}:\n{e}")
         raise
     return txt
 

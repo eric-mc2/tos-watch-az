@@ -41,7 +41,7 @@ def extract_json_from_response(response: str) -> dict:
         except json.JSONDecodeError as e:
             # Store the first error encountered
             if not result['error']:
-                result['error'] = f'JSON decode error: {e}'
+                result['error'] = f'JSON decode error:\n{e}'
     
     # Try array pattern
     array_pattern = r'\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\]'
@@ -56,7 +56,7 @@ def extract_json_from_response(response: str) -> dict:
             return result
         except json.JSONDecodeError as e:
             if not result['error']:
-                result['error'] = f'JSON decode error: {e}'
+                result['error'] = f'JSON decode error:\n{e}'
     
     if not result['error']:
         result['error'] = 'No valid JSON structure found in response'

@@ -6,6 +6,9 @@ from azure import durable_functions as df
 from src.rate_limiter import rate_limiter_entity, TRY_ACQUIRE
 from src.orchestrator import orchestrator_logic, WorkflowConfig
 from src.circuit_breaker import circuit_breaker_entity, GET_STATUS
+from requests.exceptions import ConnectionError, ReadTimeout
+from src.app_utils import pretty_error
+import json
 
 class MockDurableEntityContext:
     """Mock entity context that maintains state across calls."""
@@ -42,6 +45,14 @@ class MockDurableEntityContext:
         
     def get_result(self):
         return self._result
+    
+
+class PrettyException(Exception):
+    pass
+class NestedException(Exception):
+    pass
+class PrettyNestedException(Exception):
+    pass
 
 
 class MockDurableOrchestrationContext:
@@ -100,8 +111,34 @@ class MockDurableOrchestrationContext:
         result = input_data['result']
         if isinstance(result, Exception):
             self.failure_count += 1
-            raise result
-        self.success_count += 1
+            if isinstance(result, PrettyException):
+                return self._wrapped_raiser(result)
+            elif isinstance(result, NestedException):
+                return self._nested_raiser(result)
+            elif isinstance(result, PrettyNestedException):
+                return self._wrapped_nested_raiser(result)
+            else:
+                return self._raiser(result)
+        else:
+            self.success_count += 1
+            return result
+
+    @pretty_error
+    def _wrapped_nested_raiser(self, e, levels=3):
+        self._nested_raiser(e, levels - 1)
+        
+    def _nested_raiser(self, e, levels=3):
+        if levels:
+            self._nested_raiser(e, levels - 1)
+        else:
+            self._raiser(e)
+
+    @pretty_error
+    def _wrapped_raiser(self, e):
+        raise e
+    
+    def _raiser(self, e):
+        raise e
 
     def create_timer(self, fire_at):
         """Actually sleep until the specified time."""
@@ -114,9 +151,9 @@ class MockDurableOrchestrationContext:
         return None
 
 
-def run_orchestrator(context):
+def run_orchestrator(context, configs):
     """Helper to run orchestrator as a generator."""
-    gen = orchestrator_logic(context)
+    gen = orchestrator_logic(context, configs)
     result = None
     try:
         while True:
@@ -137,19 +174,25 @@ def entity_state_store():
 @pytest.fixture
 def rate_limit_config():
     """Config for rate limiting test."""
-    return {"test_workflow": WorkflowConfig(3, 10, "test_task", 2).to_dict()}
+    return {"test_workflow": WorkflowConfig(3, 10, 10, "test_task", 1, 1)}
 
 
 @pytest.fixture
 def circuit_breaker_config():
     """Config for circuit breaker test."""
-    return {"test_workflow": WorkflowConfig(100, 5, "test_task", 2).to_dict()}
+    return {"test_workflow": WorkflowConfig(100, 60, 5, "test_task", 1, 1)}
+
+@pytest.fixture
+def wrapper_config():
+    """Config for circuit breaker test."""
+    return {"test_workflow": WorkflowConfig(100, 60, 1, "test_task", 1, 1)}
 
 
 @pytest.fixture
 def isolation_config():
     """Config for workflow isolation test."""
-    return {"workflow_a": WorkflowConfig(100, 5, "process_task", 2).to_dict()}
+    return {"workflow_a": WorkflowConfig(100, 60, 5, "process_task", 1, 1),
+            "workflow_b": WorkflowConfig(100, 60, 5, "process_task", 1, 1)}
 
 
 def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
@@ -174,7 +217,7 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
             "workflow_type": "test_workflow",
             "task_id": task_name,
             "result": task_name,
-        } | rate_limit_config["test_workflow"]
+        }
         
         context = MockDurableOrchestrationContext(
             input_data,
@@ -182,7 +225,7 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
         )
         contexts.append(context)
         
-        result = run_orchestrator(context)
+        result = run_orchestrator(context, rate_limit_config)
         
     end_time = time.time()
     elapsed = end_time - start_time
@@ -197,6 +240,87 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
     assert total_failure == 0, f"Expected 0 failures, got {total_failure}"
     assert total_throttled >= 3, f"Expected at least 7 throttle events, got {total_throttled}"
     assert elapsed >= 20, f"Expected at least 20s elapsed for rate limit refill, got {elapsed:.1f}s"
+
+def test_wrapped_error_handling(entity_state_store, wrapper_config):
+    input_data = {
+        "workflow_type": "test_workflow",
+        "task_id": 'hello',
+        "result": PrettyException('hi'),
+    }
+        
+    context = MockDurableOrchestrationContext(
+        input_data,
+        entity_state_store,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        result = run_orchestrator(context, wrapper_config)
+    
+    err = json.loads(str(exc_info.value))
+    assert err['app'] == "_wrapped_raiser"
+    assert err['error_type'] == PrettyException.__name__
+    assert err["message"] == "hi"
+    tb = err['traceback'].splitlines()
+    assert "_wrapped_raiser" in tb[-1]
+
+def test_nested_wrapped_error_handling(entity_state_store, wrapper_config):
+    input_data = {
+        "workflow_type": "test_workflow",
+        "task_id": 'hello',
+        "result": PrettyNestedException('hi'),
+    }
+        
+    context = MockDurableOrchestrationContext(
+        input_data,
+        entity_state_store,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        result = run_orchestrator(context, wrapper_config)
+    
+    err = json.loads(str(exc_info.value))
+    assert err['app'] == "_wrapped_nested_raiser"
+    assert err['error_type'] == PrettyNestedException.__name__
+    assert err["message"] == "hi"
+    tb = err['traceback'].splitlines()
+    assert "_raiser" in tb[-1]
+
+def test_unwrapped_error_handling(entity_state_store, wrapper_config):
+    input_data = {
+        "workflow_type": "test_workflow",
+        "task_id": 'hello',
+        "result": Exception('hi'),
+    }
+        
+    context = MockDurableOrchestrationContext(
+        input_data,
+        entity_state_store,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        result = run_orchestrator(context, wrapper_config)
+    
+    # This isn't a great test. It's asserting we don't mess with the error.
+    assert str(exc_info.value) == "hi"
+
+def test_unwrapped_nested_error_handling(entity_state_store, wrapper_config):
+    input_data = {
+        "workflow_type": "test_workflow",
+        "task_id": 'hello',
+        "result": NestedException('hi'),
+    }
+        
+    context = MockDurableOrchestrationContext(
+        input_data,
+        entity_state_store,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        result = run_orchestrator(context, wrapper_config)
+    
+    # This isn't a great test. It's asserting we don't mess with the error.
+    assert str(exc_info.value) == "hi"
+
 
 def test_circuit_breaker_trips_and_stops_processing(entity_state_store, circuit_breaker_config):
     """
@@ -221,7 +345,7 @@ def test_circuit_breaker_trips_and_stops_processing(entity_state_store, circuit_
             "workflow_type": "test_workflow",
             "task_id": task_name,
             "result": result,
-        } | circuit_breaker_config["test_workflow"]
+        }
         
         context = MockDurableOrchestrationContext(
             input_data,
@@ -230,7 +354,7 @@ def test_circuit_breaker_trips_and_stops_processing(entity_state_store, circuit_
         contexts.append(context)
                 
         try:
-            result = run_orchestrator(context)
+            result = run_orchestrator(context, circuit_breaker_config)
         except Exception as e:
             print(f"Task {task_name} failed with {e.__class__.__name__}")
     
@@ -273,7 +397,7 @@ def test_workflow_isolation_separate_circuits(entity_state_store, isolation_conf
             "workflow_type": workflow_type,
             "task_id": task_name,
             "result": result,
-        } | isolation_config["workflow_a"]
+        }
         
         context = MockDurableOrchestrationContext(
             input_data,
@@ -286,7 +410,7 @@ def test_workflow_isolation_separate_circuits(entity_state_store, isolation_conf
             contexts_b.append(context)
         
         try:
-            result = run_orchestrator(context)
+            result = run_orchestrator(context, isolation_config)
         except Exception as e:
             print(f"Task {task_name} failed with {e.__class__.__name__}")
             

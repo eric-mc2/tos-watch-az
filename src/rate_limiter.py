@@ -52,7 +52,7 @@ def rate_limiter_entity(context: df.DurableEntityContext):
     if operation not in [GET_STATUS, TRY_ACQUIRE]:
         raise ValueError(f"Invalid operation name {operation}")
 
-    rate_limit_rpm = input_data.get("rate_limit_rpm")
+    rate_limit_rpm = input_data.get("rate_limit_rpm", 10)
     current_time = datetime.now()
     state = context.get_state(lambda: RateLimiterState.default(rate_limit_rpm, current_time).to_dict())
     state = RateLimiterState.from_dict(state)

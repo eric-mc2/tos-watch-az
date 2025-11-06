@@ -3,7 +3,8 @@ import os
 from datetime import datetime
 
 # Persist log path for lifespan of app
-LOG_PATH = os.path.join('logs', f"app-{datetime.now().strftime("%d-%m-%Y-%H-%M-%S")}.log")
+current_time = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+LOG_PATH = os.path.join('logs', f"app-{current_time}.log")
 
 def setup_logger(name, loglvl = logging.INFO):
     log_fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

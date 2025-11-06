@@ -27,13 +27,13 @@ def scrape_wayback_metadata(url, company) -> dict:
         response = requests.get(api_url, params=params, timeout=60)
         response.raise_for_status()
     except Exception as e:
-        logger.error(f"Metadata request failed for {url}: {e}")
+        logger.error(f"Metadata request failed for {url}:\n{e}")
         raise
         
     try:
         data = response.json()
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON response for {url}: {e}")
+        logger.error(f"Failed to parse JSON response for {url}:\n{e}")
         raise
     
     upload_json_blob(json.dumps(data), blob_name)

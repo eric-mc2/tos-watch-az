@@ -97,7 +97,7 @@ def parse_wayback_metadata(blob_name):
         snapshots['timebin'] = bins
         sample = snapshots.groupby('timebin', observed=True).first()
     except Exception as e:
-        logger.error(f"Failed to sample snapshots for {blob_name}: {e}")
+        logger.error(f"Failed to sample snapshots for {blob_name}:\n{e}")
         # Fallback: take first N snapshots
         sample = snapshots.head(N)
     return sample
@@ -168,7 +168,7 @@ def get_wayback_snapshots(meta_blob_name):
             get_wayback_snapshot(company, policy, timestamp, original_url)
             snapshots_saved += 1
         except Exception as e:
-            logger.error(f"Failed to scrape SNAP {timestamp} of URL {original_url}: {e}")
+            logger.error(f"Failed to scrape snapshot {timestamp} of URL {original_url}:\n{e}")
             if retries:
                 retries -= 1
             else:
