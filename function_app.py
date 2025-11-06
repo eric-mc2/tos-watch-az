@@ -4,8 +4,6 @@ import azure.functions as func
 from azure import durable_functions as df
 import requests
 import json
-from requests import HTTPError, ConnectionError
-from random import random
 from src.stages import Stage
 from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob
 from src.app_utils import http_wrap, pretty_error
@@ -43,24 +41,18 @@ async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrch
     """Initiate wayback snapshots from static URL list"""
     from src.scraper_utils import load_urls
     urls = load_urls(input_blob.name)
-    logger.info(f"Found {len(urls)} companies with URLs to process")
     for company, url_list in urls.items():
         for url in url_list:
             orchestration_input = OrchData(company, url, "meta").to_dict()
             logger.info(f"Initiating orchestration for {company}/{url}")
             await client.start_new("orchestrator", None, orchestration_input)
-
+    
 
 @app.activity_trigger(input_name="input_data")
 @pretty_error
 def meta_processor(input_data: dict):
-    # from src.metadata_scraper import scrape_wayback_metadata
-    # dice = random()
-    # if dice > .9:
-    #     raise ConnectionError("Random connection error")
-    # elif dice > .8:
-    #     raise TimeoutError("Random timeout")
-    # scrape_wayback_metadata(input_data['task_id'], input_data['company'])
+    from src.metadata_scraper import scrape_wayback_metadata
+    scrape_wayback_metadata(input_data['task_id'], input_data['company'])
     logger.info(f"Successfully scraped: {input_data['task_id']}")
 
 # @http_wrap
