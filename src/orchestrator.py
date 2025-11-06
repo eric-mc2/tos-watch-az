@@ -42,12 +42,12 @@ class WorkflowConfig:
 
 
 WORKFLOW_CONFIGS = {
-    "summarizer": WorkflowConfig(50, 60, 5, "summarizer_processor", 3, 10),
+    "summarizer": WorkflowConfig(50, 60, 20, "summarizer_processor", 3, 10),
     "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 10),
     "meta": WorkflowConfig(10, 60, 20, "meta_processor", 3, 10)
 }
 
-CIRCUIT_DELAY = 5 # 60 * 5  # seconds
+CIRCUIT_DELAY = 60 * 5  # seconds
 
 
 def orchestrator_logic(context: df.DurableOrchestrationContext, configs: dict[str, WorkflowConfig]=WORKFLOW_CONFIGS):
@@ -61,17 +61,12 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, configs: dict[st
     processor_name = configs[workflow_type].processor_name
     circuit_breaker_id = df.EntityId("circuit_breaker", workflow_type)    
 
+    # First circuit check fails fast.
     allowed = yield from _check_circuit_logic(context, configs[workflow_type])
     if not allowed:
         # Already signaled continue as new.
-        return
-    
-    allowed = yield from _rate_limit_logic(context, configs[workflow_type])
-    if not allowed:
-        raise RuntimeError("Should not get here.")
-    
-    logger.debug("Orchestrator passed rate limiter and calling activity: %s", processor_name)
-    
+        return None
+        
     try:
         result = yield from _retry_logic(context, configs[workflow_type])
         logger.debug(f"Successfully processed {task_id}")
@@ -104,6 +99,7 @@ def _rate_limit_logic(context: df.DurableOrchestrationContext, config: WorkflowC
     task_id = input_data.get("task_id")
     workflow_type = input_data.get("workflow_type")
     throttle_delay = config.throttle_delay
+    rate_period = config.rate_limit_period
     
     rate_limiter_id = df.EntityId("rate_limiter", workflow_type)
 
@@ -132,6 +128,17 @@ def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig
     result = None
     managed_error = None
     for attempt_count in range(1, max_attempts + 1):
+        # Events pool inside rate limit loop.
+        allowed = yield from _rate_limit_logic(context, config)
+        if not allowed:
+            raise RuntimeError("Should not get here.")
+        
+        # Check circuit again (in case tripped while awaiting rate).
+        allowed = yield from _check_circuit_logic(context, config)
+        if not allowed:
+            # Already signaled continue as new.
+            return None  # exit cleanly.
+        
         result = yield context.call_activity(processor_name, input_data)
         
         try:
