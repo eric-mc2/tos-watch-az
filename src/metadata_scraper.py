@@ -1,11 +1,11 @@
 import logging
 import json
 import requests
-import time
-from src.blob_utils import (check_blob, upload_json_blob)
+from src.blob_utils import (check_blob, upload_json_blob, load_json_blob)
 from src.log_utils import setup_logger
 from src.scraper_utils import sanitize_urlpath
 from src.stages import Stage
+import pandas as pd
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -37,3 +37,40 @@ def scrape_wayback_metadata(url, company) -> dict:
         raise
     
     upload_json_blob(json.dumps(data), blob_name)
+
+
+def parse_wayback_metadata(blob_name):
+    logger.debug("Loading snap metadata from: %s", blob_name)
+    data = load_json_blob(blob_name)
+        
+    if len(data) <= 1:
+        logger.info(f"Found 0 snapshots for {blob_name}")
+        return None
+    
+    # First row is headers, rest are snapshots
+    headers = data[0]
+    snapshots = data[1:]
+    snapshots = [dict(zip(headers, snapshot)) for snapshot in snapshots]
+    snapshots = pd.DataFrame(snapshots)
+
+    # Snaps without timestamps are invalid for our purposes.
+    mask = snapshots['timestamp'].notna() & (snapshots['timestamp']!='')
+    snapshots = snapshots.loc[mask]
+    logger.info(f"Found {len(snapshots)} valid snapshots for {blob_name}")
+
+    if len(snapshots) == 0:
+        return None
+    
+    # For testing, take an evenly spaced sample of snaps
+    N = 10
+    rfc3339 = "%Y%m%d%H%M%S"
+    try:
+        snapshots['datetime'] = pd.to_datetime(snapshots['timestamp'], format=rfc3339)
+        bins = pd.cut(snapshots['datetime'], bins=min(N, len(snapshots)))
+        snapshots['timebin'] = bins
+        sample = snapshots.groupby('timebin', observed=True).first()
+    except Exception as e:
+        logger.error(f"Failed to sample snapshots for {blob_name}:\n{e}")
+        # Fallback: take first N snapshots
+        sample = snapshots.head(N)
+    return sample

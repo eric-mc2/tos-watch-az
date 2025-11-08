@@ -11,13 +11,13 @@ from src.app_utils import AppError
 
 logger = setup_logger(__name__, logging.INFO)
 
-WorkflowType = Literal["summarizer", "scraper", "meta"]
-
 @dataclass
 class OrchData:
-    company: str
     task_id: str
-    workflow_type: WorkflowType
+    workflow_type: Literal["summarizer", "scraper", "meta"]
+    company: str = ""
+    policy: str = ""
+    timestamp: str = ""
 
     def to_dict(self):
         return asdict(self)

@@ -33,17 +33,18 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path=f"documents/static_urls.json",
+                path="documents/static_urls.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
     """Initiate wayback snapshots from static URL list"""
     from src.scraper_utils import load_urls
-    urls = load_urls(input_blob.name)
+    blob_name = input_blob.name.removeprefix("documents/")
+    urls = load_urls(blob_name)
     for company, url_list in urls.items():
         for url in url_list:
-            orchestration_input = OrchData(company, url, "meta").to_dict()
+            orchestration_input = OrchData(url, "meta", company).to_dict()
             logger.info(f"Initiating orchestration for {company}/{url}")
             await client.start_new("orchestrator", None, orchestration_input)
     
@@ -55,41 +56,53 @@ def meta_processor(input_data: dict):
     scrape_wayback_metadata(input_data['task_id'], input_data['company'])
     logger.info(f"Successfully scraped: {input_data['task_id']}")
 
-# @http_wrap
-# @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.SNAP.value}/{{company}}/{{policy}}/metadata.json",
-#                 connection="AZURE_STORAGE_CONNECTION_STRING")
-# @app.durable_client_input(client_name="client")
-# async def scraper_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
-#     """Blob trigger that starts the scraper workflow orchestration."""
-#     blob_name = input_blob.name.removeprefix("documents/")
-#     orchestration_input = {
-#         "task_id": blob_name, 
-#         "workflow_type": "scraper"
-#     }
-#     await client.start_new("orchestrator", None, orchestration_input)
+
+@app.blob_trigger(arg_name="input_blob", 
+                path="documents/01-metadata/{company}/{policy}/metadata.json",
+                connection="AZURE_STORAGE_CONNECTION_STRING")
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def scraper_blob_trigger(input_blob: func.InputStream, 
+                               client: df.DurableOrchestrationClient):
+    """Blob trigger that starts the scraper workflow orchestration."""
+    from src.metadata_scraper import parse_wayback_metadata
+    meta_blob_name = input_blob.name.removeprefix("documents/")
+    metadata = parse_wayback_metadata(meta_blob_name)
+    if metadata is None:
+        return
+    
+    parts = parse_blob_path(meta_blob_name)
+    # Start a new orchestration that will download each snapshot
+    for timestamp, original_url in zip(metadata['timestamp'], metadata['original']):
+        url_key = f"{timestamp}/{original_url}"
+        orchestration_input = OrchData(url_key, 
+                                       "scraper", 
+                                       parts.company, 
+                                       parts.policy, 
+                                       timestamp).to_dict()
+        logger.info(f"Initiating orchestration for {url_key}")
+        await client.start_new("orchestrator", None, orchestration_input)
     
 
-# @http_wrap
-# @app.activity_trigger(input_name="input_data")
-# def scraper_processor(input_data: dict) -> str:
-#     from src.snapshot_scraper import get_wayback_snapshots
-#     try:
-#         get_wayback_snapshots(input_data['task_id'])
-#         logger.info(f"Successfully scraped: {input_data['task_id']}")
-#         return "success"
-#     except Exception as e:
-#         logger.error(f"Error scraping {input_data['task_id']}: {e}")
-#         raise
+@app.activity_trigger(input_name="input_data")
+@pretty_error
+def scraper_processor(input_data: dict):
+    from src.snapshot_scraper import get_wayback_snapshot
+    snap_url = input_data['task_id']
+    company = input_data['company']
+    policy = input_data['policy']
+    timestamp = input_data['timestamp']
+    get_wayback_snapshot(company, policy, timestamp, snap_url)
+    logger.info(f"Successfully scraped {snap_url}")
 
 
 # @http_wrap
 # @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.SNAP.value}/{{company}}/{{policy}}/{{timestamp}}.html",
+#                 path="documents/02-snapshots/{company}/{policy}/{{timestamp}}.html",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING",
 #                 data_type="string")
 # @app.blob_output(arg_name="output_blob",
-#                 path=f"documents/{Stage.DOCTREE.value}/{{company}}/{{policy}}/{{timestamp}}.json",
+#                 path="documents/{Stage.DOCTREE.value}/{company}/{policy}/{{timestamp}}.json",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING")
 # def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
 #     """Parse html snapshot into hierarchical doctree format."""
@@ -100,11 +113,11 @@ def meta_processor(input_data: dict):
 
 # @http_wrap
 # @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.DOCTREE.value}/{{company}}/{{policy}}/{{timestamp}}.json",
+#                 path="documents/{Stage.DOCTREE.value}/{company}/{policy}/{{timestamp}}.json",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING",
 #                 data_type="string")
 # @app.blob_output(arg_name="output_blob",
-#                 path=f"documents/{Stage.DOCCHUNK.value}/{{company}}/{{policy}}/{{timestamp}}.json",
+#                 path="documents/{Stage.DOCCHUNK.value}/{company}/{policy}/{{timestamp}}.json",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING")
 # def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
 #     """Annotate doctree with corpus-level metadata."""
@@ -125,11 +138,11 @@ def meta_processor(input_data: dict):
 
 # @http_wrap
 # @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.DIFF.value}/{{company}}/{{policy}}/{{timestamp}}.json",
+#                 path="documents/{Stage.DIFF.value}/{company}/{policy}/{{timestamp}}.json",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING",
 #                 data_type="string")
 # @app.blob_output(arg_name="output_blob",
-#                 path=f"documents/{Stage.PROMPT.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
+#                 path="documents/{Stage.PROMPT.value}/{company}/{policy}/{{timestamp}}.txt",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING")
 # def create_summarizer_prompt(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
 #     """Use language model to summarize diff."""
@@ -142,7 +155,7 @@ def meta_processor(input_data: dict):
 
 # @http_wrap
 # @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.PROMPT.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
+#                 path="documents/{Stage.PROMPT.value}/{company}/{policy}/{{timestamp}}.txt",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING")
 # @app.durable_client_input(client_name="client")
 # async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
@@ -182,11 +195,11 @@ def meta_processor(input_data: dict):
 
 # @http_wrap
 # @app.blob_trigger(arg_name="input_blob", 
-#                 path=f"documents/{Stage.SUMMARY_RAW.value}/{{company}}/{{policy}}/{{timestamp}}.txt",
+#                 path="documents/{Stage.SUMMARY_RAW.value}/{company}/{policy}/{{timestamp}}.txt",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING",
 #                 data_type="string")
 # @app.blob_output(arg_name="output_blob",
-#                 path=f"documents/{Stage.SUMMARY_CLEAN.value}/{{company}}/{{policy}}/{{timestamp}}.json",
+#                 path="documents/{Stage.SUMMARY_CLEAN.value}/{company}/{policy}/{{timestamp}}.json",
 #                 connection="AZURE_STORAGE_CONNECTION_STRING")
 # def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
 #     from src.summarizer import parse_response_json
