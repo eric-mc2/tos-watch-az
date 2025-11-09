@@ -6,7 +6,7 @@ from dataclasses import dataclass, asdict, fields
 import json
 from src.rate_limiter import TRY_ACQUIRE
 from src.log_utils import setup_logger
-from src.circuit_breaker import TRIP, GET_STATUS
+from src.circuit_breaker import TRIP, GET_STATUS, RESET
 from src.app_utils import AppError
 
 logger = setup_logger(__name__, logging.INFO)
@@ -44,7 +44,7 @@ class WorkflowConfig:
 WORKFLOW_CONFIGS = {
     "summarizer": WorkflowConfig(50, 60, 20, "summarizer_processor", 3, 10),
     "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 10),
-    "meta": WorkflowConfig(10, 60, 20, "meta_processor", 3, 10)
+    "meta": WorkflowConfig(5, 60, 20, "meta_processor", 3, 10)
 }
 
 CIRCUIT_DELAY = 60 * 5  # seconds
@@ -58,20 +58,14 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, configs: dict[st
     
     # Tack on config info (for entities)
     input_data |= configs[workflow_type].to_dict()
-    processor_name = configs[workflow_type].processor_name
     circuit_breaker_id = df.EntityId("circuit_breaker", workflow_type)    
 
-    # First circuit check fails fast.
-    allowed = yield from _check_circuit_logic(context, configs[workflow_type])
-    if not allowed:
-        # Already signaled continue as new.
-        return None
-        
     try:
         result = yield from _retry_logic(context, configs[workflow_type])
-        logger.debug(f"Successfully processed {task_id}")
+        if result is not None:
+            logger.debug(f"Successfully processed {task_id}")
         return result # must signal runtime with explicit return
-        
+    
     except Exception as e:
         logger.error(f"Processor {workflow_type} failed {task_id} with error:\n{e}")
         yield context.call_entity(circuit_breaker_id, TRIP, str(e))
@@ -87,19 +81,18 @@ def _check_circuit_logic(context: df.DurableOrchestrationContext, config: Workfl
     
     allowed = yield context.call_entity(circuit_breaker_id, GET_STATUS)
     if not allowed:
-        logger.warning(f"Circuit breaker open for {workflow_type}, sleeping: {task_id}")
-        retry_time = context.current_utc_datetime + timedelta(seconds = CIRCUIT_DELAY)
-        yield context.create_timer(retry_time)
+        if not context.is_replaying:
+            logger.warning(f"Circuit is already tripped for {workflow_type}. Sleeping until reset for {task_id}")
+        yield context.wait_for_external_event(RESET)
         context.continue_as_new(input_data)
-    return allowed
-
+    return
+    
     
 def _rate_limit_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig):
     input_data = context.get_input()
     task_id = input_data.get("task_id")
     workflow_type = input_data.get("workflow_type")
     throttle_delay = config.throttle_delay
-    rate_period = config.rate_limit_period
     
     rate_limiter_id = df.EntityId("rate_limiter", workflow_type)
 
@@ -128,16 +121,14 @@ def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig
     result = None
     managed_error = None
     for attempt_count in range(1, max_attempts + 1):
+        # First circuit check fails fast.
+        yield from _check_circuit_logic(context, config)
+        
         # Events pool inside rate limit loop.
-        allowed = yield from _rate_limit_logic(context, config)
-        if not allowed:
-            raise RuntimeError("Should not get here.")
+        yield from _rate_limit_logic(context, config)
         
         # Check circuit again (in case tripped while awaiting rate).
-        allowed = yield from _check_circuit_logic(context, config)
-        if not allowed:
-            # Already signaled continue as new.
-            return None  # exit cleanly.
+        yield from _check_circuit_logic(context, config)
         
         result = yield context.call_activity(processor_name, input_data)
         
@@ -155,7 +146,8 @@ def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig
         if attempt_count == max_attempts:
             break  # activity failed but we dont want to retry.
 
-        logger.warning(f"Processor {workflow_type} failed {task_id}. " \
+        if not context.is_replaying:
+            logger.warning(f"Processor {workflow_type} failed {task_id}. " \
                         f"Retrying ({attempt_count}/{max_attempts}) from error: {managed_error}")
         
         retry_time = context.current_utc_datetime + timedelta(seconds = retry_delay)

@@ -24,7 +24,7 @@ def scrape_wayback_metadata(url, company) -> dict:
     }
     
     try:
-        response = requests.get(api_url, params=params, timeout=60)
+        response = requests.get(api_url, params=params, timeout=90)
         response.raise_for_status()
     except Exception as e:
         logger.error(f"Metadata request failed for {url}:\n{e}")
