@@ -56,8 +56,12 @@ def parse_wayback_metadata(blob_name):
     # Snaps without timestamps are invalid for our purposes.
     mask = snapshots['timestamp'].notna() & (snapshots['timestamp']!='')
     snapshots = snapshots.loc[mask]
-    logger.info(f"Found {len(snapshots)} valid snapshots for {blob_name}")
 
+    # Snaps that 403'd are invalid for our purposes
+    mask = snapshots['statuscode'].notna() & snapshots['statuscode'].str.isnumeric() & (snapshots['statuscode'] < '400')
+    snapshots = snapshots.loc[mask]
+
+    logger.info(f"Found {len(snapshots)} valid snapshots for {blob_name}")
     if len(snapshots) == 0:
         return None
     
