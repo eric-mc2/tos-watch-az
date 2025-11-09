@@ -55,24 +55,17 @@ def circuit_breaker_entity(context: df.DurableEntityContext):
     context.set_state(current_state)
     
 
-async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+async def check_circuit_breaker(workflow_type: str, client: df.DurableOrchestrationClient) -> dict:
     """Check a circuit breaker for a workflow type."""
-    if 'workflow_type' not in req.params:
-        return func.HttpResponse("workflow_type not specified in http query string", status_code=400)
-    
-    workflow_type = req.params.get('workflow_type')
     entity_id = df.EntityId("circuit_breaker", workflow_type)
     
     # Check if entity exists first
-    entity_state = await client.read_entity_state(entity_id)
-    if not entity_state.entity_exists:
-        return func.HttpResponse(
-            f"Circuit breaker for {workflow_type} doesn't exist yet (no orchestrations have run)", 
-            status_code=200
-        )
+    entity = await client.read_entity_state(entity_id)
+    if not entity.entity_exists or entity.entity_state is None:
+        return f"Circuit breaker for {workflow_type} doesn't exist yet (no orchestrations have run)"
     
     # Entity exists, get its current state directly
-    state = entity_state.entity_state
+    state = entity.entity_state
     
     status_msg = "tripped" if state.get('is_open', False) else "running"
     
@@ -85,11 +78,7 @@ async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     }
     
     logger.info(f"Circuit breaker status for {workflow_type}: {status_msg}")
-    return func.HttpResponse(
-        json.dumps(response_data, indent=2),
-        mimetype="application/json",
-        status_code=200
-    )
+    return response_data
 
 
 async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
@@ -102,7 +91,45 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     # Whether it exists or not, we can signal it to reset.
     entity_id = df.EntityId("circuit_breaker", workflow_type)
     await client.signal_entity(entity_id, RESET)
-    
+
+    tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
+    for task in tasks:
+        logger.info("Waking task %s", task['data']['task_id'])
+        client.raise_event(task['instance_id'], RESET)
+
     logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
     return func.HttpResponse(f"Circuit breaker reset for {workflow_type}", status_code=200)
 
+
+async def list_tasks(client: df.DurableOrchestrationClient, workflow_type: str, status: list[df.OrchestrationRuntimeStatus]):
+    if isinstance(status, df.OrchestrationRuntimeStatus):
+        status = [status]
+    tasks = await client.get_status_by(runtime_status=status)
+    relevant_tasks = []
+    for task in tasks:
+        # According to https://learn.microsoft.com/en-us/python/api/azure-functions-durable/azure.durable_functions.models.durableorchestrationstatus.durableorchestrationstatus?view=azure-python
+        # it is input_ not _input
+        input_data = task.input_
+        data = None
+        if isinstance(input_data, str):
+            try:
+                data = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                pass
+        elif isinstance(input_data, dict):
+            data = input_data
+        
+        if data is None:
+            logger.warning("Unknown input data from %s: ", workflow_type, input_data)
+            continue
+        
+        if data['workflow_type'] != workflow_type:
+            continue
+        
+        relevant_tasks.append(dict(instance_id = task.instance_id, 
+                                   status = task.runtime_status,
+                                   created = task.created_time,
+                                   updated = task.last_updated_time,
+                                   data = data))
+    
+    return relevant_tasks

@@ -206,10 +206,49 @@ def scraper_processor(input_data: dict):
 #     resp = parse_response_json(input_blob.read().decode())
 #     output_blob.set(json.dumps(resp, indent=2))
 
+@app.route("validate", auth_level=func.AuthLevel.FUNCTION)
+@http_wrap
+def validate(req: func.HttpRequest) -> func.HttpResponse:
+    # TODO: Read url list. If not exists, valid.
+    # For each url list, if metadata doesn't exist, list invalids.
+    # For each existing metadata, parse and list snaps.
+    # List invalid snaps.
+    from src.scraper_utils import load_urls
+    from src.blob_utils import check_blob
+    from src.metadata_scraper import parse_wayback_metadata
+    from src.scraper_utils import sanitize_urlpath
+    if not check_blob("static_urls.json"):
+        return func.HttpResponse("URLs blob missing")
+    urls = load_urls("documents/static_urls.json")
+    missing_metadata = []
+    missing_snaps = []
+    meta_counter, snap_counter = 0, 0
+    for company, url_list in urls.items():
+        for url in url_list:
+            meta_counter += 1
+            policy = sanitize_urlpath(url)
+            blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
+            if not check_blob(blob_name):
+                missing_metadata.append(blob_name)
+                continue
+            meta = parse_wayback_metadata(blob_name)
+            for timestamp in meta['timestamp']:
+                snap_counter += 1
+                blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
+                if not check_blob(blob_name):
+                    missing_snaps.append(blob_name)
+    return func.HttpResponse("Missing Metadata {}/{}: {}\n\nMissing Snapshots {}/{}: {}".format(
+        len(missing_metadata), meta_counter, json.dumps(missing_metadata, indent=2), 
+        len(missing_snaps), snap_counter, json.dumps(missing_snaps, indent=2)
+    ))
+
+    
+
 @app.route("in_flight", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
-    if "runtimeStatus" in req.params:
+    from src.orchestrator import WORKFLOW_CONFIGS
+    if hasattr(req, "params") and req.params is not None and "runtimeStatus" in req.params:
         query = req.params["runtimeStatus"]
         if query in df.OrchestrationRuntimeStatus._member_names_:
             params = {"runtimeStatus": req.params["runtimeStatus"]}
@@ -218,21 +257,34 @@ def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
                                      f"Valid params are {df.OrchestrationRuntimeStatus._member_names_}",
                                       status_code=400, mimetype="plain/text")
     else:
-        params={"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]}
+        params = {"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]}
+
+    workflow_type = req.params.get("workflow_type")
+    
+    if workflow_type is not None and workflow_type not in WORKFLOW_CONFIGS:
+        return func.HttpResponse(f"Invalid parameter workflow_type={req.params['workflow_type']}.", status_code=400)
+    
     resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances", params)
     resp.raise_for_status()
     data = resp.json()
-    formatted = dict(
-        count = len(data),
-        tasks = [dict(
+
+    data = [dict(
             name = t.get('name'),
             status = t.get('runtimeStatus'),
             created = t.get('createdTime'),
             updated = t.get('lastUpdatedTime'),
-            input_data = t.get('input'),
-        ) for t in data]
+            input_data = json.loads(t.get('input')))
+            for t in data]
+    
+    if workflow_type is not None:
+        data = [t for t in data if t['input_data']['workflow_type'] == workflow_type]
+
+    formatted = dict(
+        count = len(data),
+        tasks = data
     )
-    return func.HttpResponse(json.dumps(formatted, indent=2), status_code=200, mimetype="application/json")
+
+    return func.HttpResponse(json.dumps(formatted, indent=2), mimetype="application/json")
     
     
 @app.orchestration_trigger(context_name="context")
@@ -264,7 +316,18 @@ def circuit_breaker(context: df.DurableEntityContext):
 async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """Read breaker status."""
     from src.circuit_breaker import check_circuit_breaker as check_cb
-    return await check_cb(req, client)
+    from src.orchestrator import WORKFLOW_CONFIGS
+    if hasattr(req, "params") and req.params is not None and "workflow_type" in req.params:
+        workflow_type = req.params["workflow_type"]
+        data = await check_cb(workflow_type, client)
+    else:
+        data = [await check_cb(w, client) for w in WORKFLOW_CONFIGS.keys()]
+
+    return func.HttpResponse(
+            json.dumps(data, indent=2),
+            mimetype="application/json",
+            status_code=200
+        )
 
 @app.route(route="reset_circuit_breaker", auth_level=func.AuthLevel.FUNCTION)
 @app.durable_client_input(client_name="client")
