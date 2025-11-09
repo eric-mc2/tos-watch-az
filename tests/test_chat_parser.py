@@ -1,4 +1,4 @@
-from src.chat_parser import extract_json_from_response, extract_json_with_context
+from src.chat_parser import extract_json_from_response
     
 def test_case_1():
     # Case 1: JSON with prefix and suffix

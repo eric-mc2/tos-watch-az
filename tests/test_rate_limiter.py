@@ -36,7 +36,7 @@ class MockEntityContext:
 class TestRateLimiterEntity(unittest.TestCase):
     """Test the rate limiter entity directly"""
 
-    config = WorkflowConfig(10, 0.1, "test_processor", 2)
+    config = WorkflowConfig(10, 60, 0.1, "test_processor", 2, 1)
     
     def test_initial_status(self):
 
