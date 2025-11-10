@@ -209,76 +209,33 @@ def scraper_processor(input_data: dict):
 @app.route("validate", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def validate(req: func.HttpRequest) -> func.HttpResponse:
-    # TODO: Read url list. If not exists, valid.
-    # For each url list, if metadata doesn't exist, list invalids.
-    # For each existing metadata, parse and list snaps.
-    # List invalid snaps.
-    from src.scraper_utils import load_urls
-    from src.blob_utils import check_blob
-    from src.metadata_scraper import parse_wayback_metadata
-    from src.scraper_utils import sanitize_urlpath
-    if not check_blob("static_urls.json"):
-        return func.HttpResponse("URLs blob missing")
-    urls = load_urls("documents/static_urls.json")
-    missing_metadata = []
-    missing_snaps = []
-    meta_counter, snap_counter = 0, 0
-    for company, url_list in urls.items():
-        for url in url_list:
-            meta_counter += 1
-            policy = sanitize_urlpath(url)
-            blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
-            if not check_blob(blob_name):
-                missing_metadata.append(blob_name)
-                continue
-            meta = parse_wayback_metadata(blob_name)
-            for timestamp in meta['timestamp']:
-                snap_counter += 1
-                blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
-                if not check_blob(blob_name):
-                    missing_snaps.append(blob_name)
-    return func.HttpResponse("Missing Metadata {}/{}: {}\n\nMissing Snapshots {}/{}: {}".format(
-        len(missing_metadata), meta_counter, json.dumps(missing_metadata, indent=2), 
-        len(missing_snaps), snap_counter, json.dumps(missing_snaps, indent=2)
-    ))
-
+    from src.health import validate_exists
+    return validate_exists()
     
 
 @app.route("in_flight", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
-def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
+def in_flight(req: func.HttpRequest) -> func.HttpResponse:
     from src.orchestrator import WORKFLOW_CONFIGS
+    from src.health import list_in_flight
+
     if hasattr(req, "params") and req.params is not None and "runtimeStatus" in req.params:
         query = req.params["runtimeStatus"]
         if query in df.OrchestrationRuntimeStatus._member_names_:
-            params = {"runtimeStatus": req.params["runtimeStatus"]}
+            runtime_status = query
         else:
             return func.HttpResponse(f"Invalid parameter runtimeStatus={query}. " \
                                      f"Valid params are {df.OrchestrationRuntimeStatus._member_names_}",
                                       status_code=400, mimetype="plain/text")
     else:
-        params = {"runtimeStatus": ["Running", "Pending", "Suspended", "ContinuedAsNew"]}
+        runtime_status = ["Running", "Pending", "Suspended", "ContinuedAsNew"]
 
     workflow_type = req.params.get("workflow_type")
     
     if workflow_type is not None and workflow_type not in WORKFLOW_CONFIGS:
-        return func.HttpResponse(f"Invalid parameter workflow_type={req.params['workflow_type']}.", status_code=400)
+        return func.HttpResponse(f"Invalid parameter workflow_type={workflow_type}.", status_code=400)
     
-    resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances", params)
-    resp.raise_for_status()
-    data = resp.json()
-
-    data = [dict(
-            name = t.get('name'),
-            runtime_status = t.get('runtimeStatus'),
-            created = t.get('createdTime'),
-            updated = t.get('lastUpdatedTime'),
-            custom_status = t.get("customStatus"),
-            input_data = json.loads(t.get('input')) if isinstance(t.get('input'), str) else t.get('input'))
-            for t in data]
-    
-    if workflow_type is not None:
-        data = [t for t in data if t['input_data']['workflow_type'] == workflow_type]
+    data = list_in_flight(workflow_type, runtime_status)
 
     formatted = dict(
         count = len(data),

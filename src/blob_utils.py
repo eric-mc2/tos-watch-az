@@ -49,12 +49,21 @@ def check_blob(blob_name, container=DEFAULT_CONTAINER, touch=False) -> bool:
     client = get_blob_service_client()
     container_client = client.get_container_client(container)
     blob_client = container_client.get_blob_client(blob_name)
-    if blob_client.exists():
+    if blob_client.exists() and touch:
         metadata = blob_client.get_blob_properties().metadata or {}
         metadata["touched"] = datetime.now(timezone.utc).isoformat()
         blob_client.set_blob_metadata(metadata)
     return blob_client.exists()
-    
+
+def list_blobs(container=DEFAULT_CONTAINER, strip_container=True) -> list[str]:
+    client = get_blob_service_client()
+    container_client = client.get_container_client(container)
+    pages = container_client.list_blob_names()                      
+    blobs = []
+    for blob in pages:
+        blobs.append(blob.removeprefix(f"{container}/"))
+    return blobs
+
 def load_blob(name, container=DEFAULT_CONTAINER) -> str:
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
