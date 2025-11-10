@@ -94,7 +94,8 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
 
     tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
     for task in tasks:
-        logger.info("Waking task %s", task['data']['task_id'])
+        task_id = task['data'].get("task_id", "undefine")
+        logger.info("Waking task %s", task_id)
         client.raise_event(task['instance_id'], RESET)
 
     logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
@@ -122,9 +123,12 @@ async def list_tasks(client: df.DurableOrchestrationClient, workflow_type: str, 
         if data is None:
             logger.warning("Unknown input data from %s: ", workflow_type, input_data)
             continue
-        
-        if data['workflow_type'] != workflow_type:
-            continue
+        elif not isinstance(data, dict):
+            raise ValueError("Unexpected input data %s: %s", type(data), data)
+        elif "workflow_type" not in data:
+            continue  # it's an entity
+        elif data['workflow_type'] != workflow_type:
+            continue  # orchestrator or entity but irrelevant workflow
         
         relevant_tasks.append(dict(instance_id = task.instance_id, 
                                    status = task.runtime_status,

@@ -270,10 +270,11 @@ def list_in_flight(req: func.HttpRequest) -> func.HttpResponse:
 
     data = [dict(
             name = t.get('name'),
-            status = t.get('runtimeStatus'),
+            runtime_status = t.get('runtimeStatus'),
             created = t.get('createdTime'),
             updated = t.get('lastUpdatedTime'),
-            input_data = json.loads(t.get('input')))
+            custom_status = t.get("customStatus"),
+            input_data = json.loads(t.get('input')) if isinstance(t.get('input'), str) else t.get('input'))
             for t in data]
     
     if workflow_type is not None:
