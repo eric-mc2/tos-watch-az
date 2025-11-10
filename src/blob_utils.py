@@ -7,6 +7,7 @@ from src.log_utils import setup_logger
 from collections import namedtuple
 from pathlib import Path
 from functools import lru_cache
+from datetime import datetime, timezone
 
 DEFAULT_CONTAINER = "documents"
 logger = setup_logger(__name__, logging.INFO)
@@ -44,10 +45,14 @@ def ensure_container(output_container_name) -> None:
         container_client.create_container()
         logger.info(f"Created output container: {output_container_name}")
 
-def check_blob(blob_name, container=DEFAULT_CONTAINER) -> bool:
+def check_blob(blob_name, container=DEFAULT_CONTAINER, touch=False) -> bool:
     client = get_blob_service_client()
     container_client = client.get_container_client(container)
     blob_client = container_client.get_blob_client(blob_name)
+    if blob_client.exists():
+        metadata = blob_client.get_blob_properties().metadata or {}
+        metadata["touched"] = datetime.now(timezone.utc).isoformat()
+        blob_client.set_blob_metadata(metadata)
     return blob_client.exists()
     
 def load_blob(name, container=DEFAULT_CONTAINER) -> str:

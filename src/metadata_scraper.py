@@ -13,7 +13,7 @@ def scrape_wayback_metadata(url, company) -> dict:
     policy = sanitize_urlpath(url)
     blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
     
-    if check_blob(blob_name):
+    if check_blob(blob_name, touch=True):
         logger.debug(f"Using cached wayback metadata from {blob_name}")
         return
     

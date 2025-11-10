@@ -43,8 +43,8 @@ class WorkflowConfig:
 
 WORKFLOW_CONFIGS = {
     "summarizer": WorkflowConfig(50, 60, 20, "summarizer_processor", 3, 10),
-    "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 10),
-    "meta": WorkflowConfig(5, 60, 20, "meta_processor", 3, 10)
+    "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 2 * 60),
+    "meta": WorkflowConfig(5, 60, 20, "meta_processor", 3, 3 * 60)
 }
 
 CIRCUIT_DELAY = 60 * 5  # seconds
@@ -72,7 +72,7 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, configs: dict[st
         raise
 
 
-def _check_circuit_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig):
+def _check_circuit_logic(context: df.DurableOrchestrationContext):
     input_data = context.get_input()
     task_id = input_data.get("task_id")
     workflow_type = input_data.get("workflow_type")
@@ -83,7 +83,9 @@ def _check_circuit_logic(context: df.DurableOrchestrationContext, config: Workfl
     if not allowed:
         if not context.is_replaying:
             logger.warning(f"Circuit is already tripped for {workflow_type}. Sleeping until reset for {task_id}")
+        context.set_custom_status("Waiting for circuit")
         yield context.wait_for_external_event(RESET)
+        context.set_custom_status("Recovered from circuit")
         context.continue_as_new(input_data)
     return
     
@@ -107,7 +109,9 @@ def _rate_limit_logic(context: df.DurableOrchestrationContext, config: WorkflowC
         if not context.is_replaying:
             # This logs every poll. ==> A replay is for a failure, not a wake up.
             logger.debug(f"Throttling {workflow_type} retry at {retry_time} : {task_id}")
+        context.set_custom_status(f"Throttled until {retry_time}")
         yield context.create_timer(retry_time)
+        context.set_custom_status("")
 
     
 def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig):
@@ -122,13 +126,13 @@ def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig
     managed_error = None
     for attempt_count in range(1, max_attempts + 1):
         # First circuit check fails fast.
-        yield from _check_circuit_logic(context, config)
+        yield from _check_circuit_logic(context)
         
         # Events pool inside rate limit loop.
         yield from _rate_limit_logic(context, config)
         
         # Check circuit again (in case tripped while awaiting rate).
-        yield from _check_circuit_logic(context, config)
+        yield from _check_circuit_logic(context)
         
         result = yield context.call_activity(processor_name, input_data)
         
