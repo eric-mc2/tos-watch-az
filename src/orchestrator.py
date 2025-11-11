@@ -86,6 +86,7 @@ def _check_circuit_logic(context: df.DurableOrchestrationContext):
         context.set_custom_status("Waiting for circuit")
         yield context.wait_for_external_event(RESET)
         context.set_custom_status("Recovered from circuit")
+        logger.info(f"Wake-up event received {workflow_type}: {task_id}")
         context.continue_as_new(input_data)
     return
     

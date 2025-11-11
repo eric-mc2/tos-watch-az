@@ -95,7 +95,7 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
     for task in tasks:
         task_id = task['data'].get("task_id", "undefine")
-        logger.info("Waking task %s", task_id)
+        logger.info("Re-submitting cancelled task %s", task_id)
         client.raise_event(task['instance_id'], RESET)
 
     logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
