@@ -26,8 +26,12 @@ def _entropy_pooling(corpus: list[DocChunk]) -> list[DocChunk]:
     counter = 0
     threshold = 3
     corpus_iter = iter(corpus)
-    pooled = corpus_iter.__next__()
+    pooled = None
     chunks = []
+    try:
+        pooled = corpus_iter.__next__()
+    except StopIteration:
+        return chunks
     for next_doc in corpus_iter:
         if (next_doc.company != pooled.company or 
             next_doc.policy != pooled.policy or 

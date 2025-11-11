@@ -64,6 +64,20 @@ def list_blobs(container=DEFAULT_CONTAINER, strip_container=True) -> list[str]:
         blobs.append(blob.removeprefix(f"{container}/"))
     return blobs
 
+
+def list_blobs_nest(container=DEFAULT_CONTAINER, strip_container=True) -> dict:
+    """Represent container as dictionary."""
+    directory = {}
+    for name in list_blobs(container, strip_container):
+        namepath = Path(name)
+        subdir = directory
+        for i, part in enumerate(namepath.parts):
+            if i == len(namepath.parts) - 1:
+                leaf = subdir.setdefault(part, None)
+            else:
+                subdir = subdir.setdefault(part, {})
+    return directory
+
 def load_blob(name, container=DEFAULT_CONTAINER) -> str:
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
@@ -125,7 +139,7 @@ def upload_text_blob(data, blob_name, container=DEFAULT_CONTAINER) -> None:
     content_type = 'text/plain; charset=utf-8'
     upload_blob(data_bytes, blob_name, content_type, container)
 
-def upload_json_blob(data, blob_name, container=DEFAULT_CONTAINER) -> None:
+def upload_json_blob(data: str, blob_name, container=DEFAULT_CONTAINER) -> None:
     data_bytes = data.encode('utf-8')
     content_type = 'application/json; charset=utf-8'
     upload_blob(data_bytes, blob_name, content_type, container)
