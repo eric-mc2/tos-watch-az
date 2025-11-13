@@ -69,8 +69,9 @@ def validate_exists() -> func.HttpResponse:
             if blob_name not in blobs:
                 missing_metadata.append(blob_name)
                 continue
-            meta = parse_wayback_metadata(blob_name)
-            for timestamp in meta['timestamp']:
+            meta = parse_wayback_metadata(company, policy)
+            for row in meta:
+                timestamp = row['timestamp']
                 snap_counter += 1
                 blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
                 if blob_name not in blobs:

@@ -39,13 +39,16 @@ def scrape_wayback_metadata(url, company) -> dict:
     upload_json_blob(json.dumps(data), blob_name)
 
 
-def parse_wayback_metadata(blob_name):
-    logger.debug("Loading snap metadata from: %s", blob_name)
-    data = load_json_blob(blob_name)
+def parse_wayback_metadata(company, policy) -> list[dict]:
+    input_blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
+    output_blob_name = f"{Stage.META.value}/{company}/{policy}/manifest.json"
+    
+    logger.debug("Loading snap metadata from: %s", input_blob_name)
+    data = load_json_blob(input_blob_name)
         
     if len(data) <= 1:
-        logger.info(f"Found 0 snapshots for {blob_name}")
-        return None
+        logger.info(f"Found 0 snapshots for {input_blob_name}")
+        return []
     
     # First row is headers, rest are snapshots
     headers = data[0]
@@ -60,21 +63,27 @@ def parse_wayback_metadata(blob_name):
     # Snaps that 403'd are invalid for our purposes
     mask = snapshots['statuscode'].notna() & snapshots['statuscode'].str.isnumeric() & (snapshots['statuscode'] < '400')
     snapshots = snapshots.loc[mask]
-
-    logger.info(f"Found {len(snapshots)} valid snapshots for {blob_name}")
-    if len(snapshots) == 0:
-        return None
     
+    logger.info(f"Found {len(snapshots)} valid snapshots for {input_blob_name}")
+    snapshots = snapshots.to_dict('records')
+    
+    if len(snapshots) > 0:
+        upload_json_blob(json.dumps(snapshots, indent=2), output_blob_name)
+
+    return snapshots
+    
+def sample_wayback_metadata(metadata: list[dict], company, policy) -> list[dict]:
     # For testing, take an evenly spaced sample of snaps
     N = 10
     rfc3339 = "%Y%m%d%H%M%S"
+    snapshots = pd.DataFrame.from_records(metadata)
     try:
         snapshots['datetime'] = pd.to_datetime(snapshots['timestamp'], format=rfc3339)
         bins = pd.cut(snapshots['datetime'], bins=min(N, len(snapshots)))
         snapshots['timebin'] = bins
         sample = snapshots.groupby('timebin', observed=True).first()
     except Exception as e:
-        logger.error(f"Failed to sample snapshots for {blob_name}:\n{e}")
+        logger.error(f"Failed to sample snapshots for {company}/{policy}:\n{e}")
         # Fallback: take first N snapshots
         sample = snapshots.head(N)
-    return sample
+    return sample.to_dict('records')

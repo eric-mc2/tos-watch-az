@@ -5,7 +5,7 @@ from azure import durable_functions as df
 import requests
 import json
 from src.stages import Stage
-from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob
+from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, upload_json_blob
 from src.app_utils import http_wrap, pretty_error
 from src.orchestrator import OrchData
 
@@ -65,15 +65,20 @@ def meta_processor(input_data: dict):
 async def scraper_blob_trigger(input_blob: func.InputStream, 
                                client: df.DurableOrchestrationClient):
     """Blob trigger that starts the scraper workflow orchestration."""
-    from src.metadata_scraper import parse_wayback_metadata
+    from src.metadata_scraper import parse_wayback_metadata, sample_wayback_metadata
     meta_blob_name = input_blob.name.removeprefix("documents/")
-    metadata = parse_wayback_metadata(meta_blob_name)
-    if metadata is None:
-        return
-    
     parts = parse_blob_path(meta_blob_name)
+    
+    # Parse and re-save metadata
+    metadata = parse_wayback_metadata(parts.company, parts.policy)
+    
+    # Sample metadata for seeding initial db
+    metadata = sample_wayback_metadata(metadata, parts.company, parts.policy)
+    
     # Start a new orchestration that will download each snapshot
-    for timestamp, original_url in zip(metadata['timestamp'], metadata['original']):
+    for row in metadata:
+        timestamp = row['timestamp']
+        original_url = row['original']
         url_key = f"{timestamp}/{original_url}"
         orchestration_input = OrchData(url_key, 
                                        "scraper", 
