@@ -8,7 +8,6 @@ from collections import namedtuple
 from pathlib import Path
 from functools import lru_cache
 from datetime import datetime, timezone
-from azure.identity import DefaultAzureCredential
 
 DEFAULT_CONTAINER = "documents"
 logger = setup_logger(__name__, logging.INFO)
@@ -27,12 +26,11 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
 def get_blob_service_client():
     global _client
     """Get blob service client from connection string environment variable"""
-    storage_name = os.environ.get('STORAGE_ACCOUNT_NAME')
-    if not storage_name:
-        raise ValueError("STORAGE_ACCOUNT_NAME environment variable not set")
-    account_url = f"https://{storage_name}.blob.core.windows.net"
+    connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
+    if not connection_string:
+        raise ValueError("AZURE_STORAGE_CONNECTION_STRING environment variable not set")
     try:
-        _client = BlobServiceClient(account_url, credential=DefaultAzureCredential())
+        _client = BlobServiceClient.from_connection_string(connection_string)
     except Exception as e:
         raise ConnectionError(f"Failed to create BlobServiceClient:\n{e}") from e
     return _client
