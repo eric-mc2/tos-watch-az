@@ -5,6 +5,7 @@
 azure-functions
 azure-functions-durable
 azure-storage-blob
+azure-identity
 requests
 pandas
 beautifulsoup4
