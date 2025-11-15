@@ -1,29 +1,6 @@
-bin
-obj
-csx
-.vs
-edge
-Publish
-
-*.user
-*.suo
-*.cscfg
-*.Cache
-project.lock.json
-
-/packages
-/TestResults
-
-/tools/NuGet.exe
-/App_Data
-/secrets
-/data
-.secrets
+*.secrets
 appsettings.json
 local.settings.json
-
-node_modules
-dist
 
 # Local python packages
 .python_packages/
@@ -46,3 +23,8 @@ __pycache__/
 __blobstorage__
 __queuestorage__
 __azurite_db*__.json
+AzuriteConfig
+.azurite
+
+# VSCode Configs
+.vscode/

@@ -2,6 +2,12 @@
 .git*
 .gitignore
 
+# Secrets
+*.secrets
+
+# Deployment
+.github/
+
 # VS Code files
 .vscode/
 
