@@ -2,7 +2,7 @@
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure Functions: https://aka.ms/python-webapps-actions
 
-name: Build and deploy Python project to Azure Function App - tos-watch
+name: Build and deploy Python project to Azure Function App - tos-function-app
 
 on:
   push:
@@ -47,8 +47,8 @@ jobs:
         with:
           name: python-app
           path: |
-            ./release.zip
-            !./venv/
+            release.zip
+            !venv/
 
   deploy:
     runs-on: ubuntu-latest
@@ -68,11 +68,9 @@ jobs:
       - name: 'Deploy to Azure Functions'
         uses: Azure/functions-action@v1
         id: deploy-to-function
+
         with:
-          app-name: 'tos-watch'
+          app-name: 'tos-function-app'
           slot-name: 'Production'
-          package: '.'
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        env:
-          SCM_DO_BUILD_DURING_DEPLOYMENT: true
-          ENABLE_ORYX_BUILD: true
