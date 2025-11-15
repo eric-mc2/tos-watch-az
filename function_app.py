@@ -2,7 +2,6 @@ import logging
 from src.log_utils import setup_logger
 import azure.functions as func
 from azure import durable_functions as df
-import requests
 import json
 from src.stages import Stage
 from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, upload_json_blob
