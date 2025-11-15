@@ -5,7 +5,7 @@ from src.log_utils import setup_logger
 # import json
 # from src.stages import Stage
 # from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, upload_json_blob
-# from src.app_utils import http_wrap, pretty_error
+from src.app_utils import http_wrap, pretty_error
 # from src.orchestrator import OrchData
 
 app = func.FunctionApp()
@@ -14,8 +14,8 @@ logger = setup_logger(__name__, logging.DEBUG)
 logging.getLogger('azure').setLevel(logging.WARNING)
 
 
-# @http_wrap
 @app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
+@http_wrap
 def hello_world(req: func.HttpRequest):
     logger.debug("Test logs debug")
     logger.info("Test logs info")
