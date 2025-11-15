@@ -7,6 +7,7 @@ from src.scraper_utils import load_urls, sanitize_urlpath
 from src.metadata_scraper import parse_wayback_metadata
 from src.stages import Stage
 from src.log_utils import setup_logger
+import os
 
 logger = setup_logger(__name__, logging.DEBUG)
 
@@ -41,7 +42,12 @@ def _list_in_flight_paged(params, pages = None, token=None):
     if pages is None:
         pages = []
     headers = {"x-ms-continuation-token": token} if token is not None else None
-    resp = requests.get("http://127.0.0.1:7071/runtime/webhooks/durabletask/instances", 
+    app_url = os.environ.get('WEBSITE_HOSTNAME')
+    if app_url:
+        app_url = f"https://{app_url}"
+    else:
+        app_url = "http://127.0.0.1:7071"
+    resp = requests.get(app_url + "/runtime/webhooks/durabletask/instances", 
                         params=params,
                         headers=headers)
     resp.raise_for_status()
