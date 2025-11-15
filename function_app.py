@@ -209,45 +209,6 @@ def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]):
     resp = parse_response_json(input_blob.read().decode())
     output_blob.set(json.dumps(resp, indent=2))
 
-
-@app.route("validate", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def validate(req: func.HttpRequest) -> func.HttpResponse:
-    from src.health import validate_exists
-    return validate_exists()
-    
-
-@app.route("in_flight", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def in_flight(req: func.HttpRequest) -> func.HttpResponse:
-    from src.orchestrator import WORKFLOW_CONFIGS
-    from src.health import list_in_flight
-
-    if hasattr(req, "params") and req.params is not None and "runtimeStatus" in req.params:
-        query = req.params["runtimeStatus"]
-        if query in df.OrchestrationRuntimeStatus._member_names_:
-            runtime_status = query
-        else:
-            return func.HttpResponse(f"Invalid parameter runtimeStatus={query}. " \
-                                     f"Valid params are {df.OrchestrationRuntimeStatus._member_names_}",
-                                      status_code=400, mimetype="plain/text")
-    else:
-        runtime_status = ["Running", "Pending", "Suspended", "ContinuedAsNew"]
-
-    workflow_type = req.params.get("workflow_type")
-    
-    if workflow_type is not None and workflow_type not in WORKFLOW_CONFIGS:
-        return func.HttpResponse(f"Invalid parameter workflow_type={workflow_type}.", status_code=400)
-    
-    data = list_in_flight(workflow_type, runtime_status)
-
-    formatted = dict(
-        count = len(data),
-        tasks = data
-    )
-
-    return func.HttpResponse(json.dumps(formatted, indent=2), mimetype="application/json")
-    
     
 @app.orchestration_trigger(context_name="context")
 @pretty_error

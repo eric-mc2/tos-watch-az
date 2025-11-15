@@ -13,3 +13,4 @@ anthropic
 pytest
 bleach
 validators
+python-dotenv

@@ -58,6 +58,8 @@ def check_blob(blob_name, container=DEFAULT_CONTAINER, touch=False) -> bool:
 def list_blobs(container=DEFAULT_CONTAINER, strip_container=True) -> list[str]:
     client = get_blob_service_client()
     container_client = client.get_container_client(container)
+    if not container_client.exists():
+        raise RuntimeError("Container does not exist: " + container)
     pages = container_client.list_blob_names()                      
     blobs = []
     for blob in pages:
