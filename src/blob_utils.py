@@ -26,9 +26,9 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
 def get_blob_service_client():
     global _client
     """Get blob service client from connection string environment variable"""
-    connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
+    connection_string = os.environ.get('AzureWebJobsStorage')
     if not connection_string:
-        raise ValueError("AZURE_STORAGE_CONNECTION_STRING environment variable not set")
+        raise ValueError("AzureWebJobsStorage environment variable not set")
     try:
         _client = BlobServiceClient.from_connection_string(connection_string)
     except Exception as e:

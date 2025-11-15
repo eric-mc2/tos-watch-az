@@ -42,7 +42,7 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/static_urls.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
@@ -67,7 +67,7 @@ def meta_processor(input_data: dict):
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/01-metadata/{company}/{policy}/metadata.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def scraper_blob_trigger(input_blob: func.InputStream, 
@@ -111,11 +111,11 @@ def scraper_processor(input_data: dict):
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/02-snapshots/{company}/{policy}/{timestamp}.html",
-                connection="AZURE_STORAGE_CONNECTION_STRING",
+                connection="AzureWebJobsStorage",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
                 path="documents/03-doctrees/{company}/{policy}/{timestamp}.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @pretty_error
 def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
     """Parse html snapshot into hierarchical doctree format."""
@@ -126,11 +126,11 @@ def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/03-doctrees/{company}/{policy}/{timestamp}.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING",
+                connection="AzureWebJobsStorage",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
                 path="documents/04-doclines/{company}/{policy}/{timestamp}.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @pretty_error
 def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
     """Annotate doctree with corpus-level metadata."""
@@ -150,11 +150,11 @@ def batch_diff(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/05-diffs/{company}/{policy}/{timestamp}.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING",
+                connection="AzureWebJobsStorage",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
                 path="documents/06-prompts/{company}/{policy}/{timestamp}.txt",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @pretty_error
 def create_summarizer_prompt(input_blob: func.InputStream, output_blob: func.Out[str]):
     """Language model input."""
@@ -167,7 +167,7 @@ def create_summarizer_prompt(input_blob: func.InputStream, output_blob: func.Out
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/06-prompts/{company}/{policy}/{timestamp}.txt",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
@@ -198,11 +198,11 @@ def summarizer_processor(input_data: dict):
 
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/07-summary-raw/{company}/{policy}/{timestamp}.txt",
-                connection="AZURE_STORAGE_CONNECTION_STRING",
+                connection="AzureWebJobsStorage",
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
                 path="documents/08-summary-clean/{company}/{policy}/{timestamp}.json",
-                connection="AZURE_STORAGE_CONNECTION_STRING")
+                connection="AzureWebJobsStorage")
 @pretty_error
 def parse_summary(input_blob: func.InputStream, output_blob: func.Out[str]):
     from src.summarizer import parse_response_json
