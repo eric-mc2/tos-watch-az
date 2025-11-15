@@ -27,6 +27,7 @@ def hello_world(req: func.HttpRequest):
     logger.info(f"sys.path: {sys.path}")
     try:
         from azure import durable_functions as df
+        logger.info(f"Successfully imported df. Package location: {df.__file__}")
     except Exception as e:
         logger.error("Failed to import DF")
         logger.error(e)
