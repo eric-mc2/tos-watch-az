@@ -1,5 +1,5 @@
 import azure.functions as func
-from azure import durable_functions as df
+# from azure import durable_functions as df
 import logging
 from src.log_utils import setup_logger
 from src.app_utils import http_wrap, pretty_error
