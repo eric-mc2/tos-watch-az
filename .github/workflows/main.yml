@@ -70,6 +70,5 @@ jobs:
         id: deploy-to-function
         with:
           app-name: 'tos-function-app'
-          slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
