@@ -124,7 +124,7 @@ def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
                 path="documents/04-doclines/{company}/{policy}/{timestamp}.json",
                 connection="AZURE_STORAGE_CONNECTION_STRING")
 @pretty_error
-def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
+def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
     """Annotate doctree with corpus-level metadata."""
     from src.annotator import main as annotate_main
     path = parse_blob_path(input_blob.name)
