@@ -29,8 +29,7 @@ def hello_world(req: func.HttpRequest):
         from azure import durable_functions as df
         logger.info(f"Successfully imported df. Package location: {df.__file__}")
     except Exception as e:
-        logger.error("Failed to import DF")
-        logger.error(e)
+        logger.error(f"Failed to import DF: {e}")
 
 
 # @app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
