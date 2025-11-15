@@ -30,11 +30,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Create and start virtual environment
-        run: python -m venv venv
+        run: python -m venv .python_packages
 
       - name: Install dependencies
         run: |
-          source venv/bin/activate
+          source .python_packages/bin/activate
           pip install -r requirements.txt
 
       # Optional: Add step to run tests here
@@ -48,7 +48,7 @@ jobs:
           name: python-app
           path: |
             release.zip
-            !venv/
+            !.python_packages/
 
   deploy:
     runs-on: ubuntu-latest
