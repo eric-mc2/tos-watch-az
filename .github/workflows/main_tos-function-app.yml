@@ -30,17 +30,22 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Create and start virtual environment
-        run: python -m venv .python_packages
+        run: python -m venv venv
 
       - name: Install dependencies
         run: |
-          source .python_packages/bin/activate
+          source venv/bin/activate
           pip install -r requirements.txt
+        
+      - name: Copy to well known location
+        run: |
+          mkdir -p .python_packages/lib/site-packages
+          cp -r venv/lib/python3.12/site-packages/* .python_packages/lib/site-packages/
 
       # Optional: Add step to run tests here
 
       - name: Zip artifact for deployment
-        run: zip -r release.zip .
+        run: zip -r release.zip ./* .python_packages  # ./* doesnt include hidden files. best to opt-in the files we want
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -48,7 +53,7 @@ jobs:
           name: python-app
           path: |
             release.zip
-            !.python_packages/
+            !venv/
 
   deploy:
     runs-on: ubuntu-latest
