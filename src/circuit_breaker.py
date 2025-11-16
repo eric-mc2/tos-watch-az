@@ -1,8 +1,9 @@
 import logging
+import json
+import asyncio
+from datetime import datetime, timezone
 import azure.functions as func
 from azure import durable_functions as df
-import json
-from datetime import datetime, timezone
 from src.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.INFO)
@@ -91,6 +92,19 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     # Whether it exists or not, we can signal it to reset.
     entity_id = df.EntityId("circuit_breaker", workflow_type)
     await client.signal_entity(entity_id, RESET)
+
+    # Wait with exponential backoff for reset confirmation
+    confirmed = False
+    max_attempts = 10
+    for attempt in range(max_attempts):
+        await asyncio.sleep(0.1 * (2 ** attempt))  # 100ms, 200ms, 400ms, etc.
+        status = await check_circuit_breaker(workflow_type, client)
+        confirmed = not status['is_open']
+        if confirmed:
+            break
+    if not confirmed:
+        logger.warning(f"Circuit breaker reset timed out for {workflow_type}")
+        return func.HttpResponse(f"Circuit breaker reset timed out for {workflow_type}", status_code=500)
 
     tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
     for task in tasks:
