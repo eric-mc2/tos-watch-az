@@ -69,11 +69,16 @@ def _test_length(chunks: list[DocChunk]):
 def _test_entropy(texts: list[str]):
     entropies = np.array([_paragraph_entropy(t) for t in texts])
     logger.debug("Sentence-level word entropies:")
-    logger.debug("Q5: {:.4e}".format(np.percentile(entropies,5)))
-    logger.debug("Q25: {:.4e}".format(np.percentile(entropies,25)))
-    logger.debug("Q50: {:.4e}".format(np.percentile(entropies,50)))
-    logger.debug("Q75: {:.4e}".format(np.percentile(entropies,75)))
-    logger.debug("Q95: {:.4e}".format(np.percentile(entropies,95)))
+    p5 = np.percentile(entropies,5) if texts else 0
+    p25 = np.percentile(entropies,25) if texts else 0
+    p50 = np.percentile(entropies,50) if texts else 0
+    p75 = np.percentile(entropies,75) if texts else 0
+    p95 = np.percentile(entropies,95) if texts else 0
+    logger.debug("Q5: {:.4e} ".format(p5 ))
+    logger.debug("Q25: {:.4e}".format(p25))
+    logger.debug("Q50: {:.4e}".format(p50))
+    logger.debug("Q75: {:.4e}".format(p75))
+    logger.debug("Q95: {:.4e}".format(p95))
 
 def main(company: str, policy: str, timestamp: str, tree: str) -> str:
     chunks = annotate_doc(company, policy, timestamp, tree)
