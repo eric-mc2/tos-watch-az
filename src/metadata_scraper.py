@@ -48,6 +48,7 @@ def parse_wayback_metadata(company, policy) -> list[dict]:
         
     if len(data) <= 1:
         logger.info(f"Found 0 snapshots for {input_blob_name}")
+        upload_json_blob("[]", output_blob_name)
         return []
     
     # First row is headers, rest are snapshots
@@ -67,8 +68,7 @@ def parse_wayback_metadata(company, policy) -> list[dict]:
     logger.info(f"Found {len(snapshots)} valid snapshots for {input_blob_name}")
     snapshots = snapshots.to_dict('records')
     
-    if len(snapshots) > 0:
-        upload_json_blob(json.dumps(snapshots, indent=2), output_blob_name)
+    upload_json_blob(json.dumps(snapshots, indent=2), output_blob_name)
 
     return snapshots
     

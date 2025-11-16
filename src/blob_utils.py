@@ -10,8 +10,11 @@ from functools import lru_cache
 from datetime import datetime, timezone
 
 DEFAULT_CONTAINER = "documents"
+DEFAULT_CONNECTION = "AzureWebJobsStorage"
 logger = setup_logger(__name__, logging.INFO)
 _client = None
+
+# TODO THIS NEEDS TO BE CONSISTENT IN IF IT PASSES A CONNECTION KEY TO CLIENT OR NOT!
 
 def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     path = path.removeprefix(f"{container}/")
@@ -23,12 +26,14 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
         blob_path.parts[2],
         blob_path.stem)
 
-def get_blob_service_client():
+def get_blob_service_client(connection_key=DEFAULT_CONNECTION):
     global _client
     """Get blob service client from connection string environment variable"""
-    connection_string = os.environ.get('AzureWebJobsStorage')
+    if _client is not None:
+        return _client
+    connection_string = os.environ.get(connection_key)
     if not connection_string:
-        raise ValueError("AzureWebJobsStorage environment variable not set")
+        raise ValueError(f"{connection_key} environment variable not set")
     try:
         _client = BlobServiceClient.from_connection_string(connection_string)
     except Exception as e:
@@ -55,8 +60,8 @@ def check_blob(blob_name, container=DEFAULT_CONTAINER, touch=False) -> bool:
         blob_client.set_blob_metadata(metadata)
     return blob_client.exists()
 
-def list_blobs(container=DEFAULT_CONTAINER, strip_container=True) -> list[str]:
-    client = get_blob_service_client()
+def list_blobs(container=DEFAULT_CONTAINER, strip_container=True, connection_key=DEFAULT_CONNECTION) -> list[str]:
+    client = get_blob_service_client(connection_key)
     container_client = client.get_container_client(container)
     if not container_client.exists():
         raise RuntimeError("Container does not exist: " + container)

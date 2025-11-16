@@ -8,9 +8,9 @@ from azure import functions as func
 from azure import durable_functions as df
 from src.orchestrator import WORKFLOW_CONFIGS
 from src.log_utils import setup_logger
-from src.blob_utils import list_blobs
+from src.blob_utils import list_blobs, load_json_blob
 from src.scraper_utils import sanitize_urlpath
-from src.metadata_scraper import parse_wayback_metadata
+from src.metadata_scraper import sample_wayback_metadata
 from src.stages import Stage
 from src.seeder import STATIC_URLS
 
@@ -21,7 +21,7 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 
 def validate_exists(*args, **kwargs) -> str:
     try:
-        blobs = set(list_blobs())
+        blobs = set(list_blobs(connection_key="AzureAppStorage"))
     except RuntimeError as e:
         return str(e)
     if "static_urls.json" not in blobs:
@@ -34,21 +34,69 @@ def validate_exists(*args, **kwargs) -> str:
         for url in url_list:
             meta_counter += 1
             policy = sanitize_urlpath(url)
-            blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
+            blob_name = f"{Stage.META.value}/{company}/{policy}/manifest.json"
             if blob_name not in blobs:
                 missing_metadata.append(blob_name)
                 continue
-            meta = parse_wayback_metadata(company, policy)
+            metadata = load_json_blob(blob_name)
+            meta = sample_wayback_metadata(metadata, company, policy)
             for row in meta:
                 timestamp = row['timestamp']
                 snap_counter += 1
                 blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
                 if blob_name not in blobs:
                     missing_snaps.append(blob_name)
-    return "Missing Metadata {}/{}: {}\n\nMissing Snapshots {}/{}: {}".format(
-        len(missing_metadata), meta_counter, json.dumps(missing_metadata, indent=2), 
-        len(missing_snaps), snap_counter, json.dumps(missing_snaps, indent=2)
+    return {"Missing Metadata Count": f"{len(missing_metadata)}/{meta_counter}",
+            "Missing Metadata Files":  missing_metadata,
+            "Missing Snapshot Count": f"{len(missing_snaps)}/{snap_counter}",
+             "Missing Snapshot Files": missing_snaps
+     }
+
+
+def kill_all(workflow_type: str, reason: str = "Manual termination"):
+    """
+    Terminate all running orchestrations.
+    
+    Args:
+        workflow_type: Optional workflow type to filter which orchestrations to terminate
+        reason: Reason for termination (default: "Manual termination")
+    
+    Returns:
+        dict with count of terminated orchestrations and their details
+    """
+    # Get all running/pending orchestrations
+    in_flight = list_in_flight(
+        workflow_type=workflow_type,
+        runtimes=["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )
+    
+    if in_flight['count'] == 0:
+        return {"count": 0, "terminated": [], "message": "No orchestrations to terminate"}
+    
+    # Create a Durable Functions client
+    # Note: This requires running in Azure Functions context or with proper credentials
+    client = df.DurableOrchestrationClient(os.environ.get("AzureWebJobsStorage"))
+    
+    terminated = []
+    for task in in_flight['tasks']:
+        instance_id = task.get('instanceId')
+        if instance_id:
+            try:
+                client.terminate(instance_id, reason)
+                terminated.append({
+                    "instance_id": instance_id,
+                    "name": task['name'],
+                    "workflow_type": task['input_data'].get('workflow_type')
+                })
+            except Exception as e:
+                logging.error(f"Failed to terminate {instance_id}: {e}")
+    
+    return {
+        "count": len(terminated),
+        "terminated": terminated,
+        "reason": reason
+    }
+
 
 def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) -> dict:
 
@@ -68,6 +116,7 @@ def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) ->
             created = t.get('createdTime'),
             updated = t.get('lastUpdatedTime'),
             custom_status = t.get("customStatus"),
+            instance_id = t.get('instanceId'),
             input_data = t.get('input'))
             for t in data]
     
@@ -102,7 +151,7 @@ def _list_in_flight_paged(params, pages = None, next_token=None):
     pages.extend(resp.json())
     next_page = resp.headers.get("x-ms-continuation-token")
     if next_page:
-        return _list_in_flight_paged(params, headers, pages, next_token=next_page)
+        return _list_in_flight_paged(params, pages, next_token=next_page)
     else:
         return pages
 
@@ -115,7 +164,6 @@ def _get_app_url():
         app_url = "http://127.0.0.1:7071"
     return app_url
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='health_checks',
@@ -125,14 +173,22 @@ if __name__ == "__main__":
     
     parser_tasks = subparsers.add_parser('tasks', help='list running tasks')
     parser_tasks.add_argument("--workflow_type", choices=WORKFLOW_CONFIGS)
-    parser_tasks.add_argument("--runtime", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
+    parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
     parser_tasks.set_defaults(func=list_in_flight)
     
     parser_files = subparsers.add_parser('files', help='list missing files')
     parser_files.set_defaults(func=validate_exists)
 
+    parser_kill = subparsers.add_parser('killall', help='terminate all running orchestrations')
+    parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
+    parser_kill.add_argument("--reason", default="Manual termination", help='termination reason')
+    parser_kill.set_defaults(func=kill_all)
+
     args = parser.parse_args()
-    output = args.func(args)
+    
+    # Extract function arguments
+    func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output']}
+    output = args.func(**func_kwargs)
 
     if args.output:
         with open(args.output, "w") as f:
