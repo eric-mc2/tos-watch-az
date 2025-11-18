@@ -67,7 +67,8 @@ def orchestrator_logic(context: df.DurableOrchestrationContext, configs: dict[st
         return result # must signal runtime with explicit return
     
     except Exception as e:
-        logger.error(f"Processor {workflow_type} failed {task_id} with error:\n{e}")
+        if not context.is_replaying:
+            logger.error(f"Processor failed after retries: [{workflow_type}] {task_id} with error:\n{e}")
         yield context.call_entity(circuit_breaker_id, TRIP, str(e))
         raise
 
@@ -152,8 +153,8 @@ def _retry_logic(context: df.DurableOrchestrationContext, config: WorkflowConfig
             break  # activity failed but we dont want to retry.
 
         if not context.is_replaying:
-            logger.warning(f"Processor {workflow_type} failed {task_id}. " \
-                        f"Retrying ({attempt_count}/{max_attempts}) from error: {managed_error}")
+            logger.warning(f"Retrying processor attempt ({attempt_count}/{max_attempts}): " \
+                           f"[{workflow_type}] {task_id}. From error: {managed_error}")
         
         retry_time = context.current_utc_datetime + timedelta(seconds = retry_delay)
         yield context.create_timer(retry_time)

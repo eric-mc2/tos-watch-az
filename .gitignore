@@ -1,6 +1,7 @@
 *.secrets
 appsettings.json
 local.settings.json
+logs/*
 
 # Local python packages
 .python_packages/

@@ -38,35 +38,50 @@ def http_wrap(app_func):
                 app = app_func.__name__,
                 error_type = type(e).__name__,
                 message = str(e),
-                traceback = condensed_tb(e)
+                traceback = condensed_tb(e).splitlines()
             )
             logger.error(app_error)
             return func.HttpResponse(str(app_error), mimetype="application/json", status_code=500)
     return wrapper
 
 
-def pretty_error(app_func):
+def dev_only(app_func):
+    """
+    Do not publish this function in production
+    """
+    if os.getenv("ENVIRONMENT") == "production":
+        return None
+    return app_func
+
+
+def pretty_error(func_arg=None, retryable=False):
     """
     Decorator that wraps a function to provide logging handling.
     """
-    @wraps(app_func)
-    def wrapper(*args, **kwargs):
-        try:
-            return app_func(*args, **kwargs)
-        except Exception as e:
-            app_error = AppError(
-                app = app_func.__name__,
-                error_type = type(e).__name__,
-                message = str(e),  # <-- doesn't include stacktrace
-                traceback = condensed_tb(e)  # <-- now the stacktrace
-            )
-            logger.error(app_error)
-            # Azure will wrap this error in its own C# error and then shove it back
-            # into a Python exception message which is impossible to parse.
-            # So instead of raising, always return a meaningful value from top level functions.
-            # raise type(e)(error_msg) from e
-            return app_error.to_dict()
-    return wrapper
+    def decorator(app_func):
+        @wraps(app_func)
+        def wrapper(*args, **kwargs):
+            try:
+                return app_func(*args, **kwargs)
+            except Exception as e:
+                app_error = AppError(
+                    app = app_func.__name__,
+                    error_type = type(e).__name__,
+                    message = str(e),  # <-- doesn't include stacktrace
+                    traceback = condensed_tb(e).splitlines()  # <-- now the stacktrace
+                )
+                if not retryable:
+                    logger.error(app_error)
+                # Azure will wrap this error in its own C# error and then shove it back
+                # into a Python exception message which is impossible to parse.
+                # So instead of raising, always return a meaningful value from top level functions.
+                # raise type(e)(error_msg) from e
+                return app_error.to_dict()
+        return wrapper
+    if func_arg is None:
+        return decorator
+    else:
+        return decorator(func_arg)
 
 
 def condensed_tb(exc) -> str:

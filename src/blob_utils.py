@@ -13,6 +13,11 @@ DEFAULT_CONTAINER = "documents"
 DEFAULT_CONNECTION = "AzureWebJobsStorage"
 logger = setup_logger(__name__, logging.INFO)
 _client = None
+_connection_key = DEFAULT_CONNECTION
+
+def set_connection_key(key: str):
+    global _connection_key
+    _connection_key = key
 
 # TODO THIS NEEDS TO BE CONSISTENT IN IF IT PASSES A CONNECTION KEY TO CLIENT OR NOT!
 
@@ -26,14 +31,14 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
         blob_path.parts[2],
         blob_path.stem)
 
-def get_blob_service_client(connection_key=DEFAULT_CONNECTION):
+def get_blob_service_client():
     global _client
     """Get blob service client from connection string environment variable"""
     if _client is not None:
         return _client
-    connection_string = os.environ.get(connection_key)
+    connection_string = os.environ.get(_connection_key)
     if not connection_string:
-        raise ValueError(f"{connection_key} environment variable not set")
+        raise ValueError(f"{_connection_key} environment variable not set")
     try:
         _client = BlobServiceClient.from_connection_string(connection_string)
     except Exception as e:
@@ -60,8 +65,8 @@ def check_blob(blob_name, container=DEFAULT_CONTAINER, touch=False) -> bool:
         blob_client.set_blob_metadata(metadata)
     return blob_client.exists()
 
-def list_blobs(container=DEFAULT_CONTAINER, strip_container=True, connection_key=DEFAULT_CONNECTION) -> list[str]:
-    client = get_blob_service_client(connection_key)
+def list_blobs(container=DEFAULT_CONTAINER) -> list[str]:
+    client = get_blob_service_client()
     container_client = client.get_container_client(container)
     if not container_client.exists():
         raise RuntimeError("Container does not exist: " + container)
@@ -72,10 +77,10 @@ def list_blobs(container=DEFAULT_CONTAINER, strip_container=True, connection_key
     return blobs
 
 
-def list_blobs_nest(container=DEFAULT_CONTAINER, strip_container=True) -> dict:
+def list_blobs_nest(container=DEFAULT_CONTAINER) -> dict:
     """Represent container as dictionary."""
     directory = {}
-    for name in list_blobs(container, strip_container):
+    for name in list_blobs(container):
         namepath = Path(name)
         subdir = directory
         for i, part in enumerate(namepath.parts):

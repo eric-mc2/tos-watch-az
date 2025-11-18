@@ -40,11 +40,11 @@ def circuit_breaker_entity(context: df.DurableEntityContext):
         
     elif operation == RESET:
         # Close the circuit breaker
+        logger.info("Circuit breaker entity received reset signal.")
         current_state["strikes"] = 3
         current_state["is_open"] = False
         current_state["error_message"] = None
         current_state["opened_at"] = None
-        logger.info("Circuit breaker reset")
         context.set_result(True)
         
     elif operation == GET_STATUS:
@@ -63,12 +63,12 @@ async def check_circuit_breaker(workflow_type: str, client: df.DurableOrchestrat
     # Check if entity exists first
     entity = await client.read_entity_state(entity_id)
     if not entity.entity_exists or entity.entity_state is None:
-        return f"Circuit breaker for {workflow_type} doesn't exist yet (no orchestrations have run)"
+        return f"Circuit breaker for [{workflow_type}] doesn't exist yet (no orchestrations have run)"
     
     # Entity exists, get its current state directly
     state = entity.entity_state
     
-    status_msg = "tripped" if state.get('is_open', False) else "running"
+    status_msg = "tripped" if state.get('is_open', False) else f"running ({state.get('strikes')}/3 strikes left)"
     
     response_data = {
         "workflow_type": workflow_type,
@@ -78,7 +78,7 @@ async def check_circuit_breaker(workflow_type: str, client: df.DurableOrchestrat
         "opened_at": state.get('opened_at')
     }
     
-    logger.info(f"Circuit breaker status for {workflow_type}: {status_msg}")
+    logger.info(f"Circuit breaker check status: [{workflow_type}] {status_msg}")
     return response_data
 
 
@@ -97,23 +97,25 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     confirmed = False
     max_attempts = 10
     for attempt in range(max_attempts):
+        logger.debug(f"Waiting for circuit reset confirmation ({attempt}/{max_attempts}) for [{workflow_type}]")
         await asyncio.sleep(0.1 * (2 ** attempt))  # 100ms, 200ms, 400ms, etc.
         status = await check_circuit_breaker(workflow_type, client)
         confirmed = not status['is_open']
         if confirmed:
             break
+    
     if not confirmed:
-        logger.warning(f"Circuit breaker reset timed out for {workflow_type}")
-        return func.HttpResponse(f"Circuit breaker reset timed out for {workflow_type}", status_code=500)
+        return func.HttpResponse(f"Circuit breaker reset timed out for [{workflow_type}]", status_code=500)
 
     tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
+    logger.info(f"Found {len(tasks)} orchestrators to wake for [{workflow_type}].")
     for task in tasks:
         task_id = task['data'].get("task_id", "undefine")
-        logger.info("Re-submitting cancelled task %s", task_id)
-        client.raise_event(task['instance_id'], RESET)
+        logger.debug(f"Re-submitting cancelled task [{workflow_type}] {task_id}")
+        await client.raise_event(task['instance_id'], RESET)
 
-    logger.info(f"Circuit breaker reset for workflow: {workflow_type}")
-    return func.HttpResponse(f"Circuit breaker reset for {workflow_type}", status_code=200)
+    logger.info(f"Circuit breaker reset for [{workflow_type}]")
+    return func.HttpResponse(f"Circuit breaker reset for [{workflow_type}]", status_code=200)
 
 
 async def list_tasks(client: df.DurableOrchestrationClient, workflow_type: str, status: list[df.OrchestrationRuntimeStatus]):

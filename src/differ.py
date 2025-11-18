@@ -2,8 +2,7 @@ import logging
 import difflib
 from itertools import pairwise
 import json
-from src.blob_utils import (load_json_blob, upload_json_blob, list_blobs_nest,
-                            check_blob, list_blobs, DEFAULT_CONTAINER)
+from src.blob_utils import (load_json_blob, upload_json_blob, list_blobs_nest, check_blob)
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
 from src.stages import Stage

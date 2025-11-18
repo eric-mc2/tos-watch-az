@@ -2,7 +2,7 @@ import azure.functions as func
 from azure import durable_functions as df
 import logging
 from src.log_utils import setup_logger
-from src.app_utils import http_wrap, pretty_error
+from src.app_utils import http_wrap, pretty_error, dev_only
 import json
 from src.stages import Stage
 from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, upload_json_blob
@@ -13,7 +13,6 @@ app = func.FunctionApp()
 logger = setup_logger(__name__, logging.DEBUG)
 logging.getLogger('azure').setLevel(logging.WARNING)
 
-
 @app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def hello_world(req: func.HttpRequest):
@@ -21,15 +20,6 @@ def hello_world(req: func.HttpRequest):
     logger.info("Test logs info")
     logger.warning("Test logs warning")
     logger.error("Test logs error")
-    import sys
-    logger.info(f"Python executable: {sys.executable}")
-    logger.info(f"sys.prefix: {sys.prefix}")
-    logger.info(f"sys.path: {sys.path}")
-    try:
-        from azure import durable_functions as df
-        logger.info(f"Successfully imported DF. Package location: {df.__file__}")
-    except Exception as e:
-        logger.error(f"Failed to import DF: {e}")
 
 
 @app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
@@ -38,6 +28,37 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
     """Post seed URLs to blob storage for scraping"""
     from src.seeder import seed_urls as seed_main
     seed_main()
+
+
+@dev_only
+@app.blob_trigger(arg_name="input_blob", 
+                path="documents/test_failure_trigger.txt",
+                connection="AzureWebJobsStorage")
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def test_failure_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
+    from datetime import datetime
+    task_id = "persistent_failure_" + datetime.now().isoformat()
+    logger.info(f"Initiating orchestration for {task_id}")
+    orchestration_input = OrchData(task_id, "test_fail", "acme").to_dict()
+    await client.start_new("test_failure_orchestrator", None, orchestration_input)
+
+
+@dev_only
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def test_failure_processor(input_data: dict):
+    task_id = input_data['task_id']
+    logger.info(f"Running processor {task_id}")
+    raise RuntimeError(f"Test processor fail {task_id}")
+
+
+@dev_only
+@app.orchestration_trigger(context_name="context")
+@pretty_error
+def test_failure_orchestrator(context: df.DurableOrchestrationContext):
+    from src.orchestrator import orchestrator_logic, WorkflowConfig
+    return orchestrator_logic(context, {"test_fail": WorkflowConfig(60,60,5,"test_failure_processor", 1, 5)})
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -58,7 +79,7 @@ async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrch
     
 
 @app.activity_trigger(input_name="input_data")
-@pretty_error
+@pretty_error(retryable=True)
 def meta_processor(input_data: dict):
     from src.metadata_scraper import scrape_wayback_metadata
     scrape_wayback_metadata(input_data['task_id'], input_data['company'])
@@ -98,7 +119,7 @@ async def scraper_blob_trigger(input_blob: func.InputStream,
     
 
 @app.activity_trigger(input_name="input_data")
-@pretty_error
+@pretty_error(retryable=True)
 def scraper_processor(input_data: dict):
     from src.snapshot_scraper import get_wayback_snapshot
     snap_url = input_data['task_id']
@@ -174,12 +195,12 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
     """Blob trigger that starts the summarizer workflow orchestration."""
     blob_name = input_blob.name.removeprefix("documents/")
     parts = parse_blob_path(blob_name)
-    orchestration_input = OrchData(blob_name, "summarizer", parts.company, parts.policy, parts.timestamp)
-    await client.start_new("orchestrator", None, orchestration_input.to_dict())
+    orchestration_input = OrchData(blob_name, "summarizer", parts.company, parts.policy, parts.timestamp).to_dict()
+    await client.start_new("orchestrator", None, orchestration_input)
     
 
 @app.activity_trigger(input_name="input_data")
-@pretty_error
+@pretty_error(retryable=True)
 def summarizer_processor(input_data: dict):
     from src.summarizer import summarize
         

@@ -8,7 +8,7 @@ from azure import functions as func
 from azure import durable_functions as df
 from src.orchestrator import WORKFLOW_CONFIGS
 from src.log_utils import setup_logger
-from src.blob_utils import list_blobs, load_json_blob
+from src.blob_utils import list_blobs, load_json_blob, set_connection_key
 from src.scraper_utils import sanitize_urlpath
 from src.metadata_scraper import sample_wayback_metadata
 from src.stages import Stage
@@ -20,8 +20,9 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 
 
 def validate_exists(*args, **kwargs) -> str:
+    set_connection_key("AzureAppStorage")
     try:
-        blobs = set(list_blobs(connection_key="AzureAppStorage"))
+        blobs = set(list_blobs())
     except RuntimeError as e:
         return str(e)
     if "static_urls.json" not in blobs:
@@ -67,7 +68,7 @@ def kill_all(workflow_type: str, reason: str = "Manual termination"):
     # Get all running/pending orchestrations
     in_flight = list_in_flight(
         workflow_type=workflow_type,
-        runtimes=["Running", "Pending", "Suspended", "ContinuedAsNew"]
+        runtimes="Running", #["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )
     
     if in_flight['count'] == 0:
@@ -80,13 +81,13 @@ def kill_all(workflow_type: str, reason: str = "Manual termination"):
     terminated = []
     for task in in_flight['tasks']:
         instance_id = task.get('instanceId')
-        if instance_id:
+        if instance_id and task['name'] == "orchestrator" and task['custom_status'] == "Waiting for circuit":
             try:
                 client.terminate(instance_id, reason)
                 terminated.append({
                     "instance_id": instance_id,
-                    "name": task['name'],
-                    "workflow_type": task['input_data'].get('workflow_type')
+                    "task_id": task['task_id'],
+                    "updated": task['updated']
                 })
             except Exception as e:
                 logging.error(f"Failed to terminate {instance_id}: {e}")
@@ -125,12 +126,14 @@ def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) ->
         if isinstance(in_data, str):
             d['input_data'] = json.loads(in_data)
     
-    if workflow_type is not None:
-        data = [t for t in data if t['input_data']['workflow_type'] == workflow_type]
+    filtered_data = []
+    for d in data:
+        if workflow_type is None or d.get('input_data', {}).get('workflow_type') == workflow_type:
+            filtered_data.append(d)
 
     formatted = dict(
-        count = len(data),
-        tasks = data
+        count = len(filtered_data),
+        tasks = filtered_data
     )
 
     return formatted
@@ -172,7 +175,7 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(required=True)
     
     parser_tasks = subparsers.add_parser('tasks', help='list running tasks')
-    parser_tasks.add_argument("--workflow_type", choices=WORKFLOW_CONFIGS)
+    parser_tasks.add_argument("--workflow_type")
     parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
     parser_tasks.set_defaults(func=list_in_flight)
     

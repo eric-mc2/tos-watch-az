@@ -19,6 +19,8 @@
       "Function.hello_world.User": "Debug",
       "Function.seed_urls.User": "Debug",
       "Function.meta_blob_trigger.User": "Debug",
+      "Function.test_failure_trigger.User": "Debug",
+      "Function.test_failure_processor.User": "Debug",
       "Function.meta_processor.User": "Debug",
       "Function.scraper_blob_trigger.User": "Debug",
       "Function.scraper_processor.User": "Debug",
