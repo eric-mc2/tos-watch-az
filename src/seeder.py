@@ -103,8 +103,6 @@ def validate_urls(urls: dict):
 
 
 def seed_urls(urls: dict = STATIC_URLS):
-    # Note: this is separate to make the validate/upload logic testable
-    #       and separate from the hard-coded data which is hard to inject.
     validate_urls(urls)
     text_content = json.dumps(urls, indent=2)
     upload_json_blob(text_content, 'static_urls.json')

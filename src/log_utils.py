@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime
-from app_utils import 
+from src.env_utils import dev_only
 
 # Persist log path for lifespan of app
 current_time = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
@@ -12,9 +12,7 @@ def setup_logger(name, loglvl = logging.INFO):
     logging.basicConfig(level=loglvl, format=log_fmt)
     logger = logging.getLogger(name)
     logger.setLevel(loglvl)
-    
-    
-    
+    _setup_logfile(logger, loglvl, log_fmt)
     return logger
 
 @dev_only

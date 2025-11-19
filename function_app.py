@@ -2,7 +2,8 @@ import azure.functions as func
 from azure import durable_functions as df
 import logging
 from src.log_utils import setup_logger
-from src.app_utils import http_wrap, pretty_error, dev_only
+from src.app_utils import http_wrap, pretty_error
+from src.env_utils import dev_only
 import json
 from src.stages import Stage
 from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, upload_json_blob

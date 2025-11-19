@@ -45,15 +45,6 @@ def http_wrap(app_func):
     return wrapper
 
 
-def dev_only(app_func):
-    """
-    Do not publish this function in production
-    """
-    if os.getenv("ENVIRONMENT") == "production":
-        return None
-    return app_func
-
-
 def pretty_error(func_arg=None, retryable=False):
     """
     Decorator that wraps a function to provide logging handling.
