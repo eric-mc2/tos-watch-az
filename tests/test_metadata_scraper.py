@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock, call
 from src.metadata_scraper import scrape_wayback_metadata
-from src.seeder import URL_DATA
+from src.seeder import STATIC_URLS
 import requests
 import json
 from src.orchestrator import WorkflowConfig
@@ -70,10 +70,9 @@ class TestScrapeWaybackMetadata:
         mock_get.assert_called_once()
         mock_upload.assert_called_once()
 
-    @patch('src.metadata_scraper.time.sleep')
     @patch('src.metadata_scraper.requests.get')
     @patch('src.metadata_scraper.check_blob')
-    def test_request_failure(self, mock_blob_exists, mock_get, mock_sleep):
+    def test_request_failure(self, mock_blob_exists, mock_get):
         """Test handling of request failure"""
         mock_blob_exists.return_value = False
         mock_get.side_effect = requests.ConnectionError("Persistent error")
@@ -82,12 +81,9 @@ class TestScrapeWaybackMetadata:
             scrape_wayback_metadata("https://example.com", "company1")
 
     def test_integration(self):
-        config = {"meta": WorkflowConfig(300, 10, "test_task", 2).to_dict()}
+        config = {"meta": WorkflowConfig(300, 60, 5, "test_task", 2, 5).to_dict()}
         root = Path(__file__).parent.parent.absolute()
-        url_path = f"{root}/{URL_DATA}"
-        with open(url_path) as f:
-            urls = f.read()
-        urls = json.loads(urls)
+        urls = STATIC_URLS
         store = {}
         contexts = []
         for company, url_list in urls.items():

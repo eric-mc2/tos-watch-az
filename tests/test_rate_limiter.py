@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import time
 from src.orchestrator import WorkflowConfig
 from src.rate_limiter import rate_limiter_entity, TRY_ACQUIRE, GET_STATUS, RateLimiterState
+from unittest.mock import patch, MagicMock, call
 
 
 class MockEntityContext:
@@ -38,28 +39,35 @@ class TestRateLimiterEntity(unittest.TestCase):
 
     config = WorkflowConfig(10, 60, 0.1, "test_processor", 2, 1)
     
-    def test_initial_status(self):
+    @patch("src.rate_limiter.datetime")
+    def test_initial_status(self, mock_time):
+        mock_time.fromisoformat = datetime.fromisoformat
 
-        current_time_str = datetime.now().isoformat()
-        input_data = self.config.to_dict() | {"last_success_time": current_time_str}
+        current_time = datetime.now()
+        mock_time.now.return_value = current_time
+        input_data = self.config.to_dict()
         context = MockEntityContext("test_workflow", GET_STATUS, input_data)
         rate_limiter_entity(context)
         
         result = context._result
         status = context.get_state()
         
-        expected = RateLimiterState(self.config.rate_limit_rpm, 0, 0, current_time_str)
+        expected = RateLimiterState(self.config.rate_limit_rpm, 0, 0, current_time.isoformat())
         self.assertEqual(status, expected.to_dict())
         
         
-    def test_under_limit(self):
+    @patch("src.rate_limiter.datetime")
+    def test_under_limit(self, mock_time):
+        mock_time.fromisoformat = datetime.fromisoformat
 
-        n_tasks = self.config.rate_limit_rpm - 1
-        tasks = [datetime(2025, 1, 1, 12, 0, i).isoformat() for i in range(1,n_tasks+1)]
-        inputs = [self.config.to_dict() | {"last_success_time": t} for t in tasks]
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, None)
-        for i, data in enumerate(inputs):
-            context._input = data
+        context._input = self.config.to_dict()
+        
+        n_tasks = self.config.rate_limit_rpm - 1
+        tasks = [datetime(2025, 1, 1, 12, 0, i) for i in range(1,n_tasks+1)]
+        
+        for i, t in enumerate(tasks):
+            mock_time.now.return_value = t
             rate_limiter_entity(context)
             
             result = context._result
@@ -74,13 +82,18 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status.remaining, self.config.rate_limit_rpm - n_tasks)
 
 
-    def test_tripped(self):
-        n_tasks = self.config.rate_limit_rpm
-        times = [datetime(2025, 1, 1, 12, 0, i).isoformat() for i in range(1, n_tasks+1)]
-        datas = [self.config.to_dict() | {"last_success_time": t} for t in times]
+    @patch("src.rate_limiter.datetime")
+    def test_tripped(self, mock_time):
+        mock_time.fromisoformat = datetime.fromisoformat
+
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, None)
-        for i, data in enumerate(datas, 1):
-            context._input = data
+        context._input = self.config.to_dict()
+        
+        n_tasks = self.config.rate_limit_rpm
+        times = [datetime(2025, 1, 1, 12, 0, i) for i in range(1, n_tasks+1)]
+        
+        for i, t in enumerate(times, 1):
+            mock_time.now.return_value = t
             rate_limiter_entity(context)
             
             result = context._result
@@ -95,26 +108,32 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status.remaining, 0)
         
         context.operation_name = TRY_ACQUIRE
-        next_time = datetime(2025, 1, 1, 12, 0, n_tasks+2).isoformat()
-        data = self.config.to_dict() | {"last_success_time": next_time}
-        context._input = data
+        mock_time.now.return_value = datetime(2025, 1, 1, 12, 0, n_tasks+2)
         rate_limiter_entity(context)
         result = context._result
         status = RateLimiterState.from_dict(context.get_state())
         self.assertFalse(result)
         self.assertEqual(status.remaining, 0)
 
+    @patch("src.rate_limiter.datetime")
+    def test_reset(self, mock_time):
+        # XXX: I wish I could selectively mock just the now method instead of re-enabling fromisoformat
+        mock_time.fromisoformat = datetime.fromisoformat
 
-    def test_reset(self):
-        minute = 0
-        burst_time = datetime(2025, 1, 1, 0, minute, 0).isoformat()
-        burst_data = self.config.to_dict() | {"last_success_time": burst_time}
+        burst_time = datetime(2025, 1, 1, 0, 0, 0)
+        second_time = burst_time + timedelta(minutes=1, seconds=1)
+        third_time = burst_time + timedelta(minutes=2, seconds=2)
+
+        burst_data = self.config.to_dict()
         context = MockEntityContext("test_workflow", TRY_ACQUIRE, burst_data)
         context._input = burst_data
         
+        # Burn tokens
+        mock_time.now.return_value = burst_time
         for i in range(self.config.rate_limit_rpm + 1):
             rate_limiter_entity(context)
-            
+        
+        # Should be spent
         status = RateLimiterState.from_dict(context.get_state())
         self.assertFalse(context._result)
         self.assertEqual(status.remaining, 0)
@@ -122,9 +141,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status.used_previous, 0)
         
         # Next minute shifts to previous but not reset yet
-        next_time = datetime(2025, 1, 1, 0, minute + 1, 0).isoformat()
-        next_data = self.config.to_dict() | {"last_success_time": next_time}
-        context._input = next_data
+        mock_time.now.return_value = second_time
         rate_limiter_entity(context)
 
         status = RateLimiterState.from_dict(context.get_state())
@@ -134,9 +151,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status.used_previous, 10)
         
         # Next minute resets
-        next_time = datetime(2025, 1, 1, 0, minute + 2, 0).isoformat()
-        next_data = self.config.to_dict() | {"last_success_time": next_time}
-        context._input = next_data
+        mock_time.now.return_value = third_time
         rate_limiter_entity(context)
 
         status = RateLimiterState.from_dict(context.get_state())

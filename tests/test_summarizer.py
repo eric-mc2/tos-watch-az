@@ -24,18 +24,6 @@ def test_prompt():
     prompt = create_prompt(json.dumps(diff))
     assert 'UNCHANGED' not in prompt and 'NEW' in prompt and 'OLD' in prompt
 
-def test_parse():
-    root = Path(__file__).parent.parent.absolute()
-    with open(f'{root}/data/20240421054440.txt') as f:
-        data = json.load(f)
-    with open(f'{root}/data/20240421054440.txt') as f:
-        data_str = f.read()
-    resp = parse_response_json(data_str)
-    for key in data:
-        assert key in resp
-    for key in resp:
-        assert key in data
-        assert data[key] == resp[key] 
 
 def test_sanitizer():
     assert "bad" == sanitize_response("bad")

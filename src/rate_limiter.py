@@ -4,6 +4,7 @@ import logging
 from src.log_utils import setup_logger
 from dataclasses import dataclass, asdict, fields
 from typing import Self
+import math
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -53,6 +54,7 @@ def rate_limiter_entity(context: df.DurableEntityContext):
         raise ValueError(f"Invalid operation name {operation}")
 
     rate_limit_rpm = input_data.get("rate_limit_rpm", 10)
+    rate_limit_period = input_data.get("rate_limit_period", 60)
     current_time = datetime.now()
     state = context.get_state(lambda: RateLimiterState.default(rate_limit_rpm, current_time).to_dict())
     state = RateLimiterState.from_dict(state)
@@ -67,8 +69,8 @@ def rate_limiter_entity(context: df.DurableEntityContext):
     # Compute current window
     # We only care about two times: actually right now and the last success time
     # We don't care when the task was originally submitted. What matters is we're seeing it now.
-    current_window = current_time.timestamp() // 60
-    last_success = datetime.fromisoformat(state.last_success_time).timestamp() // 60
+    current_window = current_time.timestamp() // rate_limit_period
+    last_success = datetime.fromisoformat(state.last_success_time).timestamp() // rate_limit_period
 
     if last_success == current_window:
         # don't need to change used counts
@@ -83,10 +85,10 @@ def rate_limiter_entity(context: df.DurableEntityContext):
         state.used_previous = 0
     
     overlap = current_time.second
-    overlap_weight = (60 - overlap) / 60
+    overlap_weight = (rate_limit_period - overlap) / rate_limit_period
     used_total = state.used_previous * overlap_weight + state.used_current
 
-    if used_total < rate_limit_rpm:
+    if math.ceil(used_total) < rate_limit_rpm:
         state.used_current += 1
         state.remaining = rate_limit_rpm - state.used_current - state.used_previous
         state.last_success_time = current_time.isoformat()

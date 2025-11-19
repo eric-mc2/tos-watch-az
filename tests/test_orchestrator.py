@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from datetime import datetime, timezone
+from asyncio import sleep
 import time
 from azure import durable_functions as df
 from src.rate_limiter import rate_limiter_entity, TRY_ACQUIRE
@@ -69,6 +70,10 @@ class MockDurableOrchestrationContext:
         self.throttled_count = 0
         self.cancelled_count = 0
         
+        # Event handling for orchestrator suspension/resumption
+        self._waiting_for_event = None
+        self._pending_events = {}
+        
     def get_input(self):
         return self._input
     
@@ -76,6 +81,9 @@ class MockDurableOrchestrationContext:
     def current_utc_datetime(self):
         """Return actual current time."""
         return datetime.now(timezone.utc)
+    
+    def set_custom_status(self, *args, **kwargs):
+        pass
     
     def call_entity(self, entity_id, operation, input_data=None):
         """Execute actual entity logic."""
@@ -149,21 +157,52 @@ class MockDurableOrchestrationContext:
             print(f"  [WAIT] Sleeping for {sleep_seconds:.1f}s until {fire_at.strftime('%H:%M:%S')}")
             time.sleep(sleep_seconds)
         return None
+    
+    def wait_for_external_event(self, event_name):
+        """Mark orchestrator as waiting for an event - this suspends execution."""
+        self._waiting_for_event = event_name
+        # Return the event data if it's already been raised, otherwise None
+        return self._pending_events.get(event_name)
+    
+    def raise_event(self, event_name, data=None):
+        """Raise an event to wake waiting orchestrators."""
+        self._pending_events[event_name] = data
+        if self._waiting_for_event == event_name:
+            self._waiting_for_event = None
+    
+    def continue_as_new(self, input_data):
+        """Restart orchestrator with new input."""
+        raise StopIteration("continue_as_new")
 
-
-def run_orchestrator(context, configs):
-    """Helper to run orchestrator as a generator."""
-    gen = orchestrator_logic(context, configs)
-    result = None
+def run_orchestrator(context, configs, gen = None):
+    """Helper to run orchestrator as a generator until completion or suspension.
+    Gen argument resumes a suspended orchestrator generator after an event is raised.
+    The test environment is not threaded so this is a simulation of the generator awaiting events.
+    """
+    if gen is None:
+        gen = orchestrator_logic(context, configs)
+    # Send the event data to the waiting orchestrator
+    event_data = context._pending_events.get(context._waiting_for_event)
+    result = event_data
+    
     try:
         while True:
             yielded = gen.send(result)
             result = yielded
+            
+            # Check if orchestrator suspended again
+            if context._waiting_for_event is not None:
+                return ('suspended', gen)
+                
     except StopIteration as e:
-        return e.value
+        return ('completed', e.value)
+    except RuntimeError as e:
+        if 'continue_as_new' in str(e) or "StopIteration" in str(e):
+            return ('completed', None)
+        else:
+            raise
     except Exception as e:
         raise
-
 
 @pytest.fixture
 def entity_state_store():
@@ -174,13 +213,13 @@ def entity_state_store():
 @pytest.fixture
 def rate_limit_config():
     """Config for rate limiting test."""
-    return {"test_workflow": WorkflowConfig(3, 10, 10, "test_task", 1, 1)}
+    return {"test_workflow": WorkflowConfig(3, 2, 4, "test_task", 1, 1)}
 
 
 @pytest.fixture
 def circuit_breaker_config():
     """Config for circuit breaker test."""
-    return {"test_workflow": WorkflowConfig(100, 60, 5, "test_task", 1, 1)}
+    return {"test_workflow": WorkflowConfig(1000, 60, 5, "test_task", 1, 1)}
 
 @pytest.fixture
 def wrapper_config():
@@ -200,31 +239,30 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
     Test that rate limiting throttles tasks and allows processing after token refill.
     
     Expected behavior:
+    NOTE THIS TEST IS SINGLE THREADED SO EXPECTATIONS ARE DIFFERENT THAN SUT
+    TO SIMPLIFY THE FRACTIONAL WINDOW MATH, CONFIG SLEEPS FOR DOUBLE THE RATE PERIOD
     - First 3 tasks process immediately (consume all tokens)
-    - Tasks 4-10 are throttled and wait
-    - After ~60s, tokens refill and remaining tasks process
-    - All tasks eventually succeed
+    - 4th task is throttled
+    - Second window elapses
+    - Tasks 4-6 process in third window
+    - 7th task is throttled
+    - Third and fourth windows elapse
+    - Tasks 7-9 process in the fifth window.
+    In total,
+    - All tasks succeed
+    - Five periods elapse
+    - Two tasks are throttled
     """
     start_time = time.time()
     
-    # Submit 6 tasks
-    tasks = [f"task_{i:02d}" for i in range(1, 7)]
+    # Submit 9 tasks
+    tasks = [f"task_{i:02d}" for i in range(9)]
     
     contexts = []
-    
     for task_name in tasks:
-        input_data = {
-            "workflow_type": "test_workflow",
-            "task_id": task_name,
-            "result": task_name,
-        }
-        
-        context = MockDurableOrchestrationContext(
-            input_data,
-            entity_state_store,
-        )
+        input_data = {"workflow_type": "test_workflow", "task_id": task_name, "result": task_name}
+        context = MockDurableOrchestrationContext(input_data, entity_state_store)
         contexts.append(context)
-        
         result = run_orchestrator(context, rate_limit_config)
         
     end_time = time.time()
@@ -236,10 +274,12 @@ def test_rate_limiting_with_token_refill(entity_state_store, rate_limit_config):
     total_throttled = sum(ctx.throttled_count for ctx in contexts)
     
     # Assertions
-    assert total_success == 6, f"Expected 9 successes, got {total_success}"
+    assert total_success == 9, f"Expected 9 successes, got {total_success}"
     assert total_failure == 0, f"Expected 0 failures, got {total_failure}"
-    assert total_throttled >= 3, f"Expected at least 7 throttle events, got {total_throttled}"
-    assert elapsed >= 20, f"Expected at least 20s elapsed for rate limit refill, got {elapsed:.1f}s"
+    assert total_throttled == 2, f"Expected at 2 throttle events, got {total_throttled}"
+    period = rate_limit_config['test_workflow'].rate_limit_period
+    assert elapsed >= period * 4, f"Expected at least 8s elapsed for rate limit refill, got {elapsed:.1f}s"
+    assert elapsed <= period * 5, f"Expected at least 10s elapsed for rate limit refill, got {elapsed:.1f}s"
 
 def test_wrapped_error_handling(entity_state_store, wrapper_config):
     input_data = {
@@ -260,7 +300,7 @@ def test_wrapped_error_handling(entity_state_store, wrapper_config):
     assert err['app'] == "_wrapped_raiser"
     assert err['error_type'] == PrettyException.__name__
     assert err["message"] == "hi"
-    tb = err['traceback'].splitlines()
+    tb = err['traceback']
     assert "_wrapped_raiser" in tb[-1]
 
 def test_nested_wrapped_error_handling(entity_state_store, wrapper_config):
@@ -282,7 +322,7 @@ def test_nested_wrapped_error_handling(entity_state_store, wrapper_config):
     assert err['app'] == "_wrapped_nested_raiser"
     assert err['error_type'] == PrettyNestedException.__name__
     assert err["message"] == "hi"
-    tb = err['traceback'].splitlines()
+    tb = err['traceback']
     assert "_raiser" in tb[-1]
 
 def test_unwrapped_error_handling(entity_state_store, wrapper_config):
@@ -368,6 +408,101 @@ def test_circuit_breaker_trips_and_stops_processing(entity_state_store, circuit_
     assert total_failure == 3, f"Expected 3 failure (tasks 3,4,5), got {total_failure}"
     assert total_cancelled == 5, f"Expected 5 cancelled (tasks 6-10), got {total_cancelled}"
 
+def test_tasks_resume_after_circuit_resets(entity_state_store, circuit_breaker_config):
+    """
+    Test that cancelled tasks wake when circuit resets.
+    
+    Expected behavior:
+    - Breaker starts open
+    - Tasks are blocked 
+    - Breaker resets
+    - Tasks resume
+    """
+    from src.circuit_breaker import TRIP, GET_STATUS, RESET, circuit_breaker_entity
+    
+    # Initialize open circuit by tripping it with failures
+    workflow_type = "test_workflow"
+    circuit_entity_id = df.EntityId("circuit_breaker", workflow_type)
+    
+    for i in range(3):
+        input_data = {"workflow_type": workflow_type, "task_id": f"task_{i}", "result": Exception(f"strike_{i}")}
+        context = MockDurableOrchestrationContext(input_data, entity_state_store)
+        with(pytest.raises(Exception)):
+            run_orchestrator(context, circuit_breaker_config)
+    
+    # Verify circuit is open
+    check_ctx = MockDurableEntityContext(circuit_entity_id, entity_state_store)
+    check_ctx.operation_name = GET_STATUS
+    circuit_breaker_entity(check_ctx)
+    assert check_ctx.get_result() == False, "Circuit should be open"
+    
+    # Send in tasks that will block on the circuit
+    tasks = [f"task_{i:02d}" for i in range(10)]
+    results = [f"task_{i:02d}" for i in range(10)]    
+    suspended_orchestrators = []
+    
+    for i, (task_name, result) in enumerate(zip(tasks, results)):
+        input_data = {"workflow_type": workflow_type, "task_id": task_name, "result": result}
+        context = MockDurableOrchestrationContext(input_data, entity_state_store)
+        
+        # Start orchestrator - it should suspend on wait_for_external_event
+        status, gen_or_value = run_orchestrator(context, circuit_breaker_config)
+        
+        assert status == 'suspended', f"Task {task_name} should be suspended, got {status}"
+        assert context._waiting_for_event == RESET, f"Task should be waiting for RESET event"
+        
+        suspended_orchestrators.append((context, gen_or_value))
+
+    # Verify tasks are pending (blocked on circuit)
+    total_success = sum(ctx.success_count for ctx, _ in suspended_orchestrators)
+    total_failure = sum(ctx.failure_count for ctx, _ in suspended_orchestrators)
+    total_cancelled = sum(ctx.cancelled_count for ctx, _ in suspended_orchestrators)
+    
+    assert total_success == 0, "No tasks should succeed yet"
+    assert total_failure == 0, "No tasks should fail"
+    assert total_cancelled == 10, "All tasks should be cancelled by circuit"
+
+    # Reset circuit
+    reset_ctx = MockDurableEntityContext(circuit_entity_id, entity_state_store)
+    reset_ctx.operation_name = RESET
+    circuit_breaker_entity(reset_ctx)
+    assert reset_ctx.get_result() == True, "Circuit should reset successfully"
+    
+    # Verify circuit is closed
+    check_ctx2 = MockDurableEntityContext(circuit_entity_id, entity_state_store)
+    check_ctx2.operation_name = GET_STATUS
+    circuit_breaker_entity(check_ctx2)
+    assert check_ctx2.get_result() == True, "Circuit should be closed"
+    
+    # Raise RESET event to wake all waiting orchestrators and resume them
+    for i, (context, gen) in enumerate(suspended_orchestrators):
+        context.raise_event(RESET)
+        
+        # Resume the suspended orchestrator - it should restart and complete
+        status, value = run_orchestrator(context, circuit_breaker_config, gen)
+        assert status == 'completed' 
+
+        # It's not done-done. We have to simulate continue_as_new.
+        # XXX: This is kinda messed up but since the test simultaes continue_as_new
+        # via a StopIteration error, that actually raises inside the orchestrator's
+        # error handling logic and causes the orchestrator to trip the circuit again.
+        # So FOR THIS TEST ONLY, we re-raise the circuit to keep it closed.
+        circuit_breaker_entity(reset_ctx)
+
+        status, value = run_orchestrator(context, circuit_breaker_config)
+        
+        assert status == 'completed', f"Task should complete after reset, got {status}"
+
+    # Verify tasks have now completed
+    total_success = sum(ctx.success_count for ctx, _ in suspended_orchestrators)
+    total_failure = sum(ctx.failure_count for ctx, _ in suspended_orchestrators)
+    total_cancelled = sum(ctx.cancelled_count for ctx, _ in suspended_orchestrators)
+    
+    assert total_success == 10, f"All tasks should succeed after reset, got {total_success}"
+    assert total_failure == 0, f"No tasks should fail, got {total_failure}"
+    assert total_cancelled == 10, f"Cancelled count should remain at 10, got {total_cancelled}"
+
+
 def test_workflow_isolation_separate_circuits(entity_state_store, isolation_config):
     """
     Test that different workflow types have isolated rate limiters and circuit breakers.
@@ -432,4 +567,3 @@ def test_workflow_isolation_separate_circuits(entity_state_store, isolation_conf
     assert results_b["success"] == 3, f"Expected 3 successes for workflow_b, got {results_b['success']}"
     assert results_b["failure"] == 0, f"Expected 0 failures for workflow_b, got {results_b['failure']}"
     assert results_b["cancelled"] == 0, f"Expected 0 cancelled for workflow_b, got {results_b['cancelled']}"
-    
