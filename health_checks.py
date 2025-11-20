@@ -58,7 +58,7 @@ def validate_exists(*args, **kwargs) -> str:
      }
 
 
-def kill_all(workflow_type: str, reason: str = "Manual termination"):
+def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     Terminate all running orchestrations.
     
@@ -78,23 +78,34 @@ def kill_all(workflow_type: str, reason: str = "Manual termination"):
     if in_flight['count'] == 0:
         return {"count": 0, "terminated": [], "message": "No orchestrations to terminate"}
     
-    # Create a Durable Functions client
-    # Note: This requires running in Azure Functions context or with proper credentials
-    client = df.DurableOrchestrationClient(os.environ.get("AzureWebJobsStorage"))
-    
     terminated = []
     for task in in_flight['tasks']:
-        instance_id = task.get('instanceId')
-        if instance_id and task['name'] == "orchestrator" and task['custom_status'] == "Waiting for circuit":
+        instance_id = task.get('instance_id')
+        should_terminate = instance_id is not None and task['name'] == "orchestrator"
+        if reason == KILL_CIRCUIT:
+            should_terminate &= task['custom_status'] == "Waiting for circuit"
+        elif reason == KILL_ALL:
+            should_terminate &= True
+        else:
+            should_terminate = False
+        if should_terminate:
             try:
-                client.terminate(instance_id, reason)
+                # Use REST API to terminate
+                url = f"{_get_app_url()}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
+                params = {
+                    'reason': reason,
+                    'code': os.environ.get("AZURE_FUNCTION_MASTER_KEY")
+                }
+                resp = requests.post(url, params=params)
+                resp.raise_for_status()
+                
                 terminated.append({
                     "instance_id": instance_id,
-                    "task_id": task['task_id'],
+                    "task_id": task.get('input_data', {}).get('task_id'),
                     "updated": task['updated']
                 })
             except Exception as e:
-                logging.error(f"Failed to terminate {instance_id}: {e}")
+                logging.error(f"Failed to terminate {instance_id}: {type(e)} {e}")
     
     return {
         "count": len(terminated),
