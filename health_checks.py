@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import argparse
+from collections import Counter
 from dotenv import load_dotenv
 from azure import functions as func
 from azure import durable_functions as df
@@ -131,9 +132,20 @@ def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) ->
         if workflow_type is None or d.get('input_data', {}).get('workflow_type') == workflow_type:
             filtered_data.append(d)
 
+    names = Counter([t['name'] for t in filtered_data])
+    statuses = Counter([t['runtime_status'] for t in filtered_data])
+    throttled = Counter([t['custom_status'] is not None and 'Throttled' in t.get('custom_status', '') for t in filtered_data])
+    workflows = Counter([t['input_data'].get('workflow_type') for t in filtered_data])
+    companies = Counter([t['input_data'].get('company') for t in filtered_data])
+
     formatted = dict(
         count = len(filtered_data),
-        tasks = filtered_data
+        tasks = filtered_data,
+        summary = dict(names = names,
+                       statuses = statuses,
+                       throttled = throttled,
+                       workflows = workflows,
+                       companies = companies),
     )
 
     return formatted
