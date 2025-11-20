@@ -5,23 +5,26 @@ import os
 import argparse
 from collections import Counter
 from dotenv import load_dotenv
-from azure import functions as func
 from azure import durable_functions as df
 from src.orchestrator import WORKFLOW_CONFIGS
 from src.log_utils import setup_logger
-from src.blob_utils import list_blobs, load_json_blob, set_connection_key
+from src.blob_utils import list_blobs, load_json_blob, set_connection_key, get_connection_key
 from src.scraper_utils import sanitize_urlpath
 from src.metadata_scraper import sample_wayback_metadata
 from src.stages import Stage
 from src.seeder import STATIC_URLS
 
-load_dotenv()
 setup_logger(__name__, logging.WARNING)
 logging.getLogger("azure").setLevel(logging.WARNING)
 
+load_dotenv()
+
+KILL_CIRCUIT = "KILL_CIRCUIT"
+KILL_ALL = "KILL_ALL"
+
 
 def validate_exists(*args, **kwargs) -> str:
-    set_connection_key("AzureAppStorage")
+    set_connection_key()
     try:
         blobs = set(list_blobs())
     except RuntimeError as e:
@@ -172,7 +175,7 @@ def _list_in_flight_paged(params, pages = None, next_token=None):
 
 
 def _get_app_url():
-    app_url = os.environ.get('WEBSITE_HOSTNAME')
+    app_url = os.getenv('WEBSITE_HOSTNAME')
     if app_url:
         app_url = f"https://{app_url}"
     else:

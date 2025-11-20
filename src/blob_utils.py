@@ -9,17 +9,20 @@ from pathlib import Path
 from functools import lru_cache
 from datetime import datetime, timezone
 
+logger = setup_logger(__name__, logging.INFO)
+
 DEFAULT_CONTAINER = "documents"
 DEFAULT_CONNECTION = "AzureWebJobsStorage"
-logger = setup_logger(__name__, logging.INFO)
 _client = None
 _connection_key = DEFAULT_CONNECTION
 
-def set_connection_key(key: str):
+def set_connection_key(key: str = DEFAULT_CONNECTION):
     global _connection_key
     _connection_key = key
 
-# TODO THIS NEEDS TO BE CONSISTENT IN IF IT PASSES A CONNECTION KEY TO CLIENT OR NOT!
+def get_connection_key():
+    global _connection_key
+    return _connection_key
 
 def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     path = path.removeprefix(f"{container}/")
