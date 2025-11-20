@@ -5,6 +5,8 @@ import os
 from typing import Any
 from bleach.sanitizer import Cleaner
 from src.log_utils import setup_logger
+from src.blob_utils import load_text_blob, upload_text_blob, parse_blob_path
+from src.stages import Stage
 from src.chat_parser import extract_json_from_response
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -92,7 +94,20 @@ def create_prompt(diff_str: str) -> str:
     # prompt = '\n'.join(prompt)
     return prompt
 
-def summarize(prompt: str) -> str:
+
+def summarize(blob_name: str):
+    prompt = load_text_blob(blob_name)
+    
+    logger.debug(f"Summarizing {blob_name}")
+    summary_result = _summarize(prompt)
+    
+    in_path = parse_blob_path(blob_name)
+    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
+    upload_text_blob(summary_result, out_path)
+    logger.info(f"Successfully summarized blob: {blob_name}")
+    
+    
+def _summarize(prompt: str) -> str:
     client = get_client()
     response = client.messages.create(
         model = "claude-3-5-haiku-20241022",

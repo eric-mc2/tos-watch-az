@@ -198,6 +198,7 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
     blob_name = input_blob.name.removeprefix("documents/")
     parts = parse_blob_path(blob_name)
     orchestration_input = OrchData(blob_name, "summarizer", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
     
 
@@ -205,18 +206,8 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
 @pretty_error(retryable=True)
 def summarizer_processor(input_data: dict):
     from src.summarizer import summarize
-        
     blob_name = input_data['task_id']
-    prompt = load_text_blob(blob_name)
-    
-    logger.debug(f"Summarizing {blob_name}")
-    summary_result = summarize(prompt)
-    
-    in_path = parse_blob_path(blob_name)
-    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
-    upload_text_blob(summary_result, out_path)
-    
-    logger.info(f"Successfully summarized blob: {blob_name}")
+    summarize(blob_name)
 
 
 @app.blob_trigger(arg_name="input_blob", 
