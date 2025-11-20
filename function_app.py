@@ -31,7 +31,6 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
     seed_main()
 
 
-@dev_only
 @app.blob_trigger(arg_name="input_blob", 
                 path="documents/test_failure_trigger.txt",
                 connection="AzureWebJobsStorage")
@@ -45,7 +44,6 @@ async def test_failure_trigger(input_blob: func.InputStream, client: df.DurableO
     await client.start_new("test_failure_orchestrator", None, orchestration_input)
 
 
-@dev_only
 @app.activity_trigger(input_name="input_data")
 @pretty_error(retryable=True)
 def test_failure_processor(input_data: dict):
@@ -54,7 +52,6 @@ def test_failure_processor(input_data: dict):
     raise RuntimeError(f"Test processor fail {task_id}")
 
 
-@dev_only
 @app.orchestration_trigger(context_name="context")
 @pretty_error
 def test_failure_orchestrator(context: df.DurableOrchestrationContext):

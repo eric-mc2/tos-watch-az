@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime
-from src.env_utils import dev_only
 
 # Persist log path for lifespan of app
 current_time = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
@@ -15,7 +14,6 @@ def setup_logger(name, loglvl = logging.INFO):
     _setup_logfile(logger, loglvl, log_fmt)
     return logger
 
-@dev_only
 def _setup_logfile(logger, loglvl, log_fmt):
     # Add file handler to tee logs to shared file. But not in real life because it's not thread safe.
     os.makedirs('logs', exist_ok=True)
