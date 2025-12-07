@@ -34,6 +34,8 @@ def scrape_wayback_metadata(url, company) -> dict:
         data = response.json()
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON response for {url}:\n{e}")
+        if "Scheduled Maintenance" in response.text:
+            logger.error("Internet Archive services are temporarily offline")
         raise
     
     upload_json_blob(json.dumps(data), blob_name)

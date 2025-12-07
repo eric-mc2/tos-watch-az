@@ -18,7 +18,11 @@ _connection_key = DEFAULT_CONNECTION
 
 def set_connection_key(key: str = DEFAULT_CONNECTION):
     global _connection_key
+    global _client
     _connection_key = key
+    if _client:
+        _client.close()
+        _client = None
 
 def get_connection_key():
     global _connection_key

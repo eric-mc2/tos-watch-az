@@ -13,7 +13,7 @@ def annotate_doc(company: str, policy: str, timestamp: str, tree:str) -> list[Do
     """Read and parse text file."""
     doctree = DocTree.from_dict(json.loads(tree))
     chunks = []
-    for (text, section) in doctree.walk():
+    for (text, section) in doctree.walk(flat=True):
         chunk = DocChunk(company=company,
                         policy=policy,
                         version_ts=timestamp,

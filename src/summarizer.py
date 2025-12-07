@@ -160,7 +160,7 @@ def _structure_diff(diff_str: str) -> str:
     for i, diff in enumerate(diffs):
         before = ' '.join(diff['before'])
         after = ' '.join(diff['after'])
-        xml = (f"<section idx={i}>\n"
+        xml = (f'<section idx="{i}">\n'
             f"<before>{before}</before>\n"
             f"<after>{after}</after>\n"
             "</section>")
