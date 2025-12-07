@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 import azure.functions as func
 from azure import durable_functions as df
-from src.blob_utils import parse_blob_path, load_text_blob, upload_text_blob, set_connection_key, get_connection_key
+from src.blob_utils import parse_blob_path, set_connection_key, get_connection_key
 from src.log_utils import setup_logger
 from src.app_utils import http_wrap, pretty_error
 from src.stages import Stage
@@ -144,7 +144,7 @@ def parse_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
     """Parse html snapshot into hierarchical doctree format."""
     from src.doctree import parse_html
     tree = parse_html(input_blob.read().decode())
-    output_blob.set(tree)
+    output_blob.set(tree.__repr__())
 
 
 @app.blob_trigger(arg_name="input_blob", 

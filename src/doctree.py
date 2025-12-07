@@ -146,22 +146,26 @@ class DocTree:
             elif not node.parent:
                 self._add_child(node)
         
-    def walk(self, context="") -> Iterator[tuple[str, Self]]:
-        def separate(ctx: str) -> str:    
-            if not ctx or ctx[-1].isspace():
-                return ""
-            elif ctx.endswith("."):
-                return "\n"
-            else:
-                return ".\n"
-        sep = "" if not self.text else separate(context)
+    def _sep(self, ctx: str) -> str:    
+        if not ctx or ctx[-1].isspace():
+            return ""
+        elif ctx.endswith("."):
+            return "\n"
+        else:
+            return ".\n"
+        
+    def walk(self, context="", flat=False) -> Iterator[tuple[str, Self]]:
+        sep = "" if not self.text else self._sep(context)
         if not self.skip_read:
-            yield (context + sep + self.text, self)
+            if not flat:
+                yield (context + sep + self.text, self)
+            else:
+                yield (self.text, self)
         for child in self.children:
-            yield from child.walk(context + sep + self.text)
+            yield from child.walk(context + sep + self.text, flat=flat)
             append = child.tag == "text" #and child.level != SemLevel.CHILD
             context += child.text if append else ""
-            sep = "" if not child.text else separate(context)
+            sep = "" if not child.text else self._sep(context)
 
     def find(self, read_idx: int) -> Optional[Self]:
         if self.read_idx == read_idx:
@@ -172,11 +176,11 @@ class DocTree:
                 return found
         return None
 
-def parse_html(content: str) -> str:
+def parse_html(content: str) -> DocTree:
     html = BeautifulSoup(content, "html.parser")
     root = DocTree("", "root")
     root = _parse_doctree(html, root)
-    return root.__repr__()
+    return root
 
 def _parse_doctree(html: PageElement, root: DocTree) -> DocTree:
     """Split the html text into chunks per high-level document structure,
@@ -188,7 +192,7 @@ def _parse_doctree(html: PageElement, root: DocTree) -> DocTree:
             leaf = DocTree("", tag)
             root.insert(leaf)
             _parse_doctree(elem, leaf)
-        elif tag in ['text','script','footer']:
+        elif tag in ['script','footer']:
             continue
         elif elem.text and not elem.text.isspace():
             text = bleach_clean(elem.text)

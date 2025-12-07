@@ -10,7 +10,7 @@ def test_parse():
         </body>
     </html>
     """
-    tree = parse_html(html)
+    tree = parse_html(html).__repr__()
     notes = annotate_doc('hi','hi','hi',tree)
     assert any([x.text == "Hello" for x in notes])
     assert any([x.text == "World" for x in notes])
