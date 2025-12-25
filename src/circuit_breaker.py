@@ -110,9 +110,13 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     tasks = await list_tasks(client, workflow_type, [df.OrchestrationRuntimeStatus.Running])
     logger.info(f"Found {len(tasks)} orchestrators to wake for [{workflow_type}].")
     for task in tasks:
-        task_id = task['data'].get("task_id", "undefine")
+        task_id = task['data'].get("task_id", "undefined")
         logger.debug(f"Re-submitting cancelled task [{workflow_type}] {task_id}")
-        await client.raise_event(task['instance_id'], RESET)
+        try:
+            await client.raise_event(task['instance_id'], RESET)
+        except Exception as e:
+            # XXX: This sometimes fails, presumably because task is already completed?
+            logger.error(f"Failed to re-submit cancelled task [{workflow_type}] {task_id}: {e}")
 
     logger.info(f"Circuit breaker reset for [{workflow_type}]")
     return func.HttpResponse(f"Circuit breaker reset for [{workflow_type}]", status_code=200)

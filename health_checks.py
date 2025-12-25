@@ -23,7 +23,7 @@ KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
 
-def validate_exists(*args, **kwargs) -> str:
+def validate_files(*args, **kwargs) -> dict:
     set_connection_key()
     try:
         blobs = set(list_blobs())
@@ -193,6 +193,7 @@ def _get_app_url():
         app_url = "http://127.0.0.1:7071"
     return app_url
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='health_checks',
@@ -206,11 +207,11 @@ if __name__ == "__main__":
     parser_tasks.set_defaults(func=list_in_flight)
     
     parser_files = subparsers.add_parser('files', help='list missing files')
-    parser_files.set_defaults(func=validate_exists)
+    parser_files.set_defaults(func=validate_files)
 
     parser_kill = subparsers.add_parser('killall', help='terminate all running orchestrations')
     parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
-    parser_kill.add_argument("--reason", default="Manual termination", help='termination reason')
+    parser_kill.add_argument("--reason", default=KILL_CIRCUIT, help='termination reason')
     parser_kill.set_defaults(func=kill_all)
 
     args = parser.parse_args()
