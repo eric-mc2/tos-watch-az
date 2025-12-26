@@ -5,9 +5,10 @@ import os
 from typing import Any
 from bleach.sanitizer import Cleaner
 from src.log_utils import setup_logger
-from src.blob_utils import load_text_blob, upload_text_blob, parse_blob_path
+from src.blob_utils import load_text_blob, upload_text_blob, parse_blob_path, load_metadata, upload_json_blob
 from src.stages import Stage
 from src.chat_parser import extract_json_from_response
+import ulid
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client = None
@@ -24,6 +25,35 @@ def get_client():
         _client = anthropic.Anthropic(api_key=key)
     return _client
 
+
+def read_examples():
+    with open("data/substantive_v1/records.json") as f:
+        records = json.load(f)
+    limit = 5
+    examples = []
+    for record in records:
+        if len(examples) == limit:
+            break
+        y_pred = record['suggestions']['practically_substantive']['value']
+        y_true = record['responses']['practically_substantive'][0]['value']
+        if y_true == "False" and y_pred == "False":
+            continue
+        if y_true == "True" and y_pred == "True":
+            continue
+        if y_true == "True" and y_pred == "False":
+            continue
+        if y_true == "False" and y_pred == "True":
+            path = parse_blob_path(record['metadata']['blob_path'])
+            prompt_path = os.path.join(Stage.PROMPT.value, path.company, path.policy, path.timestamp.removesuffix(".json") + ".txt")
+            prompt = load_text_blob(prompt_path)
+            label = prompt.replace("<diff_sections>","<diff_sections><practically_substantive>False</practically_substantive>")
+            examples.append(label)
+    return "\n".join(examples)
+
+
+SCHEMA_VERSION = "v1"
+PROMPT_VERSION = "v2"
+
 SCHEMA = """
 {
 "legally_substantive": {
@@ -39,6 +69,8 @@ SCHEMA = """
 "helm_keywords": list[str],
 }
 """
+
+EXAMPLES = read_examples()
 
 SYSTEM_PROMPT = f"""
 You are a legal assistant and an expert in contract law. 
@@ -80,34 +112,53 @@ It will be formatted as an xml list of non-contiguous diff sections according to
         <after>[ALTERED TEXT]</after>
     </section>
 </diff_sections>
+
+Here are some labeled examples:
+{EXAMPLES}
 """
 
-def is_diff(diff_str: str) -> str:
+def is_diff(diff_str: str) -> bool:
     diff_obj = json.loads(diff_str)
     diffs = diff_obj.get('diffs', [])
     return any([d['tag'] != 'equal' for d in diffs])
-
-def create_prompt(diff_str: str) -> str:
-    diff = _structure_diff(diff_str)
-    prompt = diff
-    # prompt = [SYSTEM_PROMPT, diff]
-    # prompt = '\n'.join(prompt)
-    return prompt
 
 
 def summarize(blob_name: str):
     prompt = load_text_blob(blob_name)
     
     logger.debug(f"Summarizing {blob_name}")
-    summary_result = _summarize(prompt)
+    try:
+        summary_result = _summarize(prompt)
+    except ValueError:
+        return
     
+    run_id = ulid.ulid()
     in_path = parse_blob_path(blob_name)
-    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.txt"
-    upload_text_blob(summary_result, out_path)
+    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{run_id}.txt"
+    metadata = dict(
+        run_id = run_id,
+        prompt_version = PROMPT_VERSION,
+        schema_version = SCHEMA_VERSION,
+    )
+    upload_text_blob(summary_result, out_path, metadata=metadata)
+
+    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
+    latest_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.json"
+    upload_text_blob(summary_result, latest_path, metadata=metadata)
+
     logger.info(f"Successfully summarized blob: {blob_name}")
     
     
 def _summarize(prompt: str) -> str:
+    prompt_length = len(SYSTEM_PROMPT) + len(prompt)
+    context_window = 200000
+    token_limit = 50000
+    if prompt_length >= context_window:
+        logger.error(f"Prompt length {prompt_length} exceeds context window {context_window}")
+    if prompt_length >= token_limit:
+        # TODO: THIS GETS HIT QUITE A LOT FOR V2 PROMPT!
+        logger.error(f"Prompt length {prompt_length} exceeds rate limit of {token_limit} / minute.")
+        raise ValueError(f"Prompt length {prompt_length} exceeds rate limit of {token_limit} / minute.")
     client = get_client()
     response = client.messages.create(
         model = "claude-3-5-haiku-20241022",
@@ -136,12 +187,21 @@ def _parse_response(resp: anthropic.types.message.Message) -> dict:
     return resp.content[0].text
 
 
-def parse_response_json(resp: str) -> dict:
+def parse_response_json(blob_name: str, resp: str):
+    in_path = parse_blob_path(blob_name)
     result = extract_json_from_response(resp)
     if not result['success']:
         raise ValueError(f"Failed to parse json from chat. Error: {result['error']}. Original: {resp}")
     cleaned = sanitize_response(result['data'])
-    return cleaned
+    cleaned_txt = json.dumps(cleaned, indent=2)
+
+    in_meta = load_metadata(blob_name)
+    run_id = in_meta['run_id']
+    
+    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{run_id}.json")
+    upload_json_blob(cleaned_txt, out_path, metadata=in_meta)
+    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
+    upload_json_blob(cleaned_txt, out_path, metadata=in_meta)
     
 def sanitize_response(data: dict|list|str|Any) -> dict|list|str|Any:
     if isinstance(data, dict):
@@ -153,7 +213,7 @@ def sanitize_response(data: dict|list|str|Any) -> dict|list|str|Any:
     else:
         return data
 
-def _structure_diff(diff_str: str) -> str:
+def prompt_diff(diff_str: str) -> str:
     diff_obj = json.loads(diff_str)
     output = []
     diffs = [d for d in diff_obj['diffs'] if d['tag'] != 'equal']

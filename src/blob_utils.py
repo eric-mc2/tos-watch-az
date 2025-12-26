@@ -1,4 +1,4 @@
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, BlobClient
 import os
 import logging
 from azure.storage.blob import ContentSettings
@@ -31,12 +31,23 @@ def get_connection_key():
 def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     path = path.removeprefix(f"{container}/")
     blob_path = Path(path)
-    Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
-    return Parts(
-        blob_path.parts[0],
-        blob_path.parts[1],
-        blob_path.parts[2],
-        blob_path.stem)
+    if len(blob_path.parts) == 4:
+        Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
+        return Parts(
+            blob_path.parts[0],
+            blob_path.parts[1],
+            blob_path.parts[2],
+            blob_path.stem)
+    elif len(blob_path.parts) == 5:
+        Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp','run_id'])
+        return Parts(
+            blob_path.parts[0],
+            blob_path.parts[1],
+            blob_path.parts[2],
+            blob_path.parts[3],
+            blob_path.stem)
+    else:
+        raise ValueError(f"Invalid path {path}")
 
 def get_blob_service_client():
     global _client
@@ -83,7 +94,7 @@ def list_blobs(container=DEFAULT_CONTAINER) -> list[str]:
         blobs.append(blob.removeprefix(f"{container}/"))
     return blobs
 
-
+    
 def list_blobs_nest(container=DEFAULT_CONTAINER) -> dict:
     """Represent container as dictionary."""
     directory = {}
@@ -97,19 +108,52 @@ def list_blobs_nest(container=DEFAULT_CONTAINER) -> dict:
                 subdir = subdir.setdefault(part, {})
     return directory
 
+def touch_blobs(stage, company = None, policy = None, timestamp = None, run = None, container=DEFAULT_CONTAINER) -> None:
+    blobs = list_blobs_nest()
+    for c, policies in blobs[stage].items():
+        if company and company != c:
+            continue
+        for p, timestamps in policies.items():
+            if policy and policy != p:
+                continue
+            for t, runs in timestamps.items():
+                if timestamp and timestamp != t:
+                    continue
+                if not runs:
+                    path = os.path.join(stage, c, p, t)
+                    check_blob(path, container=container, touch=True)
+                    continue
+                for r in runs:
+                    if run and run != r:
+                        continue
+                    path = os.path.join(stage, c, p, t, r)
+                    check_blob(path, container=container, touch=True)
+
+def load_metadata(name, container=DEFAULT_CONTAINER) -> dict:
+    def loader(client: BlobClient):
+        return client.get_blob_properties().metadata
+    return _load_blob(name, loader, container)
+
+
 def load_blob(name, container=DEFAULT_CONTAINER) -> str:
+    def loader(client: BlobClient):
+        return client.download_blob().readall()
+    return _load_blob(name, loader, container)
+
+
+def _load_blob(name, getter, container=DEFAULT_CONTAINER) -> str:
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
     if blob_client.exists():
-        data = blob_client.download_blob().readall()
+        data = getter(blob_client)
         return data
     elif name.startswith(container):
         logger.warning(f"Blob {container}/{name} does not exist! Retrying with stripped container name.")
         name = name.removeprefix(f"{container}/")
         blob_client = blob_service_client.get_blob_client(container=container, blob=name)
         if blob_client.exists():
-            data = blob_client.download_blob().readall()
+            data = getter(blob_client)
             return data
         else:
             raise ValueError(f"Blob {container}/{name} does not exist!")
@@ -134,7 +178,7 @@ def load_text_blob(name, container=DEFAULT_CONTAINER) -> dict:
         raise
     return txt
 
-def upload_blob(data, blob_name, content_type, container=DEFAULT_CONTAINER) -> None:
+def upload_blob(data, blob_name, content_type, container=DEFAULT_CONTAINER, metadata=None) -> None:
     logger.debug(f"Uploading blob to {container}/{blob_name}")
     ensure_container(container)
     blob_service_client = get_blob_service_client()
@@ -150,20 +194,44 @@ def upload_blob(data, blob_name, content_type, container=DEFAULT_CONTAINER) -> N
         content_settings=ContentSettings(
             content_type=content_type,
             cache_control='max-age=2592000'
-        )
+        ),
+        metadata=metadata
     )
-    
-def upload_text_blob(data, blob_name, container=DEFAULT_CONTAINER) -> None:
+
+def upload_text_blob(data, blob_name, container=DEFAULT_CONTAINER, metadata=None) -> None:
     data_bytes = data.encode('utf-8')
     content_type = 'text/plain; charset=utf-8'
-    upload_blob(data_bytes, blob_name, content_type, container)
+    upload_blob(data_bytes, blob_name, content_type, container, metadata)
 
-def upload_json_blob(data: str, blob_name, container=DEFAULT_CONTAINER) -> None:
+def upload_json_blob(data: str, blob_name, container=DEFAULT_CONTAINER, metadata=None) -> None:
     data_bytes = data.encode('utf-8')
     content_type = 'application/json; charset=utf-8'
-    upload_blob(data_bytes, blob_name, content_type, container)
+    upload_blob(data_bytes, blob_name, content_type, container, metadata)
 
-def upload_html_blob(cleaned_html, blob_name, container=DEFAULT_CONTAINER) -> None:
+def upload_html_blob(cleaned_html, blob_name, container=DEFAULT_CONTAINER, metadata=None) -> None:
     html_bytes = cleaned_html.encode('utf-8')
     content_type = 'text/html; charset=utf-8'
-    upload_blob(html_bytes, blob_name, content_type, container)
+    upload_blob(html_bytes, blob_name, content_type, container, metadata)
+
+def upload_metadata(data, blob_name, container=DEFAULT_CONTAINER) -> None:
+    logger.debug(f"Uploading metadata to {container}/{blob_name}")
+    if not check_blob(blob_name, container, touch=False):
+        return
+    blob_service_client = get_blob_service_client()
+    blob_client = blob_service_client.get_blob_client(
+        container=container, 
+        blob=blob_name
+    )
+    blob_client.set_blob_metadata(data)
+    
+def remove_blob(blob_name, container=DEFAULT_CONTAINER) -> None:
+    if not check_blob(blob_name, container, touch=False):
+        return
+    logger.debug(f"Deleting blob {blob_name}")
+    blob_service_client = get_blob_service_client()
+    blob_client = blob_service_client.get_blob_client(
+        container=container, 
+        blob=blob_name
+    )
+    blob_client.delete_blob()
+    
