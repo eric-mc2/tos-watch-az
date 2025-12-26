@@ -42,7 +42,7 @@ class WorkflowConfig:
 
 
 WORKFLOW_CONFIGS = {
-    "summarizer": WorkflowConfig(50, 60, 20, "summarizer_processor", 3, 10),
+    "summarizer": WorkflowConfig(50, 60, 20, "summarizer_processor", 3, 60),
     "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 2 * 60),
     "meta": WorkflowConfig(5, 60, 20, "meta_processor", 3, 3 * 60)
 }

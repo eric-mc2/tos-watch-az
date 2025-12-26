@@ -226,113 +226,17 @@ def parse_summary(input_blob: func.InputStream):
 @app.route(route="prompt_experiment", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def prompt_experiment(req: func.HttpRequest) -> func.HttpResponse:
-    from src.blob_utils import load_json_blob, touch_blobs
-    if hasattr(req, "params") and req.params is not None and "labels" in req.params:
-        label_name = req.params["labels"]
-        labels = load_json_blob(label_name)
-        for record in labels:
-            path = parse_blob_path(record['metadata']['blob_path'])
-            touch_blobs(Stage.DIFF.value, path.company, path.policy, path.timestamp)
-        return None
-    else:
-        return func.HttpResponse("Need to specify label file in query string.", status_code=400)
+    from src.prompt_eng import run_experiment
+    run_experiment(req.params.get("labels"))
+    return func.HttpResponse("OK")
 
 
 @app.route(route="evaluate_prompts", auth_level=func.AuthLevel.FUNCTION)
 @http_wrap
 def evaluate_prompts(req: func.HttpRequest) -> func.HttpResponse:
-    import pandas as pd
-    from src.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob
-    from pydantic import BaseModel, ValidationError
-    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    from src.prompt_eng import prompt_eval
+    return func.HttpResponse(prompt_eval(), mimetype="text/html")
 
-    class Substantive(BaseModel):
-        rating: bool
-        explanation: str
-
-    class Summary(BaseModel):
-        legally_substantive: Substantive
-        practically_substantive: Substantive
-        change_keywords: list[str]
-        subject_keywords: list[str]
-        helm_keywords: list[str]
-
-    blobs = list_blobs()
-    clean_blobs = [b for b in blobs if b.startswith(Stage.SUMMARY_CLEAN.value)]
-    label_blobs = [b for b in blobs if b.startswith(Stage.LABELS.value)]
-    
-    gold = []
-    for blob in label_blobs:
-        labels = load_json_blob(blob)
-        for label in labels:
-            gold.append(label['metadata'] | dict(
-                practically_substantive = label['responses']['practically_substantive'][0]['value'],
-                legally_substantive = label['responses']['legally_substantive'][0]['value'],
-            ))
-    gold = pd.DataFrame.from_records(gold)
-    gold['practically_substantive'] = gold['practically_substantive'].map({'True':1,'False':0})
-    gold['legally_substantive'] = gold['legally_substantive'].map({'True':1,'False':0})
-    gold = gold.dropna()
-
-    pred = []
-    for blob in clean_blobs:
-        path = parse_blob_path(blob)
-        if path.run_id == "latest":
-            continue
-        key = os.path.join(Stage.DIFF.value, path.company, path.policy, path.timestamp + ".json")
-        meta = load_metadata(blob)
-        summary = load_json_blob(blob)
-        try:
-            summary = Summary(**summary)
-            parse_error = False
-        except (ValidationError, TypeError):
-            parse_error = True
-        pred.append(meta | dict(
-            blob_path = key,
-            parse_error = parse_error,
-            practically_substantive = summary.practically_substantive.rating if not parse_error else None,
-            legally_substantive = summary.legally_substantive.rating if not parse_error else None
-        ))
-    pred = pd.DataFrame.from_records(pred)
-    pred['practically_substantive'] = pred['practically_substantive'].map({True:1.0,False:0.0})
-    pred['legally_substantive'] = pred['legally_substantive'].map({True:1.0,False:0.0})
-
-    compare = gold.merge(pred, on=["blob_path"], how="left", suffixes=("_true","_pred"))
-    
-    totals = compare.groupby(['model_version'])['blob_path'].nunique().rename('n').reset_index()
-    
-    groups = ['model_version','prompt_version_pred','schema_version']
-    valid_json = compare[compare.run_id.notna()].groupby(groups)['run_id'].nunique().rename('m').reset_index()
-    valid_json_pct = totals.merge(valid_json)
-    valid_json_pct['pct'] = (valid_json_pct['m'] / valid_json_pct['n']).round(2)
-    valid_json_pct = valid_json_pct[groups + ['pct']]
-
-    valid_schema = compare[compare.parse_error == False].groupby(groups).size().rename('m').reset_index()
-    valid_schema_pct = totals.merge(valid_schema)
-    valid_schema_pct['pct'] = (valid_schema_pct['m'] / valid_schema_pct['n']).round(2)
-    valid_schema_pct = valid_schema_pct[groups + ['pct']]
-
-    confusion = compare[compare.parse_error == False]
-    accuracy = (confusion.groupby(groups).apply(lambda x: 
-                    accuracy_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('accuracy').round(2))
-    precision = (confusion.groupby(groups).apply(lambda x: 
-                    precision_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('precision').round(2))
-    recall = (confusion.groupby(groups).apply(lambda x: 
-                    recall_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('recall').round(2))
-    f1 = (confusion.groupby(groups).apply(lambda x: 
-                    f1_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('f1').round(2))
-    semantic = pd.concat([accuracy, precision, recall, f1], axis=1).reset_index()
-
-    output = "<h1>TOTALS:</h1>" + totals.to_html(index=False) + \
-         "<h1>VALID JSON:</h1>" + valid_json_pct.to_html(index=False) + \
-         "<h1>VALID SCHEMA:</h1>" + valid_schema_pct.to_html(index=False) + \
-         "<h1>CONFUSION:</h1>" + semantic.to_html(index=False) + \
-        "<h1>SCHEMA:</h1><p>" + ','.join(compare.columns.to_list()) + "</p>"
-    return func.HttpResponse(output, mimetype="text/html")
     
 @app.orchestration_trigger(context_name="context")
 @pretty_error

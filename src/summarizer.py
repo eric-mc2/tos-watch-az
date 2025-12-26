@@ -4,11 +4,12 @@ import logging
 import os
 from typing import Any
 from bleach.sanitizer import Cleaner
+import ulid
 from src.log_utils import setup_logger
 from src.blob_utils import load_text_blob, upload_text_blob, parse_blob_path, load_metadata, upload_json_blob
 from src.stages import Stage
 from src.chat_parser import extract_json_from_response
-import ulid
+from src.prompt_eng import load_true_labels
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client = None
@@ -26,33 +27,10 @@ def get_client():
     return _client
 
 
-def read_examples():
-    with open("data/substantive_v1/records.json") as f:
-        records = json.load(f)
-    limit = 5
-    examples = []
-    for record in records:
-        if len(examples) == limit:
-            break
-        y_pred = record['suggestions']['practically_substantive']['value']
-        y_true = record['responses']['practically_substantive'][0]['value']
-        if y_true == "False" and y_pred == "False":
-            continue
-        if y_true == "True" and y_pred == "True":
-            continue
-        if y_true == "True" and y_pred == "False":
-            continue
-        if y_true == "False" and y_pred == "True":
-            path = parse_blob_path(record['metadata']['blob_path'])
-            prompt_path = os.path.join(Stage.PROMPT.value, path.company, path.policy, path.timestamp.removesuffix(".json") + ".txt")
-            prompt = load_text_blob(prompt_path)
-            label = prompt.replace("<diff_sections>","<diff_sections><practically_substantive>False</practically_substantive>")
-            examples.append(label)
-    return "\n".join(examples)
-
-
+CONTEXT_WINDOW = 200000
+TOKEN_LIMIT = 50000
 SCHEMA_VERSION = "v1"
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 SCHEMA = """
 {
@@ -69,8 +47,6 @@ SCHEMA = """
 "helm_keywords": list[str],
 }
 """
-
-EXAMPLES = read_examples()
 
 SYSTEM_PROMPT = f"""
 You are a legal assistant and an expert in contract law. 
@@ -114,7 +90,6 @@ It will be formatted as an xml list of non-contiguous diff sections according to
 </diff_sections>
 
 Here are some labeled examples:
-{EXAMPLES}
 """
 
 def is_diff(diff_str: str) -> bool:
@@ -148,24 +123,37 @@ def summarize(blob_name: str):
 
     logger.info(f"Successfully summarized blob: {blob_name}")
     
-    
+def read_examples(prompt: str):
+    gold = load_true_labels(os.path.join(Stage.LABELS.value, "substantive_v1.json"))
+    # Filter to false negatives
+    gold = gold[(gold['practically_substantive_true']==0) & (gold['practically_substantive_pred']==1)]
+    examples = []
+    for row in gold.itertuples():
+        path = parse_blob_path(row.blob_path)
+        diff_path = os.path.join(Stage.PROMPT.value, path.company, path.policy, path.timestamp.removesuffix(".json") + ".txt")
+        diff_prompt = load_text_blob(diff_path)
+        label = diff_prompt.replace("<diff_sections>","<diff_sections><practically_substantive>False</practically_substantive>")
+        if len(SYSTEM_PROMPT) + len(prompt) + sum([len(x) for x in examples]) + len(label) > TOKEN_LIMIT:
+            break
+        examples.append(label)
+    return "\n".join(examples)    
+
 def _summarize(prompt: str) -> str:
-    prompt_length = len(SYSTEM_PROMPT) + len(prompt)
-    context_window = 200000
-    token_limit = 50000
-    if prompt_length >= context_window:
-        logger.error(f"Prompt length {prompt_length} exceeds context window {context_window}")
-    if prompt_length >= token_limit:
+    examples = read_examples(prompt)
+    prompt_length = len(SYSTEM_PROMPT) + len(prompt) + len(examples)
+    if prompt_length >= CONTEXT_WINDOW:
+        logger.error(f"Prompt length {prompt_length} exceeds context window {CONTEXT_WINDOW}")
+    if prompt_length >= TOKEN_LIMIT:
         # TODO: THIS GETS HIT QUITE A LOT FOR V2 PROMPT!
-        logger.error(f"Prompt length {prompt_length} exceeds rate limit of {token_limit} / minute.")
-        raise ValueError(f"Prompt length {prompt_length} exceeds rate limit of {token_limit} / minute.")
+        logger.error(f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")
+        raise ValueError(f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")
     client = get_client()
     response = client.messages.create(
         model = "claude-3-5-haiku-20241022",
         max_tokens = 1000,
         system = [{
             "type": "text",
-            "text": SYSTEM_PROMPT,
+            "text": SYSTEM_PROMPT + "\n" + examples,
             "cache_control": {"type": "ephemeral"}
         }],
         messages = [
