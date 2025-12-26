@@ -2,12 +2,17 @@
 appsettings.json
 local.settings.json
 logs/*
+data/
 
 # Local python packages
 .python_packages/
 
+# MacOS
+.DS_Store
+
 # Python Environments
 .env
+.prompting_venv
 .venv
 env/
 venv/

@@ -9,3 +9,4 @@ class Stage(Enum):
     PROMPT = "06-prompts"
     SUMMARY_RAW = "07-summary-raw"
     SUMMARY_CLEAN = "08-summary-clean"
+    LABELS = "09-labels"

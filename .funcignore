@@ -1,3 +1,6 @@
+# Argilla artifacts
+data/
+
 # Git files
 .git*
 .gitignore
