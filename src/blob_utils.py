@@ -117,7 +117,7 @@ def touch_blobs(stage, company = None, policy = None, timestamp = None, run = No
             if policy and policy != p:
                 continue
             for t, runs in timestamps.items():
-                if timestamp and timestamp != t:
+                if timestamp and not t.startswith(timestamp):
                     continue
                 if not runs:
                     path = os.path.join(stage, c, p, t)
