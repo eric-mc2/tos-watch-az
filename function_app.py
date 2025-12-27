@@ -1,14 +1,22 @@
+
+import pickle
 import json
 import logging
+import os
 from dotenv import load_dotenv
 import azure.functions as func
 from azure import durable_functions as df
-from src.blob_utils import parse_blob_path, set_connection_key, get_connection_key
+from src.blob_utils import (parse_blob_path, 
+                            set_connection_key, 
+                            get_connection_key,
+                            upload_text_blob,
+                            upload_json_blob,
+                            load_metadata,
+                            load_blob)
 from src.log_utils import setup_logger
 from src.app_utils import http_wrap, pretty_error
 from src.stages import Stage
 from src.orchestrator import OrchData
-import os
 
 load_dotenv()
 
@@ -173,24 +181,23 @@ def batch_diff(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/05-diffs/{company}/{policy}/{timestamp}.json",
+                path="documents/05-diffs-raw/{company}/{policy}/{timestamp}.json",
                 connection=get_connection_key(),
                 data_type="string")
 @app.blob_output(arg_name="output_blob",
-                path="documents/06-prompts/{company}/{policy}/{timestamp}.txt",
+                path="documents/05-diffs-clean/{company}/{policy}/{timestamp}.json",
                 connection=get_connection_key())
 @pretty_error
-def create_summarizer_prompt(input_blob: func.InputStream, output_blob: func.Out[str]):
-    """Language model input."""
-    from src.summarizer import prompt_diff, is_diff
+def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]):
+    from src.differ import has_diff, clean_diff
     blob = input_blob.read().decode()
-    if is_diff(blob):
-        prompt = prompt_diff(blob)
-        output_blob.set(prompt)
+    if has_diff(blob):
+        diff = clean_diff(blob)
+        output_blob.set(diff.model_dump_json())
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/06-prompts/{company}/{policy}/{timestamp}.txt",
+                path="documents/05-diffs-clean/{company}/{policy}/{timestamp}.json",
                 connection=get_connection_key())
 @app.durable_client_input(client_name="client")
 @pretty_error
@@ -208,19 +215,37 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
 def summarizer_processor(input_data: dict):
     from src.summarizer import summarize
     blob_name = input_data['task_id']
-    summarize(blob_name)
+    in_path = parse_blob_path(blob_name)
+    summary, metadata = summarize(blob_name)
+    
+    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
+    upload_text_blob(summary, out_path, metadata=metadata)
+    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
+    latest_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.txt"
+    upload_text_blob(summary, latest_path, metadata=metadata)
+    logger.info(f"Successfully summarized blob: {blob_name}")
 
 
 @app.blob_trigger(arg_name="input_blob", 
-                path="documents/07-summary-raw/{company}/{policy}/{timestamp}/latest.json",
+                path="documents/07-summary-raw/{company}/{policy}/{timestamp}/latest.txt",
                 connection=get_connection_key(),
                 data_type="string")
 @pretty_error
 def parse_summary(input_blob: func.InputStream):
-    from src.summarizer import parse_response_json
+    from src.claude_utils import validate_output
     blob_name = input_blob.name.removeprefix("documents/")
+    in_path = parse_blob_path(blob_name)
     txt = input_blob.read().decode()
-    parse_response_json(blob_name, txt)
+    metadata = load_metadata(blob_name)
+    schema = pickle.loads(load_blob(os.path.join(Stage.SCHEMA.value, "summary", metadata['schema_version'] + ".pkl")))
+    cleaned_txt = validate_output(txt, schema)
+    
+    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
+    upload_json_blob(cleaned_txt, out_path, metadata=metadata)
+    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
+    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
+    upload_json_blob(cleaned_txt, out_path, metadata=metadata)
+    logger.info(f"Successfully validated blob: {blob_name}")
 
 
 @app.route(route="prompt_experiment", auth_level=func.AuthLevel.FUNCTION)

@@ -8,6 +8,7 @@ from collections import namedtuple
 from pathlib import Path
 from functools import lru_cache
 from datetime import datetime, timezone
+import atexit 
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -49,7 +50,7 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     else:
         raise ValueError(f"Invalid path {path}")
 
-def get_blob_service_client():
+def get_blob_service_client() -> BlobServiceClient:
     global _client
     """Get blob service client from connection string environment variable"""
     if _client is not None:
@@ -59,6 +60,7 @@ def get_blob_service_client():
         raise ValueError(f"{_connection_key} environment variable not set")
     try:
         _client = BlobServiceClient.from_connection_string(connection_string)
+        atexit.register(lambda: _client.close())
     except Exception as e:
         raise ConnectionError(f"Failed to create BlobServiceClient:\n{e}") from e
     return _client
@@ -135,31 +137,22 @@ def load_metadata(name, container=DEFAULT_CONTAINER) -> dict:
     return _load_blob(name, loader, container)
 
 
-def load_blob(name, container=DEFAULT_CONTAINER) -> str:
+def load_blob(name, container=DEFAULT_CONTAINER) -> bytes:
     def loader(client: BlobClient):
         return client.download_blob().readall()
     return _load_blob(name, loader, container)
 
 
-def _load_blob(name, getter, container=DEFAULT_CONTAINER) -> str:
+def _load_blob(name, getter, container=DEFAULT_CONTAINER) -> bytes:
+    name = name.removeprefix(f"{container}/")
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
     blob_client = blob_service_client.get_blob_client(container=container, blob=name)
-    if blob_client.exists():
-        data = getter(blob_client)
-        return data
-    elif name.startswith(container):
-        logger.warning(f"Blob {container}/{name} does not exist! Retrying with stripped container name.")
-        name = name.removeprefix(f"{container}/")
-        blob_client = blob_service_client.get_blob_client(container=container, blob=name)
-        if blob_client.exists():
-            data = getter(blob_client)
-            return data
-        else:
-            raise ValueError(f"Blob {container}/{name} does not exist!")
-    else:
+    if not blob_client.exists():
         raise ValueError(f"Blob {container}/{name} does not exist!")
-
+    return getter(blob_client)
+    
+    
 def load_json_blob(name, container=DEFAULT_CONTAINER) -> dict:
     data = load_blob(name, container)
     try:

@@ -2,10 +2,22 @@ import logging
 import difflib
 from itertools import pairwise
 import json
+from pydantic import BaseModel
+from typing import Optional
 from src.blob_utils import (load_json_blob, upload_json_blob, list_blobs_nest, check_blob)
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
 from src.stages import Stage
+
+
+class DiffSection(BaseModel):
+    index: int
+    before: str
+    after: str
+
+class DiffDoc(BaseModel):
+    diffs: list[DiffSection]
+
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -16,7 +28,7 @@ def diff_batch() -> None:
             pairs = pairwise(sorted(snaps.keys()))
             manifest = _get_manifest(company, policy)
             for before, after in pairs:
-                outname = f"{Stage.DIFF.value}/{company}/{policy}/{after}"
+                outname = f"{Stage.DIFF_RAW.value}/{company}/{policy}/{after}"
                 if after in manifest and manifest[after] == before:
                     logger.debug(f"Diff already computed for {outname}")
                     continue
@@ -29,7 +41,7 @@ def diff_batch() -> None:
 
 def _get_manifest(company, policy):
     """Retrieve list of computed diffs (and reference points)."""
-    manifest_name = f"{Stage.DIFF.value}/{company}/{policy}/manifest.json"
+    manifest_name = f"{Stage.DIFF_RAW.value}/{company}/{policy}/manifest.json"
     if check_blob(manifest_name):
         return load_json_blob(manifest_name)
     else:
@@ -38,7 +50,7 @@ def _get_manifest(company, policy):
 
 def _store_manifest(data, company, policy):
     """Upload list of computed diffs (and reference points)."""
-    manifest_name = f"{Stage.DIFF.value}/{company}/{policy}/manifest.json"
+    manifest_name = f"{Stage.DIFF_RAW.value}/{company}/{policy}/manifest.json"
     manifest_str = json.dumps(data, indent=2)
     return upload_json_blob(manifest_str, manifest_name)
 
@@ -66,3 +78,21 @@ def _diff_sequence(a, b):
         yield dict(tag=tag, i1=i1, i2=i2, j1=j1, j2=j2,
                     before=a[i1:i2], after=b[j1:j2],
                    sim=matcher.ratio())
+        
+
+def has_diff(diff_str: str) -> bool:
+    diff_obj = json.loads(diff_str)
+    diffs = diff_obj.get('diffs', [])
+    return any([d['tag'] != 'equal' for d in diffs])
+
+
+def clean_diff(diff_str: str) -> DiffDoc:
+    diff_obj = json.loads(diff_str)
+    output = []
+    for i, diff in enumerate(diff_obj['diffs']):
+        if diff['tag'] == 'equal':
+            continue
+        before = ' '.join(diff['before'])
+        after = ' '.join(diff['after'])
+        output.append(DiffSection(index=i, before=before, after=after))
+    return DiffDoc(diffs=output)

@@ -1,23 +1,14 @@
 import pandas as pd
 from pydantic import BaseModel, ValidationError
+import pickle
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from src.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob, touch_blobs
+from src.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob, touch_blobs, load_text_blob, load_blob
 from src.stages import Stage
 import os
+from functools import lru_cache
 
-class Substantive(BaseModel):
-    rating: bool
-    explanation: str
-
-class Summary(BaseModel):
-    legally_substantive: Substantive
-    practically_substantive: Substantive
-    change_keywords: list[str]
-    subject_keywords: list[str]
-    helm_keywords: list[str]
-
-
-def load_true_labels(label_blob=None) -> pd.DataFrame:
+@lru_cache(5)
+def load_true_labels(label_blob: str=None) -> pd.DataFrame:
     if label_blob is None:
         gold = []
         for blob in list_blobs():
@@ -51,11 +42,13 @@ def load_pred_labels() -> pd.DataFrame:
         path = parse_blob_path(blob)
         if path.run_id == "latest":
             continue
-        key = os.path.join(Stage.DIFF.value, path.company, path.policy, path.timestamp + ".json")
+        key = os.path.join(Stage.DIFF_RAW.value, path.company, path.policy, path.timestamp + ".json")
         meta = load_metadata(blob)
+
+        schema = pickle.loads(load_blob(os.path.join(Stage.SCHEMA.value, "summary", meta['schema_version'] + ".pkl")))
         summary = load_json_blob(blob)
         try:
-            summary = Summary(**summary)
+            summary = schema(**summary)
             parse_error = False
         except (ValidationError, TypeError):
             parse_error = True
@@ -63,11 +56,9 @@ def load_pred_labels() -> pd.DataFrame:
             blob_path = key,
             parse_error = parse_error,
             practically_substantive = summary.practically_substantive.rating if not parse_error else None,
-            legally_substantive = summary.legally_substantive.rating if not parse_error else None
         ))
     pred = pd.DataFrame.from_records(pred)
     pred['practically_substantive'] = pred['practically_substantive'].map({True:1.0,False:0.0})
-    pred['legally_substantive'] = pred['legally_substantive'].map({True:1.0,False:0.0})
     return pred
 
 def prompt_eval() -> str:
@@ -75,6 +66,10 @@ def prompt_eval() -> str:
             .rename(columns={'practically_substantive_true':'practically_substantive',
                              'legally_substantive_true':'legally_substantive'}))
     pred = load_pred_labels()
+    gold['blob_path'] = gold['blob_path'].apply(lambda x: parse_blob_path(x))
+    gold['blob_path'] = gold['blob_path'].apply(lambda x: os.path.join(x.company, x.policy, x.timestamp))
+    pred['blob_path'] = pred['blob_path'].apply(lambda x: parse_blob_path(x))
+    pred['blob_path'] = pred['blob_path'].apply(lambda x: os.path.join(x.company, x.policy, x.timestamp))
     compare = gold.merge(pred, on=["blob_path"], how="left", suffixes=("_true","_pred"))
 
     totals = compare.groupby(['model_version'])['blob_path'].nunique().rename('n').reset_index()
@@ -91,6 +86,9 @@ def prompt_eval() -> str:
     valid_schema_pct = valid_schema_pct[groups + ['pct']]
 
     confusion = compare[compare.parse_error == False]
+    if confusion.empty:
+        return "No matching predictions x labels."
+    
     accuracy = (confusion.groupby(groups).apply(lambda x: 
                     accuracy_score(x['practically_substantive_true'], x['practically_substantive_pred']))
                     .rename('accuracy').round(2))
@@ -112,12 +110,12 @@ def prompt_eval() -> str:
         "<h1>SCHEMA:</h1><p>" + ','.join(compare.columns.to_list()) + "</p>"
     return html
 
-def run_experiment(labels_name = None) -> None:
+def run_experiment(labels_name = None):
     if labels_name is not None:
         labels = load_json_blob(labels_name)
         for record in labels:
             path = parse_blob_path(record['metadata']['blob_path'])
-            touch_blobs(Stage.DIFF.value, path.company, path.policy, path.timestamp)
+            touch_blobs(Stage.DIFF_RAW.value, path.company, path.policy, path.timestamp)
         return None
     else:
         blobs = list_blobs()

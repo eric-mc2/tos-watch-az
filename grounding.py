@@ -101,8 +101,8 @@ def create_records(dataset, schema_version, prompt_version, max_examples=10):
                         continue
 
                     # Defensive check
-                    diff_name = os.path.join(Stage.DIFF.value, company, policy, f"{timestamp}.json")
-                    if f"{timestamp}.json" not in blob_names[Stage.DIFF.value].get(company, {}).get(policy, {}):
+                    diff_name = os.path.join(Stage.DIFF_RAW.value, company, policy, f"{timestamp}.json")
+                    if f"{timestamp}.json" not in blob_names[Stage.DIFF_RAW.value].get(company, {}).get(policy, {}):
                         print(f"Unexpected missing file: {diff_name}")
                         continue
 

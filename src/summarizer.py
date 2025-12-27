@@ -2,217 +2,92 @@ import anthropic
 import json
 import logging
 import os
-from typing import Any
-from bleach.sanitizer import Cleaner
+from pydantic import BaseModel
+import pickle
 import ulid
+import numpy as np
+from itertools import chain
 from src.log_utils import setup_logger
-from src.blob_utils import load_text_blob, upload_text_blob, parse_blob_path, load_metadata, upload_json_blob
+from src.blob_utils import load_text_blob, parse_blob_path, load_json_blob, load_blob
 from src.stages import Stage
-from src.chat_parser import extract_json_from_response
 from src.prompt_eng import load_true_labels
+from src.claude_utils import call_api, Message, TOKEN_LIMIT
+from src.differ import DiffSection, DiffDoc
+from functools import lru_cache
+from schemas.summary.v2 import Summary
 
 logger = setup_logger(__name__, logging.DEBUG)
-_client = None
-cleaner = Cleaner()
 
-def get_client():
-    # Note: we don't need to close the client. In practice it's better to keep one single 
-    # client open during the lifetime of the applicaiton. Not per function invocation.
-    global _client
-    if _client is None:
-        key = os.environ.get('ANTHROPIC_API_KEY')
-        if not key:
-            raise ValueError("Missing environment variable ANTHROPIC_API_KEY")
-        _client = anthropic.Anthropic(api_key=key)
-    return _client
+SCHEMA_VERSION = "v2"
+PROMPT_VERSION = "v4"
 
+SYSTEM_PROMPT = """
+You are an expert at analyzing terms of service changes. Your task is to 
+determine whether changes are practically substantive—meaning they materially 
+affect what a typical user can do, must do, or what happens to them.
 
-CONTEXT_WINDOW = 200000
-TOKEN_LIMIT = 50000
-SCHEMA_VERSION = "v1"
-PROMPT_VERSION = "v3"
+CRITERIA FOR PRACTICALLY SUBSTANTIVE:
+- Alters data collection/usage
+- Changes user permissions, restrictions, or account termination conditions
+- Modifies pricing/payments/refunds
+- Affects dispute resolution or liability
+- New requirements or prohibitions on user behavior
 
-SCHEMA = """
+NOT PRACTICALLY SUBSTANTIVE:
+- Reformatting or reorganization only
+- Clarifies language without changing meaning
+- Administrative updates (names, addresses, dates)
+- Typo or grammar fixes
+- Adds legally required boilerplate that doesn't change user experience
+
+OUTPUT FORMAT:
+Respond with valid JSON only:
 {
-"legally_substantive": {
-    "rating": bool,
-    "explanation": str
-},
-"practically_substantive": {
-    "rating": bool,
-    "explanation": str
-},
-"change_keywords": list[str],
-"subject_keywords": list[str],
-"helm_keywords": list[str],
+  "practically_substantive" : 
+  {
+    "rating": boolean,
+    "reason": "One-two sentences explaining the key factor"
+  }
 }
 """
 
-SYSTEM_PROMPT = f"""
-You are a legal assistant and an expert in contract law. 
-Your task is to read and compare different versions of terms of service.
-You will be given only the diff (changes) between the versions; 
-you will not have the context of unchanged sections.
-You need to answer three questions w.r.t. the totality of the diff:
-    1) Does the new version contain a substantive change over the previous? 
-    Answer this first from a legal and next from a practical lay-person perspective.
-    2) Categorize the kind of changes with 1-3 keywords. Do not give an explanation for the categories.
-        e.g. ['formatting','clarification']
-    3) Categorize the concrete topics addressed in the changed sections. Do not give an explanation for the categories.
-    4) Categorize and mark whether any of the following HELM benchmark topics are addressed in the changed sections. Do not give an explanation.
-        ['Child Harm',
-        'Criminal Activities',
-        'Deception',
-        'Defamation',
-        'Discrimination/Bias',
-        'Economic Harm',
-        'Fundamental Rights',
-        'Hate/Toxicity',
-        'Manipulation',
-        'Operational Misuses',
-        'Political Usage',
-        'Privacy',
-        'Security Risks',
-        'Self-harm',
-        'Sexual Content',
-        'Violence & Extremism']
-
-Format your answer according to this json schema:
-{SCHEMA}
-
-In the following message I will provide the actual diff.
-It will be formatted as an xml list of non-contiguous diff sections according to the following schema:
-<diff_sections>
-    <section idx=[INDEX]>
-        <before>[ORIGINAL TEXT]</before>
-        <after>[ALTERED TEXT]</after>
-    </section>
-</diff_sections>
-
-Here are some labeled examples:
-"""
-
-def is_diff(diff_str: str) -> bool:
-    diff_obj = json.loads(diff_str)
-    diffs = diff_obj.get('diffs', [])
-    return any([d['tag'] != 'equal' for d in diffs])
-
-
-def summarize(blob_name: str):
-    prompt = load_text_blob(blob_name)
-    
+def summarize(blob_name: str) -> tuple[str, dict]:
     logger.debug(f"Summarizing {blob_name}")
-    try:
-        summary_result = _summarize(prompt)
-    except ValueError:
-        return
-    
-    run_id = ulid.ulid()
-    in_path = parse_blob_path(blob_name)
-    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{run_id}.txt"
+    examples = read_examples()
+    prompt = [Message("user", load_text_blob(blob_name))]
+    txt = call_api(SYSTEM_PROMPT, examples + prompt)
     metadata = dict(
-        run_id = run_id,
+        run_id = ulid.ulid(),
         prompt_version = PROMPT_VERSION,
         schema_version = SCHEMA_VERSION,
     )
-    upload_text_blob(summary_result, out_path, metadata=metadata)
+    return txt, metadata
 
-    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
-    latest_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.json"
-    upload_text_blob(summary_result, latest_path, metadata=metadata)
 
-    logger.info(f"Successfully summarized blob: {blob_name}")
-    
-def read_examples(prompt: str):
+@lru_cache(1)
+def read_examples() -> list[Message]:
     gold = load_true_labels(os.path.join(Stage.LABELS.value, "substantive_v1.json"))
     # Filter to false negatives
     gold = gold[(gold['practically_substantive_true']==0) & (gold['practically_substantive_pred']==1)]
-    examples = []
+    schema = pickle.loads(load_blob(os.path.join(Stage.SCHEMA.value, "summary", SCHEMA_VERSION + ".pkl")))
+    icl_queries = []
+    icl_responses = []
     for row in gold.itertuples():
         path = parse_blob_path(row.blob_path)
-        diff_path = os.path.join(Stage.PROMPT.value, path.company, path.policy, path.timestamp.removesuffix(".json") + ".txt")
-        diff_prompt = load_text_blob(diff_path)
-        label = diff_prompt.replace("<diff_sections>","<diff_sections><practically_substantive>False</practically_substantive>")
-        if len(SYSTEM_PROMPT) + len(prompt) + sum([len(x) for x in examples]) + len(label) > TOKEN_LIMIT:
-            break
-        examples.append(label)
-    return "\n".join(examples)    
-
-def _summarize(prompt: str) -> str:
-    examples = read_examples(prompt)
-    prompt_length = len(SYSTEM_PROMPT) + len(prompt) + len(examples)
-    if prompt_length >= CONTEXT_WINDOW:
-        logger.error(f"Prompt length {prompt_length} exceeds context window {CONTEXT_WINDOW}")
-    if prompt_length >= TOKEN_LIMIT:
-        # TODO: THIS GETS HIT QUITE A LOT FOR V2 PROMPT!
-        logger.error(f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")
-        raise ValueError(f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")
-    client = get_client()
-    response = client.messages.create(
-        model = "claude-3-5-haiku-20241022",
-        max_tokens = 1000,
-        system = [{
-            "type": "text",
-            "text": SYSTEM_PROMPT + "\n" + examples,
-            "cache_control": {"type": "ephemeral"}
-        }],
-        messages = [
-            dict(role = "user",
-                content = prompt,
-            ),
-        ]
-    )
-    return _parse_response(response)
-
-
-def _parse_response(resp: anthropic.types.message.Message) -> dict:
-    if resp.stop_reason != 'end_turn':
-        pass # might need to fix
-    if not resp.content:
-        raise ValueError("Empty LLM response")
-    if len(resp.content) > 1:
-        logger.warning("Multiple LLM outputs")
-    return resp.content[0].text
-
-
-def parse_response_json(blob_name: str, resp: str):
-    in_path = parse_blob_path(blob_name)
-    result = extract_json_from_response(resp)
-    if not result['success']:
-        raise ValueError(f"Failed to parse json from chat. Error: {result['error']}. Original: {resp}")
-    cleaned = sanitize_response(result['data'])
-    cleaned_txt = json.dumps(cleaned, indent=2)
-
-    in_meta = load_metadata(blob_name)
-    run_id = in_meta['run_id']
+        diff_path = os.path.join(Stage.DIFF_CLEAN.value, path.company, path.policy, path.timestamp + ".json")
+        diff = load_text_blob(diff_path)
+        icl_queries.append(Message("user", diff))
+        answer = {"practically_substantive": {"rating": False, "reason": "Does not materially impact user experience, rights, or risks."}}
+        schema.model_validate(answer)
+        icl_responses.append(Message("assistant", json.dumps(answer)))
     
-    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{run_id}.json")
-    upload_json_blob(cleaned_txt, out_path, metadata=in_meta)
-    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
-    upload_json_blob(cleaned_txt, out_path, metadata=in_meta)
-    
-def sanitize_response(data: dict|list|str|Any) -> dict|list|str|Any:
-    if isinstance(data, dict):
-        return {k: sanitize_response(v) for k,v in data.items()}
-    elif isinstance(data, list):
-        return [sanitize_response(v) for v in data]
-    elif isinstance(data, str):
-        return cleaner.clean(data)
-    else:
-        return data
-
-def prompt_diff(diff_str: str) -> str:
-    diff_obj = json.loads(diff_str)
-    output = []
-    diffs = [d for d in diff_obj['diffs'] if d['tag'] != 'equal']
-    for i, diff in enumerate(diffs):
-        before = ' '.join(diff['before'])
-        after = ' '.join(diff['after'])
-        xml = (f'<section idx="{i}">\n'
-            f"<before>{before}</before>\n"
-            f"<after>{after}</after>\n"
-            "</section>")
-        output.append(xml)
-    sections = '\n'.join(output)
-    return f"<diff_sections>{sections}</diff_sections>"
+    # Pick shortest examples to economize on tokens
+    # If the first k already exceed the prompt length, use 0 < k
+    lengths = [len(x.content) for x in icl_queries]
+    order = np.argsort(lengths)
+    lengths = np.cumsum(np.array(lengths)[order])
+    limit = min(2, np.searchsorted(lengths, TOKEN_LIMIT))
+    icl_queries = list(np.array(icl_queries)[order])[:limit]
+    icl_responses = list(np.array(icl_responses)[order])[:limit]
+    return list(chain.from_iterable(zip(icl_queries, icl_responses)))
     
