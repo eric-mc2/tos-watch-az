@@ -2,15 +2,19 @@
 # Ref: aka.ms/functions-azure-monitor-python 
 # azure-monitor-opentelemetry 
 
+anthropic
 azure-functions
 azure-functions-durable
 azure-storage-blob
-requests
-pandas
 beautifulsoup4
-chardet
-anthropic
-pytest
 bleach
-validators
+chardet
+pandas
+pydantic
+pydantic-xml
+pytest
 python-dotenv
+scikit-learn
+requests
+ulid
+validators
