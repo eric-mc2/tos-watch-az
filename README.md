@@ -1,127 +1,190 @@
-# Wayback Snapshot Scraper - Azure Functions
+# Terms of Service Watch (azure backend)
 
-This Azure Functions project contains a scraper that collects historical snapshots of web pages from the Wayback Machine and stores them in Azure Blob Storage.
+> Automated monitoring and analysis of major platform Terms of Service changes using Azure Durable Functions and Anthropic API
 
-## Functions
+[![Azure Functions](https://img.shields.io/badge/Azure-Functions-blue)](https://azure.microsoft.com/en-us/services/functions/)
+[![Python](https://img.shields.io/badge/Python-3.9+-green)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-### `wayback_scraper`
+## Overview
 
-HTTP-triggered function that:
-1. Loads a list of URLs from an input blob (JSON format)
-2. For each URL, queries the Wayback Machine API for available snapshots
-3. Downloads a sample of snapshots (up to 10 evenly distributed over time)
-4. Extracts main content from each snapshot
-5. Stores the cleaned HTML in Azure Blob Storage
+TOS Watch Azure monitors Terms of Service documents for changes, tracks these changes over time, and generates plain-English summaries of their
+practical impact on user experience and rights.
 
-## Setup
+## Key Features
+
+- **Automated Scraping**: Monitors live websites for TOS changes (back-filled historical changes from Wayback Machine). 
+- **Semantic Parsing**: Generates hierarchical diffs to contextualize changes and manage context window size.
+- **AI Summarization**: Uses Claude API to sift through boilerplate legal language and deliver the important notes.
+- **Prompt Engineering**: Iterates on new prompting strategies and integrates failures to improve summarization accuracy. 
+- **Scalable Architecture**: Built on Azure Durable Functions for efficient orchestration and scaling.
+- **Rate Limiting & Circuit Breaking**: Implements resilience patterns to handle failures and rate limits.
+- **Blob Storage Pipeline**: Staged processing pipeline using Azure Blob Storage for input and output.
+
+## Architecture
+
+![Architecture Diagram](architecture-diagram.png)
+
+### Pipeline Stages
+
+1. **Stage 01 - Back-fill**: Scrapes snapshots from the Wayback Machine for each URL.
+2. **Stage 02 - Snapshots**: Downloads HTML snapshots of live TOS pages.
+3. **Stage 03 - Parsing**: Splits HTML into semantically cohesive sections for analysis.
+5. **Stage 04 - Diffs**: Generates diffs between document versions to highlight changes.
+7. **Stage 05 - Summaries**: Generates AI-powered summaries of the changes. 
+7. **Stage 06 - Evaluation**: Human-in-the-loop rating of summarization accuracy.
+7. **Stage 07 - Prompting**: Experiment with new prompting strategies
+
+### Orchestration Workflows
+
+- **Rate Limiting**: Manages task-level fan-out that hit a common resource (e.g. Wayback Machine API)
+- **Circuit Breaker**: Communicates task-correlated errors to avoid overwhelming service with broken requests.
+
+## Experimentation & Evaluation
+
+The main goal is to classify ToS changes as "substantive" or not. Sub-goals are to classify the changes into specific topics (e.g. [HELM AIR 2024](https://arxiv.org/abs/2406.17864)). 
+
+### Structured outputs
+
+The model is instructed to emit JSON which is later extracted from the raw text response and validated according to a schema. Schemas are immutable and written into the metadata of each run, so that past inferences can be replayed as the schemas evolve.
+
+### Prompt Engineering
+
+Currently using in-context learning: known false positive input-output pairs are provided to the model before submitting the real prompt. In testing, using as few as 2-3 examples has improved 
+precision from a baseline of 59% up to 80%.
+
+### Gold Labels
+
+The goal of this project is to highlight ToS changes that materially affect user experience, data rights, etc. I use a rubric of substantive and non-substantive edits to assign labels from a lay-user perspective. Using a sample size of 50 (20% of corpus). Experiments are run against this set (except for the few used as ICL examples).
+
+**Roadmap:**
+
+- Concretize rubric and decrease task ambiguity with user-driven stories and real-life cases of legal battles, data breaches, etc.
+
+### Metrics
+
+Models are evaluated on binary classification F1 score, as currently the highest driver of negativ user experience is when the website mistakenly shows non-substantive changes.
+
+**Roadmap**:
+
+- Empirically verify that answers are factually grounded in input documents. Censor un-verified answers.
+- Re-implement topic modeling as separate prompt flow.
+
+### Versioning and Reproducibility
+
+See my opinionated write-up [here](https://eric-mc2.github.io/).
+
+## Installation
 
 ### Prerequisites
 
+- Azure subscription with:
+  - Azure Functions
+  - Azure Storage Account
 - Azure Functions Core Tools
-- Python 3.8+
-- Azure Storage Account
+- Python 3.12
 
-### Environment Variables
+### Setup
 
-Set the following environment variable in your `local.settings.json` file:
+```bash
+# Clone the repository
+git clone [repository-url]
+cd tos-watch-az
 
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AzureWebJobsStorage": "your_azure_storage_connection_string",
-  }
-}
+# Install dependencies
+pip install -r requirements.txt
+
+# Set the following environment variables in the shell or a .env file:
+AzureWebJobsStorage="your-connection-string"
+WEBSITE_HOSTNAME="your azure functions url"
+ANTHROPIC_API_KEY="your api key"
+AZURE_FUNCTION_MASTER_KEY="your api key"
+ARGILLA_API_KEY="your api key"
+HF_TOKEN="your api key"
 ```
-
-### Dependencies
-
-The function requires these Python packages (installed via `requirements.txt`):
-- azure-functions
-- azure-storage-blob
-- requests
-- pandas
-- beautifulsoup4
 
 ## Usage
 
-### Input Format
-
-Upload a JSON file to your input container with the following structure:
-
-```json
-{
-  "company1": [
-    "https://example1.com/page1",
-    "https://example1.com/page2"
-  ],
-  "company2": [
-    "https://example2.com/page1"
-  ]
-}
-```
-
-### API Endpoints
-
-**POST/GET** `/api/scraper`
-
-Parameters (query string or JSON body):
-- `input_container` (optional, default: "input"): Name of the blob container containing the URLs file
-- `input_blob` (optional, default: "static_urls.json"): Name of the blob containing the URLs
-- `output_container` (optional, default: "wayback-snapshots"): Name of the container to store snapshots
-
-### Example Requests
+### Seeding URLs
 
 ```bash
-# Using default parameters
-curl -X POST "https://your-function-app.azurewebsites.net/api/scraper?code=your-function-key"
+# Trigger the seed_urls function
+curl -X POST https://[your-function-app].azurewebsites.net/api/seed_urls?code=[function-key]
 
-# With custom parameters
-curl -X POST "https://your-function-app.azurewebsites.net/api/scraper?code=your-function-key&input_container=my-urls&input_blob=urls.json&output_container=snapshots"
+### Monitoring Changes
 
-# With JSON body
-curl -X POST "https://your-function-app.azurewebsites.net/api/scraper?code=your-function-key" \
-  -H "Content-Type: application/json" \
-  -d '{"input_container": "my-urls", "input_blob": "urls.json", "output_container": "snapshots"}'
-```
+Audit the 'traces' logs in the Azure Functions App portal.
 
-### Output Structure
+### Creating Gold Labels
 
-Snapshots are stored in the output container with the following structure:
-```
-company/url_path/timestamp.html
-```
+Follow these [instructions](https://docs.argilla.io/latest/getting_started/quickstart/) to create an Argilla instance on HuggingFace.
 
-For example:
-- `google/policies/20220315123456.html`
-- `meta/terms/20220320654321.html`
-
-## Local Development
-
-1. Install dependencies:
-   ```bash
-   cd cloud-service/az-funcs
-   pip install -r requirements.txt
-   ```
-
-2. Set up local settings:
-   ```bash
-   cp local.settings.json.template local.settings.json
-   # Edit local.settings.json with your Azure Storage connection string
-   ```
-
-3. Run locally:
-   ```bash
-   func start
-   ```
-
-## Deployment
-
-Deploy to Azure using the Azure Functions Core Tools:
+Run command to seed the instance with random examples for labeling.
 
 ```bash
-func azure functionapp publish your-function-app-name
+python grounding.py --action add
 ```
 
-Make sure to set the `AzureWebJobsStorage` application setting in your Azure Function App configuration.
+**Roadmap:**
+
+[x] Run experiments from specific label sets
+[ ] Implement different sampling strategies to ensure coverage
+
+Label the examples in the Argilla UI. Then download with: 
+
+```bash
+python grounding.py --action download
+```
+
+### Running Experiments
+
+It's best to do this in local dev instead of production... 
+Write your new prompt in `src/summarizer.py`.
+Write new immutable versioned Pydantic schema in `schemas/summary/v##.py`. 
+Pickle the schema in the same place. 
+
+```bash
+curl -X POST https://[your-function-app].azurewebsites.net/api/prompt_experiment?labels=[label-list]&code=[function-key]
+```
+
+Evaluate (structural correctness, accuracy, precision, recall) against past prompt and schema versions:
+
+```bash
+curl -X POST https://[your-function-app].azurewebsites.net/api/evaluate_prompts?code=[function-key]
+```
+
+Commit and push the new version IF you want it to run in produciton.
+
+### Checking System Health
+
+```bash
+# Check running / pending tasks
+python health_checks.py --output [filename] tasks --env {DEV,PROD} --workflow_type [STAGE]
+
+# Check missing blob outputs
+python health_checks.py --output [filename] files
+
+# Check circuit breaker status
+curl https://[your-function-app].azurewebsites.net/api/check_circuit_breaker?code=[function-key]
+
+# Reset a circuit breaker
+curl -X POST https://[your-function-app].azurewebsites.net/api/reset_circuit_breaker?workflow_type=[type]&code=[function-key]
+
+# Kill running / paused tasks in a given pipeline stage
+python health_checks.py --output [filename] killall --env {DEV,PROD} --workflow_type [STAGE]
+```
+
+## Development
+
+### Local Development
+
+```bash
+# Start the Azure Functions runtime locally
+func start
+
+# Run tests
+pytest
+
+# Deploy to Azure
+func azure functionapp publish [function-app-name]
+```

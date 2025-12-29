@@ -186,6 +186,7 @@ def render_diff_as_html(before: str, after: str) -> tuple[str, str]:
 
 
 def get_data(client: rg.Argilla, name: str):
+    # TODO: Might as well automatically push the dataset to blob storage 
     dataset = client.datasets(name)
     if dataset is None:
         print(f"Dataset {name} does not exist yet!")
