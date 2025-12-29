@@ -46,7 +46,7 @@ jobs:
       # Optional: Add step to run tests here
 
       - name: Zip artifact for deployment
-        run: zip -r release.zip src .python_packages function_app.py host.json  # best to opt-in the files we want
+        run: zip -r release.zip src schemas .python_packages function_app.py host.json  # best to opt-in the files we want
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
