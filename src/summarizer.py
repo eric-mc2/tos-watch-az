@@ -6,7 +6,7 @@ import ulid
 import numpy as np
 from itertools import chain
 from src.log_utils import setup_logger
-from src.blob_utils import load_text_blob, parse_blob_path, load_blob
+from src.blob_utils import load_text_blob, parse_blob_path, load_blob, check_blob
 from src.stages import Stage
 from src.prompt_eng import load_true_labels
 from src.claude_utils import call_api, Message, TOKEN_LIMIT
@@ -72,6 +72,9 @@ def read_examples() -> list[Message]:
     for row in gold.itertuples():
         path = parse_blob_path(row.blob_path)
         diff_path = os.path.join(Stage.DIFF_CLEAN.value, path.company, path.policy, path.timestamp + ".json")
+        if not check_blob(diff_path):
+          # For some reason or another (like random sampling across different envs), some snapshots may be missing
+          continue
         diff = load_text_blob(diff_path)
         icl_queries.append(Message("user", diff))
         answer = {"practically_substantive": {"rating": False, "reason": "Does not materially impact user experience, rights, or risks."}}
@@ -84,6 +87,8 @@ def read_examples() -> list[Message]:
     order = np.argsort(lengths)
     lengths = np.cumsum(np.array(lengths)[order])
     limit = min(N_ICL, np.searchsorted(lengths, TOKEN_LIMIT))
+    if len(icl_queries) < limit:
+        logger.warning("No labeled examples found for ICL.")
     icl_queries = list(np.array(icl_queries)[order])[:limit]
     icl_responses = list(np.array(icl_responses)[order])[:limit]
     return list(chain.from_iterable(zip(icl_queries, icl_responses)))
