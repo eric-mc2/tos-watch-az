@@ -1,25 +1,22 @@
-import anthropic
 import json
 import logging
 import os
-from pydantic import BaseModel
 import pickle
 import ulid
 import numpy as np
 from itertools import chain
 from src.log_utils import setup_logger
-from src.blob_utils import load_text_blob, parse_blob_path, load_json_blob, load_blob
+from src.blob_utils import load_text_blob, parse_blob_path, load_blob
 from src.stages import Stage
 from src.prompt_eng import load_true_labels
 from src.claude_utils import call_api, Message, TOKEN_LIMIT
-from src.differ import DiffSection, DiffDoc
 from functools import lru_cache
-from schemas.summary.v2 import Summary
 
 logger = setup_logger(__name__, logging.DEBUG)
 
 SCHEMA_VERSION = "v2"
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
+N_ICL = 3
 
 SYSTEM_PROMPT = """
 You are an expert at analyzing terms of service changes. Your task is to 
@@ -86,7 +83,7 @@ def read_examples() -> list[Message]:
     lengths = [len(x.content) for x in icl_queries]
     order = np.argsort(lengths)
     lengths = np.cumsum(np.array(lengths)[order])
-    limit = min(2, np.searchsorted(lengths, TOKEN_LIMIT))
+    limit = min(N_ICL, np.searchsorted(lengths, TOKEN_LIMIT))
     icl_queries = list(np.array(icl_queries)[order])[:limit]
     icl_responses = list(np.array(icl_responses)[order])[:limit]
     return list(chain.from_iterable(zip(icl_queries, icl_responses)))

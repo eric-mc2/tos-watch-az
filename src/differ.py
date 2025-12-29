@@ -3,8 +3,8 @@ import difflib
 from itertools import pairwise
 import json
 from pydantic import BaseModel
-from typing import Optional
-from src.blob_utils import (load_json_blob, upload_json_blob, list_blobs_nest, check_blob)
+from os.path import basename
+from src.blob_utils import (load_json_blob, upload_json_blob, list_blobs_nest, check_blob, list_blobs, parse_blob_path)
 from src.log_utils import setup_logger
 from src.docchunk import DocChunk
 from src.stages import Stage
@@ -37,6 +37,21 @@ def diff_batch() -> None:
                 output = _diff_files(company, policy, before, after)
                 upload_json_blob(output, outname)
                 _store_manifest(manifest, company, policy)
+
+
+def diff_single(blob_name) -> str:
+    path = parse_blob_path(blob_name)
+    peers = sorted([x for x in list_blobs() if x.startswith(f"{Stage.DOCTREE.value}/{path.company}/{path.policy}")])
+    idx = peers.index(blob_name)
+    if idx > 0:
+        manifest = _get_manifest(path.company, path.policy)
+        before = basename(peers[idx-1])
+        after = basename(blob_name)
+        manifest[after] = before
+        diff = _diff_files(path.company, path.policy, before, after)
+        _store_manifest(manifest, path.company, path.policy)
+        return diff
+    return None
 
 
 def _get_manifest(company, policy):

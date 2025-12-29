@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from azure import durable_functions as df
 from src.orchestrator import WORKFLOW_CONFIGS
 from src.log_utils import setup_logger
-from src.blob_utils import list_blobs, load_json_blob, set_connection_key, get_connection_key
+from src.blob_utils import list_blobs, load_json_blob, set_connection_key
 from src.scraper_utils import sanitize_urlpath
 from src.metadata_scraper import sample_wayback_metadata
 from src.stages import Stage
@@ -23,8 +23,9 @@ KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
 
-def validate_files(*args, **kwargs) -> dict:
-    set_connection_key()
+def validate_files(env, *args, **kwargs) -> dict:
+    conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
+    set_connection_key(conn_key)
     try:
         blobs = set(list_blobs())
     except RuntimeError as e:
@@ -34,6 +35,9 @@ def validate_files(*args, **kwargs) -> dict:
     urls = STATIC_URLS
     missing_metadata = []
     missing_snaps = []
+    missing_docs = []
+    missing_trees = []
+    missing_diff = []
     meta_counter, snap_counter = 0, 0
     for company, url_list in urls.items():
         for url in url_list:
@@ -51,14 +55,29 @@ def validate_files(*args, **kwargs) -> dict:
                 blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
                 if blob_name not in blobs:
                     missing_snaps.append(blob_name)
+                blob_name = f"{Stage.DOCTREE.value}/{company}/{policy}/{timestamp}.json"
+                if blob_name not in blobs:
+                    missing_trees.append(blob_name)
+                blob_name = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{timestamp}.json"
+                if blob_name not in blobs:
+                    missing_docs.append(blob_name)
+                blob_name = f"{Stage.DIFF_RAW.value}/{company}/{policy}/{timestamp}.json"
+                if blob_name not in blobs:
+                    missing_diff.append(blob_name)
     return {"Missing Metadata Count": f"{len(missing_metadata)}/{meta_counter}",
             "Missing Metadata Files":  missing_metadata,
             "Missing Snapshot Count": f"{len(missing_snaps)}/{snap_counter}",
-             "Missing Snapshot Files": missing_snaps
+             "Missing Snapshot Files": missing_snaps,
+            "Missing Trees Count": f"{len(missing_trees)}/{snap_counter}",
+             "Missing Trees Files": missing_trees,
+            "Missing Docs Count": f"{len(missing_docs)}/{snap_counter}",
+             "Missing Docs Files": missing_docs,
+            "Missing Diffs Count": f"{len(missing_diff)}/{snap_counter}",
+             "Missing Diffs Files": missing_diff,
      }
 
 
-def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
+def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     Terminate all running orchestrations.
     
@@ -91,7 +110,7 @@ def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
         if should_terminate:
             try:
                 # Use REST API to terminate
-                url = f"{_get_app_url()}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
+                url = f"{_get_app_url(env)}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
                 params = {
                     'reason': reason,
                     'code': os.environ.get("AZURE_FUNCTION_MASTER_KEY")
@@ -114,7 +133,7 @@ def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
     }
 
 
-def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) -> dict:
+def list_in_flight(env: str, workflow_type: str = None, runtimes: str|list[str] = None) -> dict:
 
     params = {}
 
@@ -124,7 +143,7 @@ def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) ->
 
     params['code'] = os.environ.get("AZURE_FUNCTION_MASTER_KEY")
    
-    data = _list_in_flight_paged(params)
+    data = _list_in_flight_paged(params, env)
 
     data = [dict(
             name = t.get('name'),
@@ -165,7 +184,7 @@ def list_in_flight(workflow_type: str = None, runtimes: str|list[str] = None) ->
     return formatted
 
 
-def _list_in_flight_paged(params, pages = None, next_token=None):
+def _list_in_flight_paged(params, env, pages = None, next_token=None):
     if pages is None:
         pages = []
     
@@ -173,22 +192,23 @@ def _list_in_flight_paged(params, pages = None, next_token=None):
     if next_token is not None:
         headers["x-ms-continuation-token"] = next_token
 
-    resp = requests.get(_get_app_url() + "/runtime/webhooks/durabletask/instances", 
+    resp = requests.get(_get_app_url(env) + "/runtime/webhooks/durabletask/instances", 
                         params=params,
                         headers=headers)
     resp.raise_for_status()
     pages.extend(resp.json())
     next_page = resp.headers.get("x-ms-continuation-token")
     if next_page:
-        return _list_in_flight_paged(params, pages, next_token=next_page)
+        return _list_in_flight_paged(params, env, pages, next_token=next_page)
     else:
         return pages
 
 
-def _get_app_url():
-    app_url = os.getenv('WEBSITE_HOSTNAME')
-    if app_url:
-        app_url = f"https://{app_url}"
+def _get_app_url(env):
+    if env == "PROD":
+        app_url = os.environ.get('WEBSITE_HOSTNAME')
+        if not app_url:
+            raise RuntimeError("Environment variable WEBSITE_HOSTNAME not set.")
     else:
         app_url = "http://127.0.0.1:7071"
     return app_url
@@ -203,14 +223,17 @@ if __name__ == "__main__":
     
     parser_tasks = subparsers.add_parser('tasks', help='list running tasks')
     parser_tasks.add_argument("--workflow_type")
+    parser_tasks.add_argument("--env", choices=["DEV","PROD"])
     parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
     parser_tasks.set_defaults(func=list_in_flight)
     
     parser_files = subparsers.add_parser('files', help='list missing files')
+    parser_files.add_argument("--env", choices=["DEV","PROD"])
     parser_files.set_defaults(func=validate_files)
 
     parser_kill = subparsers.add_parser('killall', help='terminate all running orchestrations')
     parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
+    parser_kill.add_argument("--env", choices=["DEV","PROD"])
     parser_kill.add_argument("--reason", default=KILL_CIRCUIT, help='termination reason')
     parser_kill.set_defaults(func=kill_all)
 

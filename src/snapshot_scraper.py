@@ -64,20 +64,23 @@ def extract_main_text(html_content, encoding='utf-8'):
 
 
 def get_wayback_snapshot(company, policy, timestamp, task_id):
-    
     snap_url = f"https://web.archive.org/web/{task_id}"
+    get_website(company, policy, timestamp, snap_url)
+
+
+def get_website(company, policy, timestamp, url):
     blob_name = f"02-snapshots/{company}/{policy}/{timestamp}.html"
     
     if check_blob(blob_name):
         # Don't try-cach this because want to fail fast if blob service is out.
         logger.info(f"Blob {blob_name} exists. Skipping.")
     else:
-        logger.debug(f"Requesting wayback html for {task_id}")
+        logger.debug(f"Requesting html for {url}")
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
         }
-        resp = requests.get(snap_url, timeout=90, headers=headers)
+        resp = requests.get(url, timeout=90, headers=headers)
         resp.raise_for_status()
         
         logger.debug(f"Testing html encoding.")

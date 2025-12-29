@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from pydantic_xml import BaseXmlModel, attr, element
 from src.differ import DiffDoc, DiffSection
-from src.summarizer import SCHEMA_VERSION, PROMPT_VERSION
 from src.stages import Stage
 from src.blob_utils import (list_blobs_nest, 
                             list_blobs,
@@ -32,8 +31,8 @@ def migrate_raw():
                 out_path = f"{Stage.SUMMARY_RAW.value}/{company}/{policy}/{timestamp}/{run_id}.txt"
                 metadata = dict(
                     run_id = run_id,
-                    prompt_version = PROMPT_VERSION,
-                    schema_version = SCHEMA_VERSION,
+                    prompt_version = "v1",
+                    schema_version = "v1",
                 )
                 
                 txt = load_text_blob(in_path)
