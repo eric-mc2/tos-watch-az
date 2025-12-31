@@ -41,7 +41,7 @@ class RateLimiterState:
 GET_STATUS = "GET_STATUS"
 TRY_ACQUIRE = "TRY_ACQUIRE"
 
-def rate_limiter_entity(context: df.DurableEntityContext):
+def rate_limiter_entity(context: df.DurableEntityContext) -> None:
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
     input_data = context.get_input()
     logger.debug(f"Entering rate limiter: {input_data}")

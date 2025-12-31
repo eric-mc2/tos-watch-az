@@ -12,7 +12,7 @@ TRIP = "TRIP"
 RESET = "RESET"
 GET_STATUS = "GET_STATUS"
 
-def circuit_breaker_entity(context: df.DurableEntityContext):
+def circuit_breaker_entity(context: df.DurableEntityContext) -> None:
     """Circuit breaker entity to halt all processing on systemic failures."""
     # Always initialize with default state if None
     current_state = context.get_state(lambda: {

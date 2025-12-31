@@ -2,6 +2,7 @@
 import pickle
 import json
 import logging
+from typing import Optional, Generator
 import os
 from dotenv import load_dotenv
 import azure.functions as func
@@ -12,9 +13,10 @@ from src.blob_utils import (parse_blob_path,
                             upload_text_blob,
                             upload_json_blob,
                             load_metadata,
-                            load_blob)
+                            load_blob,
+                            load_json_blob)
 from src.log_utils import setup_logger
-from src.app_utils import http_wrap, pretty_error
+from src.app_utils import http_wrap, pretty_error, AppError
 from src.stages import Stage
 from src.orchestrator import OrchData
 
@@ -27,13 +29,13 @@ logging.getLogger('azure').setLevel(logging.WARNING)
 
 set_connection_key()
 
-@app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def hello_world(req: func.HttpRequest):
-    logger.debug("Test logs debug")
-    logger.info("Test logs info")
-    logger.warning("Test logs warning")
-    logger.error("Test logs error")
+# @app.route(route="hello_world", auth_level=func.AuthLevel.FUNCTION)
+# @http_wrap
+# def hello_world(req: func.HttpRequest):
+#     logger.debug("Test logs debug")
+#     logger.info("Test logs info")
+#     logger.warning("Test logs warning")
+#     logger.error("Test logs error")
 
 
 @app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
@@ -44,32 +46,32 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
     seed_main()
 
 
-@app.blob_trigger(arg_name="input_blob", 
-                path="documents/test_failure_trigger.txt",
-                connection=get_connection_key())
-@app.durable_client_input(client_name="client")
-@pretty_error
-async def test_failure_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
-    from datetime import datetime
-    task_id = "persistent_failure_" + datetime.now().isoformat()
-    logger.info(f"Initiating orchestration for {task_id}")
-    orchestration_input = OrchData(task_id, "test_fail", "acme").to_dict()
-    await client.start_new("test_failure_orchestrator", None, orchestration_input)
+# @app.blob_trigger(arg_name="input_blob", 
+#                 path="documents/test_failure_trigger.txt",
+#                 connection=get_connection_key())
+# @app.durable_client_input(client_name="client")
+# @pretty_error
+# async def test_failure_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
+#     from datetime import datetime
+#     task_id = "persistent_failure_" + datetime.now().isoformat()
+#     logger.info(f"Initiating orchestration for {task_id}")
+#     orchestration_input = OrchData(task_id, "test_fail", "acme").to_dict()
+#     await client.start_new("test_failure_orchestrator", None, orchestration_input)
 
 
-@app.activity_trigger(input_name="input_data")
-@pretty_error(retryable=True)
-def test_failure_processor(input_data: dict):
-    task_id = input_data['task_id']
-    logger.info(f"Running processor {task_id}")
-    raise RuntimeError(f"Test processor fail {task_id}")
+# @app.activity_trigger(input_name="input_data")
+# @pretty_error(retryable=True)
+# def test_failure_processor(input_data: dict):
+#     task_id = input_data['task_id']
+#     logger.info(f"Running processor {task_id}")
+#     raise RuntimeError(f"Test processor fail {task_id}")
 
 
-@app.orchestration_trigger(context_name="context")
-@pretty_error
-def test_failure_orchestrator(context: df.DurableOrchestrationContext):
-    from src.orchestrator import orchestrator_logic, WorkflowConfig
-    return orchestrator_logic(context, {"test_fail": WorkflowConfig(60,60,5,"test_failure_processor", 1, 5)})
+# @app.orchestration_trigger(context_name="context")
+# @pretty_error
+# def test_failure_orchestrator(context: df.DurableOrchestrationContext):
+#     from src.orchestrator import orchestrator_logic, WorkflowConfig
+#     return orchestrator_logic(context, {"test_fail": WorkflowConfig(60,60,5,"test_failure_processor", 1, 5)})
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -77,7 +79,7 @@ def test_failure_orchestrator(context: df.DurableOrchestrationContext):
                 connection=get_connection_key())
 @app.durable_client_input(client_name="client")
 @pretty_error
-async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
+async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Initiate wayback snapshots from static URL list"""
     from src.scraper_utils import load_urls
     blob_name = input_blob.name.removeprefix("documents/")
@@ -91,7 +93,7 @@ async def meta_blob_trigger(input_blob: func.InputStream, client: df.DurableOrch
 
 @app.activity_trigger(input_name="input_data")
 @pretty_error(retryable=True)
-def meta_processor(input_data: dict):
+def meta_processor(input_data: dict) -> None:
     from src.metadata_scraper import scrape_wayback_metadata
     scrape_wayback_metadata(input_data['task_id'], input_data['company'])
     logger.info(f"Successfully scraped: {input_data['task_id']}")
@@ -103,7 +105,7 @@ def meta_processor(input_data: dict):
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def scraper_blob_trigger(input_blob: func.InputStream, 
-                               client: df.DurableOrchestrationClient):
+                               client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the scraper workflow orchestration."""
     from src.metadata_scraper import parse_wayback_metadata, sample_wayback_metadata
     meta_blob_name = input_blob.name.removeprefix("documents/")
@@ -127,11 +129,11 @@ async def scraper_blob_trigger(input_blob: func.InputStream,
                                        timestamp).to_dict()
         logger.info(f"Initiating orchestration for {url_key}")
         await client.start_new("orchestrator", None, orchestration_input)
-    
+
 
 @app.activity_trigger(input_name="input_data")
 @pretty_error(retryable=True)
-def scraper_processor(input_data: dict):
+def scraper_processor(input_data: dict) -> Optional[dict]:
     from src.snapshot_scraper import get_wayback_snapshot
     snap_url = input_data['task_id']
     company = input_data['company']
@@ -139,6 +141,40 @@ def scraper_processor(input_data: dict):
     timestamp = input_data['timestamp']
     get_wayback_snapshot(company, policy, timestamp, snap_url)
     logger.info(f"Successfully scraped {snap_url}")
+
+
+@app.timer_trigger(arg_name="input_timer",
+                   schedule="0 0 * * 1")
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def scraper_scheduled_trigger(input_timer: func.TimerRequest,
+                              client: df.DurableOrchestrationClient) -> None:
+    from src.scraper_utils import sanitize_urlpath
+    import time
+    urls = load_json_blob("static_urls.json")
+    for company, url_list in urls.items():
+        for url in url_list:
+            policy = sanitize_urlpath(url)
+            timestamp = time.strftime("%Y%m%d%H%M%S")
+            orchestration_input = OrchData(url, 
+                                       "webscraper", 
+                                       company, 
+                                       policy, 
+                                       timestamp).to_dict()
+            logger.info(f"Initiating orchestration for {url}")
+            await client.start_new("orchestrator", None, orchestration_input)
+
+
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def scraper_scheduled_processor(input_data: dict) -> None:
+    from src.snapshot_scraper import get_website
+    url = input_data['task_id']
+    company = input_data['company']
+    policy = input_data['policy']
+    timestamp = input_data['timestamp']
+    get_website(company, policy, timestamp, url)
+    logger.info(f"Successfully scraped {company}/{policy}")
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -172,12 +208,21 @@ def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]):
     output_blob.set(lines)
 
 
-@app.route(route="batch_diff", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def batch_diff(req: func.HttpRequest) -> func.HttpResponse:
-    # This has to be http-triggered because we cant guarantee input order.
-    from src.differ import diff_batch
-    diff_batch()
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/04-doclines/{company}/{policy}/{timestamp}.json",
+                connection=get_connection_key())
+@pretty_error
+def single_diff(input_blob: func.InputStream):
+    from src.differ import diff_single
+    from src.blob_utils import list_blobs
+    blob_name = input_blob.name.removeprefix("documents/")
+    path = parse_blob_path(blob_name)
+    peers = sorted([x for x in list_blobs() if x.startswith(f"{Stage.DOCCHUNK.value}/{path.company}/{path.policy}")])
+    idx = peers.index(blob_name)
+    if idx >= 1:
+        diff_single(peers[idx-1], blob_name)            
+    if idx + 1 < len(peers):
+        diff_single(blob_name, peers[idx+1])
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -201,7 +246,7 @@ def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]):
                 connection=get_connection_key())
 @app.durable_client_input(client_name="client")
 @pretty_error
-async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient):
+async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the summarizer workflow orchestration."""
     blob_name = input_blob.name.removeprefix("documents/")
     parts = parse_blob_path(blob_name)
@@ -265,14 +310,14 @@ def evaluate_prompts(req: func.HttpRequest) -> func.HttpResponse:
     
 @app.orchestration_trigger(context_name="context")
 @pretty_error
-def orchestrator(context: df.DurableOrchestrationContext):
+def orchestrator(context: df.DurableOrchestrationContext) -> Generator:
     from src.orchestrator import orchestrator_logic
     return orchestrator_logic(context)
 
 
 @app.entity_trigger(context_name="context")
 @pretty_error
-def rate_limiter(context: df.DurableEntityContext):
+def rate_limiter(context: df.DurableEntityContext) -> None:
     """Generic Durable Entity that implements token bucket rate limiting for different workflows."""
     from src.rate_limiter import rate_limiter_entity
     return rate_limiter_entity(context)
@@ -280,7 +325,7 @@ def rate_limiter(context: df.DurableEntityContext):
 
 @app.entity_trigger(context_name="context")
 @pretty_error
-def circuit_breaker(context: df.DurableEntityContext):
+def circuit_breaker(context: df.DurableEntityContext) -> None:
     """Circuit breaker entity to halt processing on systemic failures."""
     from src.circuit_breaker import circuit_breaker_entity
     return circuit_breaker_entity(context)

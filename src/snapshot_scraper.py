@@ -6,6 +6,7 @@ from src.blob_utils import (check_blob, upload_html_blob)
 import chardet  # Add this import for encoding detection
 from src.log_utils import setup_logger
 
+
 logger = setup_logger(__name__, logging.INFO)
 
 
@@ -81,7 +82,12 @@ def get_website(company, policy, timestamp, url):
             'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
         }
         resp = requests.get(url, timeout=90, headers=headers)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            # Try without these headers for kicks. Sometimes works (meta.com)
+            resp = requests.get(url, timeout=90)
+            resp.raise_for_status()
         
         logger.debug(f"Testing html encoding.")
         html_content, detected_encoding = decode_html(resp)

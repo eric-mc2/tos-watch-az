@@ -115,4 +115,4 @@ if __name__ == "__main__":
     # migrate_clean()    
     # migrate_diff_dir()
     # migrate_diffs()
-    migrate_labels()
+    # migrate_labels()

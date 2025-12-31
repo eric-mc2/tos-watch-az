@@ -21,38 +21,24 @@ class DiffDoc(BaseModel):
 
 logger = setup_logger(__name__, logging.INFO)
 
-def diff_batch() -> None:
-    directory = list_blobs_nest()[Stage.DOCCHUNK.value]
-    for company, policies in directory.items():
-        for policy, snaps in policies.items():
-            pairs = pairwise(sorted(snaps.keys()))
-            manifest = _get_manifest(company, policy)
-            for before, after in pairs:
-                outname = f"{Stage.DIFF_RAW.value}/{company}/{policy}/{after}"
-                if after in manifest and manifest[after] == before:
-                    logger.debug(f"Diff already computed for {outname}")
-                    continue
-                logger.debug(f"Difffing {company}/{policy} : {before} <-> {after}")
-                manifest[after] = before
-                output = _diff_files(company, policy, before, after)
-                upload_json_blob(output, outname)
-                _store_manifest(manifest, company, policy)
+def diff_single(blob_name_before, blob_name_after) -> str:
+    diff = _diff_files(blob_name_before, blob_name_after)
+    _set_manifest(blob_name_before, blob_name_after)
+    if diff:
+        out_name = blob_name_after.replace(Stage.DOCCHUNK.value, Stage.DIFF_RAW.value)
+        upload_json_blob(diff, out_name)
+    return diff
 
 
-def diff_single(blob_name) -> str:
-    path = parse_blob_path(blob_name)
-    peers = sorted([x for x in list_blobs() if x.startswith(f"{Stage.DOCTREE.value}/{path.company}/{path.policy}")])
-    idx = peers.index(blob_name)
-    if idx > 0:
-        manifest = _get_manifest(path.company, path.policy)
-        before = basename(peers[idx-1])
-        after = basename(blob_name)
-        manifest[after] = before
-        diff = _diff_files(path.company, path.policy, before, after)
-        _store_manifest(manifest, path.company, path.policy)
-        return diff
-    return None
-
+def _set_manifest(before, after):
+    path = parse_blob_path(before)
+    path2 = parse_blob_path(after)
+    if path.company != path2.company or path.policy != path2.policy:
+        raise ValueError("Can't diff unrelated docs.")
+    manifest = _get_manifest(path.company, path.policy)
+    manifest[basename(after)] = basename(before)
+    _store_manifest(manifest, path.company, path.policy)
+    
 
 def _get_manifest(company, policy):
     """Retrieve list of computed diffs (and reference points)."""
@@ -70,10 +56,10 @@ def _store_manifest(data, company, policy):
     return upload_json_blob(manifest_str, manifest_name)
 
 
-def _diff_files(company, policy, before, after) -> str:
+def _diff_files(filenamea, filenameb) -> str:
     """Compute difference between two DocChunk files (parsed html lines)."""
-    filenamea = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{before}"
-    filenameb = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{after}"
+    if not filenamea.startswith(Stage.DOCCHUNK.value) or not filenameb.startswith(Stage.DOCCHUNK.value):
+        raise ValueError(f"Expected {Stage.DOCCHUNK.value} blob path")
     doca = load_json_blob(filenamea)
     docb = load_json_blob(filenameb)
     txta = [DocChunk.from_str(x).text for x in doca]
