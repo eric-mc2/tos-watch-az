@@ -101,8 +101,11 @@ def validate_urls(urls: dict):
             if not fp:
                 raise ValueError(f"Invalid url -> filename: {url} -> {fp}")
 
-
+def sanitize_urls(urls: dict):
+    return {url: f"{company}/{sanitize_urlpath(url)}" for company, urls in urls.items() for url in urls}
+    
 def seed_urls(urls: dict = STATIC_URLS):
     validate_urls(urls)
-    text_content = json.dumps(urls, indent=2)
-    upload_json_blob(text_content, 'static_urls.json')
+    # upload_json_blob(json.dumps(urls, indent=2), 'static_urls.json')
+    url_paths = sanitize_urls(urls)
+    upload_json_blob(json.dumps(url_paths, indent=2), 'url_blob_paths.json')
