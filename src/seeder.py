@@ -106,6 +106,6 @@ def sanitize_urls(urls: dict):
     
 def seed_urls(urls: dict = STATIC_URLS):
     validate_urls(urls)
-    # upload_json_blob(json.dumps(urls, indent=2), 'static_urls.json')
+    upload_json_blob(json.dumps(urls, indent=2), 'static_urls.json')
     url_paths = sanitize_urls(urls)
     upload_json_blob(json.dumps(url_paths, indent=2), 'url_blob_paths.json')

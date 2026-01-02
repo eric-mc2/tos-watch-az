@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from pydantic_xml import BaseXmlModel, attr, element
 from src.differ import DiffDoc, DiffSection
 from src.stages import Stage
+from src.docchunk import DocChunk
+from src.differ import _diff_byspan, _get_manifest
 from src.blob_utils import (list_blobs_nest, 
                             list_blobs,
                             set_connection_key, 
@@ -16,7 +18,9 @@ from src.blob_utils import (list_blobs_nest,
                             load_text_blob, 
                             load_json_blob,
                             load_metadata,
-                            remove_blob)
+                            remove_blob,
+                            check_blob)
+
 
 logging.getLogger('azure').setLevel(logging.WARNING)
 
@@ -104,6 +108,28 @@ def migrate_labels():
                 label['metadata']['blob_path'] = cleaned
             upload_json_blob(json.dumps(labels, indent=2), blob)
 
+def backfill_diffs():
+    blobs = list_blobs_nest()
+    for stage, companies in blobs.items():
+        if stage != Stage.DOCCHUNK.value:
+            continue
+        for company, policies in companies.items():
+            for policy in policies.keys():
+                manifest = _get_manifest(company, policy)
+                for after, before in manifest.items():
+                    before = os.path.join(stage, company, policy, before)
+                    after = os.path.join(stage, company, policy, after)
+                    if not check_blob(before) or not check_blob(after):
+                        continue
+                    doca = load_json_blob(before)
+                    docb = load_json_blob(after)
+                    txta = [DocChunk.from_str(x).text for x in doca]
+                    txtb = [DocChunk.from_str(x).text for x in docb]
+                    span_diff = _diff_byspan(before, after, txta, txtb)
+                    sd = json.loads(span_diff)
+                    if not all([x['tag'] == "equal" for x in sd['diffs']]):
+                        out_name = after.replace(Stage.DOCCHUNK.value, Stage.DIFF_SPAN.value)
+                        upload_json_blob(span_diff, out_name)
 
 
 
@@ -116,3 +142,4 @@ if __name__ == "__main__":
     # migrate_diff_dir()
     # migrate_diffs()
     # migrate_labels()
+    # backfill_diffs()

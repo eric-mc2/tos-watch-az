@@ -7,6 +7,7 @@ class Stage(Enum):
     DOCTREE = "03-doctrees"
     DOCCHUNK = "04-doclines"
     DIFF_RAW = "05-diffs-raw"
+    DIFF_SPAN = "05-diffs-span"
     DIFF_CLEAN = "05-diffs-clean"
     PROMPT = "06-prompts"
     SUMMARY_RAW = "07-summary-raw"

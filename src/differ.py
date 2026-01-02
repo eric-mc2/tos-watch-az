@@ -22,11 +22,18 @@ class DiffDoc(BaseModel):
 logger = setup_logger(__name__, logging.INFO)
 
 def diff_single(blob_name_before, blob_name_after) -> str:
-    diff = _diff_files(blob_name_before, blob_name_after)
+    doca = load_json_blob(blob_name_before)
+    docb = load_json_blob(blob_name_after)
+    txta = [DocChunk.from_str(x).text for x in doca]
+    txtb = [DocChunk.from_str(x).text for x in docb]
+    diff = _diff_byline(blob_name_before, blob_name_after, txta, txtb)
     _set_manifest(blob_name_before, blob_name_after)
     if diff:
         out_name = blob_name_after.replace(Stage.DOCCHUNK.value, Stage.DIFF_RAW.value)
         upload_json_blob(diff, out_name)
+        span_diff = _diff_byspan(blob_name_before, blob_name_after, txta, txtb)
+        out_name = blob_name_after.replace(Stage.DOCCHUNK.value, Stage.DIFF_SPAN.value)
+        upload_json_blob(span_diff, out_name)
     return diff
 
 
@@ -56,30 +63,59 @@ def _store_manifest(data, company, policy):
     return upload_json_blob(manifest_str, manifest_name)
 
 
-def _diff_files(filenamea, filenameb) -> str:
+def _diff_byline(filenamea, filenameb, txta, txtb) -> str:
     """Compute difference between two DocChunk files (parsed html lines)."""
-    if not filenamea.startswith(Stage.DOCCHUNK.value) or not filenameb.startswith(Stage.DOCCHUNK.value):
-        raise ValueError(f"Expected {Stage.DOCCHUNK.value} blob path")
-    doca = load_json_blob(filenamea)
-    docb = load_json_blob(filenameb)
-    txta = [DocChunk.from_str(x).text for x in doca]
-    txtb = [DocChunk.from_str(x).text for x in docb]
-    diff = _diff_sequence(txta, txtb)
     output = dict(fromfile = filenamea,
                     tofile = filenameb,
-                    diffs=list(diff))
+                    diffs = _diff_sequence(txta, txtb))
+    return json.dumps(output, indent=2)
+
+def _diff_byspan(filenamea, filenameb, txta, txtb) -> str:
+    """Compute difference between two DocChunk files (parsed html lines)."""
+    output = dict(fromfile = filenamea,
+                    tofile = filenameb,
+                    diffs = _diff_spans(txta, txtb))
     return json.dumps(output, indent=2)
     
 
-def _diff_sequence(a, b): 
+def _diff_sequence(a: list[str], b: list[str]) -> list[dict]: 
     """Helper function to diff line-based files."""
+    diffs = []
+    # A is a sequence of lines. B is a sequence of lines
     matcher = difflib.SequenceMatcher(lambda x: x.isspace(), a, b)
+    # This aligns the two sequences as best as possible.
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         matcher = difflib.SequenceMatcher(lambda x: x.isspace(), a[i1:i2], b[j1:j2])
-        yield dict(tag=tag, i1=i1, i2=i2, j1=j1, j2=j2,
+        diffs.append(dict(tag=tag, i1=i1, i2=i2, j1=j1, j2=j2,
                     before=a[i1:i2], after=b[j1:j2],
-                   sim=matcher.ratio())
-        
+                   sim=matcher.ratio()))
+    return diffs
+
+
+def _diff_spans(chunks_a: list[str], chunks_b: list[str]) -> list[dict]: 
+    """Helper function to diff line-based files."""
+    # A is a sequence of semantic lines. B is a sequence of lines.
+    diffs = []
+    matcher = difflib.SequenceMatcher(lambda x: x.isspace(), chunks_a, chunks_b)
+    for outer_idx, (outer_tag, i1, i2, j1, j2) in enumerate(matcher.get_opcodes()):
+        # This aligns the two sequences as best as possible.
+        alines, blines = chunks_a[i1:i2], chunks_b[j1:j2]
+        # Some of the lines themselves have newlines in them. So let's normalize.
+        astr, bstr = '\n'.join(alines), '\n'.join(blines)
+        alines, blines = astr.splitlines(), bstr.splitlines()
+        numlines = max(len(alines), len(blines))
+        for inner_idx in range(numlines):
+            line_a = alines[inner_idx] if inner_idx < len(alines) else ""
+            line_b = blines[inner_idx] if inner_idx < len(blines) else ""
+            # Now we diff a sentence. (Don't ignore whitespace so we can properly recombine word boundaries)
+            matcher = difflib.SequenceMatcher(None, line_a, line_b)
+            for inner_tag, ii1, ii2, jj1, jj2 in matcher.get_opcodes():
+                diffs.append(dict(tag=inner_tag, idx=outer_idx, 
+                           i1=i1, i2=i2, j1=j1, j2=j2,
+                           ii1=ii1, ii2=ii2, jj1=jj1, jj2=jj2,
+                           before=line_a[ii1:ii2], after=line_b[jj1:jj2]))
+    return diffs
+            
 
 def has_diff(diff_str: str) -> bool:
     diff_obj = json.loads(diff_str)
