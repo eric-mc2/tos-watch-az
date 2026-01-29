@@ -107,12 +107,22 @@ def extract_json_from_response(response: str) -> dict:
         'success': False,
         'data': None,
         'raw_match': None,
-        'error': None
+        'error': ""
     }
 
     if not response or not isinstance(response, str):
         result['error'] = 'Invalid input: response must be a non-empty string'
         return result
+    
+    # Try simply parsing it first
+    try:
+        result['raw_match'] = response
+        cleaned_match = re.sub(r'\s+', ' ', response).strip()
+        result['data'] = json.loads(cleaned_match)
+        result['success'] = True
+        return result
+    except json.JSONDecodeError as e:
+        pass 
 
     # Try object pattern first
     json_pattern = r'\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}'

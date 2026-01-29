@@ -78,7 +78,6 @@ STATIC_URLS = {
     "https://www.canva.com/trust/"
 ],
 "grammarly": [
-    "https://www.grammarly.com/technical-specifications",
     "https://www.grammarly.com/ai/responsible-ai",
     "https://www.grammarly.com/compliance",
     "https://www.grammarly.com/privacy-policy",
@@ -88,6 +87,43 @@ STATIC_URLS = {
 ],
 "anthropic": [
     "https://www.anthropic.com/legal/consumer-terms"
+],
+"instagram": [
+    "https://privacycenter.instagram.com/policy"
+],
+"x-ai": [
+    "https://x.ai/legal/terms-of-service",
+    "https://x.ai/legal/acceptable-use-policy",
+    "https://x.ai/legal/privacy-policy",
+    "https://x.ai/legal/recruitment-privacy-notice",
+    "https://x.ai/legal/faq"
+],
+"linkedin": [
+    "https://www.linkedin.com/legal/user-agreement",
+    "https://www.linkedin.com/legal/privacy-policy",
+    "https://www.linkedin.com/legal/professional-community-policies",
+    "https://www.linkedin.com/legal/copyright-policy"
+],
+"reddit": [
+    "https://redditinc.com/policies/user-agreement",
+    "https://support.reddithelp.com/hc/en-us/articles/26410290525844-Public-Content-Policy",
+    "https://business.reddithelp.com/s/article/Reddit-Advertising-Data-Processing-Agreement",
+    "https://redditinc.com/policies/reddit-rules",
+    "https://www.reddit.com/policies/privacy-policy"
+],
+"stackoverflow": [
+    "https://stackoverflow.com/legal/terms-of-service/public",
+    "https://stackoverflow.com/legal/privacy-policy"
+],
+"slack": [
+    "https://slack.com/trust/privacy/privacy-policy",
+    "https://slack.com/terms-of-service/user",
+],
+"zoom": [
+    "https://www.zoom.com/en/trust/privacy/privacy-statement/",
+    "https://www.zoom.com/en/trust/schools-privacy-statement/",
+    "https://www.zoom.com/en/trust/zoom-events-privacy/",
+    "https://www.zoom.com/en/trust/us-privacy-addendum/"
 ]
 }
 

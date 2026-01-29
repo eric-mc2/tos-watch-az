@@ -141,7 +141,6 @@ python grounding.py --action download
 It's best to do this in local dev instead of production... 
 Write your new prompt in `src/summarizer.py`.
 Write new immutable versioned Pydantic schema in `schemas/summary/v##.py`. 
-Pickle the schema in the same place. 
 
 ```bash
 curl -X POST https://[your-function-app].azurewebsites.net/api/prompt_experiment?labels=[label-list]&code=[function-key]

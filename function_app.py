@@ -1,5 +1,4 @@
 
-import pickle
 import json
 import logging
 from typing import Optional, Generator
@@ -7,6 +6,8 @@ import os
 from dotenv import load_dotenv
 import azure.functions as func
 from azure import durable_functions as df
+from src.log_utils import setup_logger
+from src.app_utils import http_wrap, pretty_error, AppError
 from src.blob_utils import (parse_blob_path, 
                             set_connection_key, 
                             get_connection_key,
@@ -15,10 +16,9 @@ from src.blob_utils import (parse_blob_path,
                             load_metadata,
                             load_blob,
                             load_json_blob)
-from src.log_utils import setup_logger
-from src.app_utils import http_wrap, pretty_error, AppError
 from src.stages import Stage
 from src.orchestrator import OrchData
+from schemas.summary.registry import CLASS_REGISTRY
 
 load_dotenv()
 
@@ -36,14 +36,6 @@ set_connection_key()
 #     logger.info("Test logs info")
 #     logger.warning("Test logs warning")
 #     logger.error("Test logs error")
-
-
-@app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
-    """Post seed URLs to blob storage for scraping"""
-    from src.seeder import seed_urls as seed_main
-    seed_main()
 
 
 # @app.blob_trigger(arg_name="input_blob", 
@@ -72,6 +64,14 @@ def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
 # def test_failure_orchestrator(context: df.DurableOrchestrationContext):
 #     from src.orchestrator import orchestrator_logic, WorkflowConfig
 #     return orchestrator_logic(context, {"test_fail": WorkflowConfig(60,60,5,"test_failure_processor", 1, 5)})
+
+
+@app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
+@http_wrap
+def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
+    """Post seed URLs to blob storage for scraping"""
+    from src.seeder import seed_urls as seed_main
+    seed_main()
 
 
 @app.blob_trigger(arg_name="input_blob", 
@@ -265,7 +265,7 @@ def summarizer_processor(input_data: dict):
     
     out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
     upload_text_blob(summary, out_path, metadata=metadata)
-    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
+    # XXX: There is a race condition here IF you fan out across experiments. Would need new orchestrator for updating latest.
     latest_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.txt"
     upload_text_blob(summary, latest_path, metadata=metadata)
     logger.info(f"Successfully summarized blob: {blob_name}")
@@ -282,7 +282,7 @@ def parse_summary(input_blob: func.InputStream):
     in_path = parse_blob_path(blob_name)
     txt = input_blob.read().decode()
     metadata = load_metadata(blob_name)
-    schema = pickle.loads(load_blob(os.path.join(Stage.SCHEMA.value, "summary", metadata['schema_version'] + ".pkl")))
+    schema = CLASS_REGISTRY[metadata['schema_version']]
     cleaned_txt = validate_output(txt, schema)
     
     out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")

@@ -90,6 +90,7 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     # Get all running/pending orchestrations
     in_flight = list_in_flight(
+        env=env,
         workflow_type=workflow_type,
         runtimes="Running", #["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )

@@ -23,7 +23,8 @@ def test_prompt():
     diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
     prompt = clean_diff(json.dumps(diff))
-    assert 'UNCHANGED' not in prompt and 'NEW' in prompt and 'OLD' in prompt
+    assert all('UNCHANGED' not in x.before and 'UNCHANGED' not in x.after for x in prompt.diffs)
+    assert any('OLD' in x.before and 'NEW' in x.after for x in prompt.diffs)
 
 
 def test_sanitizer():

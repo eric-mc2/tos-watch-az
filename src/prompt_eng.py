@@ -1,15 +1,15 @@
 import pandas as pd
 from pydantic import BaseModel, ValidationError
-import pickle
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from src.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob, touch_blobs, load_text_blob, load_blob
 from src.stages import Stage
 import os
 from functools import lru_cache
+from schemas.summary.registry import CLASS_REGISTRY
 
 @lru_cache(5)
-def load_true_labels(label_blob: str=None) -> pd.DataFrame:
-    if label_blob is None:
+def load_true_labels(label_blob: str="") -> pd.DataFrame:
+    if not label_blob:
         gold = []
         for blob in list_blobs():
             if blob.startswith(Stage.LABELS.value):
@@ -45,10 +45,10 @@ def load_pred_labels() -> pd.DataFrame:
         key = os.path.join(Stage.DIFF_RAW.value, path.company, path.policy, path.timestamp + ".json")
         meta = load_metadata(blob)
 
-        schema = pickle.loads(load_blob(os.path.join(Stage.SCHEMA.value, "summary", meta['schema_version'] + ".pkl")))
-        summary = load_json_blob(blob)
+        schema = CLASS_REGISTRY[meta['schema_version']]
+        summary_raw = load_json_blob(blob)
         try:
-            summary = schema(**summary)
+            summary = schema(**summary_raw)
             parse_error = False
         except (ValidationError, TypeError):
             parse_error = True

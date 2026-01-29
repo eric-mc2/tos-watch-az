@@ -1,12 +1,10 @@
 from pydantic import BaseModel
+from schemas.summary.v2 import Summary as SummaryV2
+from typing import List
 from schemas.summary.registry import register
 
-VERSION = "v2"
-
-class Substantive(BaseModel):
-    rating: bool
-    reason: str
+VERSION = "v3"
 
 @register(VERSION)
 class Summary(BaseModel):
-    practically_substantive: Substantive
+    chunks: List[SummaryV2]
