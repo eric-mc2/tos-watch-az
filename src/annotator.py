@@ -27,7 +27,7 @@ def _entropy_pooling(corpus: list[DocChunk]) -> list[DocChunk]:
     threshold = 3
     corpus_iter = iter(corpus)
     pooled = None
-    chunks = []
+    chunks: list[DocChunk] = []
     try:
         pooled = corpus_iter.__next__()
     except StopIteration:
@@ -39,7 +39,7 @@ def _entropy_pooling(corpus: list[DocChunk]) -> list[DocChunk]:
             chunks.append(pooled)
             counter += 1
             pooled = next_doc
-            pooled.idx = counter
+            pooled.chunk_idx = counter
         else:
             sep = "\n" if pooled.text.endswith(".") else ".\n"
             pooled.text += sep + next_doc.text

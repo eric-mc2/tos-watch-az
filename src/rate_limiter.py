@@ -28,14 +28,12 @@ class RateLimiterState:
         # Remaining obv defaults to the max rate.
         # Last success time can wlog default to now, because
         # theoretically we'd success from a clean slate.
-        params = dict(
+        return cls(
             remaining = rpm,
             used_previous = 0,
             used_current = 0,
             last_success_time = success_time.isoformat()
         )
-        logger.debug(f"Creating default state {params}")
-        return RateLimiterState(**params)
      
 
 GET_STATUS = "GET_STATUS"

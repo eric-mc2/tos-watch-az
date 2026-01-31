@@ -62,13 +62,14 @@ async def check_circuit_breaker(workflow_type: str, client: df.DurableOrchestrat
     
     # Check if entity exists first
     entity = await client.read_entity_state(entity_id)
-    if not entity.entity_exists or entity.entity_state is None:
-        return f"Circuit breaker for [{workflow_type}] doesn't exist yet (no orchestrations have run)"
     
     # Entity exists, get its current state directly
-    state = entity.entity_state
+    state = entity.entity_state or {}
     
-    status_msg = "tripped" if state.get('is_open', False) else f"running ({state.get('strikes')}/3 strikes left)"
+    if not entity.entity_exists or entity.entity_state is None:
+        status_msg = f"Circuit breaker for [{workflow_type}] doesn't exist yet (no orchestrations have run)"
+    else:
+        status_msg = "tripped" if state.get('is_open', False) else f"running ({state.get('strikes')}/3 strikes left)"
     
     response_data = {
         "workflow_type": workflow_type,

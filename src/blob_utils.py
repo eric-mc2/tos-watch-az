@@ -9,6 +9,7 @@ from pathlib import Path
 from functools import lru_cache
 from datetime import datetime, timezone
 import atexit 
+from typing import Optional
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -33,15 +34,15 @@ def parse_blob_path(path: str, container: str = DEFAULT_CONTAINER):
     path = path.removeprefix(f"{container}/")
     blob_path = Path(path)
     if len(blob_path.parts) == 4:
-        Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
-        return Parts(
+        BlobPath = namedtuple("BlobPath", ['stage','company','policy','timestamp'])
+        return BlobPath(
             blob_path.parts[0],
             blob_path.parts[1],
             blob_path.parts[2],
             blob_path.stem)
     elif len(blob_path.parts) == 5:
-        Parts = namedtuple("BlobPath", ['stage','company','policy','timestamp','run_id'])
-        return Parts(
+        RunBlobPath = namedtuple("RunBlobPath", ['stage','company','policy','timestamp','run_id'])
+        return RunBlobPath(
             blob_path.parts[0],
             blob_path.parts[1],
             blob_path.parts[2],
@@ -143,7 +144,7 @@ def load_blob(name, container=DEFAULT_CONTAINER) -> bytes:
     return _load_blob(name, loader, container)
 
 
-def _load_blob(name, getter, container=DEFAULT_CONTAINER) -> bytes:
+def _load_blob(name, getter, container=DEFAULT_CONTAINER):
     name = name.removeprefix(f"{container}/")
     logger.debug(f"Downloading blob: {container}/{name}")
     blob_service_client = get_blob_service_client()
@@ -162,7 +163,7 @@ def load_json_blob(name, container=DEFAULT_CONTAINER) -> dict:
         logger.error(f"Invalid json blob {name}:\n{e}")
         raise
 
-def load_text_blob(name, container=DEFAULT_CONTAINER) -> dict:
+def load_text_blob(name, container=DEFAULT_CONTAINER) -> str:
     data = load_blob(name, container)
     try:
         txt = data.decode('utf-8')

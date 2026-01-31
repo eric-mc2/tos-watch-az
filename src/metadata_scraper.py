@@ -9,7 +9,7 @@ import pandas as pd
 
 logger = setup_logger(__name__, logging.INFO)
 
-def scrape_wayback_metadata(url, company) -> dict:
+def scrape_wayback_metadata(url, company):
     policy = sanitize_urlpath(url)
     blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
     
@@ -39,6 +39,7 @@ def scrape_wayback_metadata(url, company) -> dict:
         raise
     
     upload_json_blob(json.dumps(data), blob_name)
+    return
 
 
 def parse_wayback_metadata(company, policy) -> list[dict]:
