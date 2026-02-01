@@ -34,3 +34,6 @@ AzuriteConfig
 
 # VSCode Configs
 .vscode/
+
+# Pycharm
+.idea
