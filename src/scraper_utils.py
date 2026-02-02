@@ -5,6 +5,7 @@ from validators import ValidationError
 
 logger = setup_logger(__name__, logging.INFO)
 
+# TODO: Move these to a better named class.
 
 def validate_url(url):
     """Validate URL format"""

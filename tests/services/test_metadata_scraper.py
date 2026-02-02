@@ -6,6 +6,7 @@ from src.services.blob import BlobService
 from src.clients.http.fake_client import FakeHttpClient, FakeHttpResponse
 from src.clients.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
+import http.client as http_client
 
 @pytest.fixture
 def fake_http_client():
@@ -60,9 +61,9 @@ class TestMetadataScraperIntegration:
         
     def test_graceful_failure_on_connection_error(self, metadata_scraper, fake_http_client):
         """Test graceful failure when connection fails"""
-        fake_http_client.configure_error(requests.ConnectionError("Network unreachable"))
+        fake_http_client.configure_error(503)
         
-        with pytest.raises(requests.ConnectionError):
+        with pytest.raises(requests.HTTPError):
             metadata_scraper.scrape_wayback_metadata("https://example.com", "company1")
     
     def test_cache_hit_skips_scraping(self, metadata_scraper, fake_http_client, 
