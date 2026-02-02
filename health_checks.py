@@ -6,11 +6,12 @@ import argparse
 from collections import Counter
 from dotenv import load_dotenv
 from azure import durable_functions as df
-from src.orchestrator import WORKFLOW_CONFIGS
+
+from src.clients.container import ServiceContainer
+from src.orchestration.orchestrator import WORKFLOW_CONFIGS
 from src.log_utils import setup_logger
-from src.blob_utils import list_blobs, load_json_blob, set_connection_key
+from src.clients.storage.blob_utils import list_blobs, load_json_blob, set_connection_key
 from src.scraper_utils import sanitize_urlpath
-from src.metadata_scraper import sample_wayback_metadata
 from src.stages import Stage
 from src.seeder import STATIC_URLS
 
@@ -22,6 +23,7 @@ load_dotenv()
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
+container = ServiceContainer().create_production()
 
 def validate_files(env, *args, **kwargs) -> dict:
     conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
@@ -48,7 +50,7 @@ def validate_files(env, *args, **kwargs) -> dict:
                 missing_metadata.append(blob_name)
                 continue
             metadata = load_json_blob(blob_name)
-            meta = sample_wayback_metadata(metadata, company, policy)
+            meta = container.wayback_service.sample_wayback_metadata(metadata, company, policy)
             for row in meta:
                 timestamp = row['timestamp']
                 snap_counter += 1

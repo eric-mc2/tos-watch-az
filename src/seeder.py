@@ -1,5 +1,5 @@
 import logging
-from src.blob_utils import upload_json_blob
+from src.clients.storage.blob_utils import upload_json_blob
 from src.log_utils import setup_logger
 from src.scraper_utils import validate_url, sanitize_urlpath
 import json

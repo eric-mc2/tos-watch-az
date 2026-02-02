@@ -2,24 +2,24 @@ import os
 import ulid 
 import json
 import logging
-from typing import List, Optional
+from typing import List
 from dotenv import load_dotenv
 from pydantic import ValidationError
 from pydantic_xml import BaseXmlModel, attr, element
-from src.differ import DiffDoc, DiffSection
+from src.services.differ import DiffDoc, DiffSection
 from src.stages import Stage
-from src.docchunk import DocChunk
-from src.differ import _diff_byspan, _get_manifest
-from src.blob_utils import (list_blobs_nest, 
-                            list_blobs,
-                            set_connection_key, 
-                            upload_text_blob, 
-                            upload_json_blob, 
-                            load_text_blob, 
-                            load_json_blob,
-                            load_metadata,
-                            remove_blob,
-                            check_blob)
+from schemas.docchunk.v1 import DocChunk
+from src.services.differ import _diff_byspan, _get_manifest
+from src.clients.storage.blob_utils import (list_blobs_nest,
+                                            list_blobs,
+                                            set_connection_key,
+                                            upload_text_blob,
+                                            upload_json_blob,
+                                            load_text_blob,
+                                            load_json_blob,
+                                            load_metadata,
+                                            remove_blob,
+                                            check_blob)
 
 
 logging.getLogger('azure').setLevel(logging.WARNING)

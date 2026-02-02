@@ -1,4 +1,4 @@
-from src.doctree import parse_html
+from src.transforms.doctree import parse_html
 
 def walk_html(html, flat):
     if not html.strip().startswith("<html>"):

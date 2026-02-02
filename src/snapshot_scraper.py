@@ -1,8 +1,7 @@
 import logging
 import requests
-import time
 from bs4 import BeautifulSoup
-from src.blob_utils import (check_blob, upload_html_blob)
+from src.clients.storage.blob_utils import (check_blob, upload_html_blob)
 import chardet  # Add this import for encoding detection
 from src.log_utils import setup_logger
 

@@ -1,7 +1,7 @@
 import logging
 import json
 import requests
-from src.blob_utils import (check_blob, upload_json_blob, load_json_blob)
+from src.clients.storage.blob_utils import (check_blob, upload_json_blob, load_json_blob)
 from src.log_utils import setup_logger
 from src.scraper_utils import sanitize_urlpath
 from src.stages import Stage

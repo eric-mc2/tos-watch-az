@@ -3,11 +3,24 @@ from collections import Counter
 import logging
 import json
 from src.log_utils import setup_logger
-from src.doctree import DocTree
-from src.docchunk import DocChunk
+from src.transforms.doctree import DocTree
+from schemas.docchunk.v1 import DocChunk
 
 
 logger = setup_logger(__name__, logging.INFO)
+
+
+def annotate_and_pool(company: str, policy: str, timestamp: str, tree: str) -> str:
+    chunks = annotate_doc(company, policy, timestamp, tree)
+    chunks = _entropy_pooling(chunks)
+    texts = [x.text for x in chunks]
+
+    _print_stats(company, policy, timestamp, texts)
+    _warn_length(chunks)
+    _print_entropy(texts)
+
+    return json.dumps([str(chunk) for chunk in chunks], indent=2)
+
 
 def annotate_doc(company: str, policy: str, timestamp: str, tree:str) -> list[DocChunk]:
     """Read and parse text file."""
@@ -52,7 +65,7 @@ def _paragraph_entropy(text, tokenizer=str.split):
     probs = counts / counts.sum()
     return -np.sum(probs * np.log2(probs + 1e-12))  # add epsilon to avoid log(0)
 
-def _check_doc(company: str, policy: str, ts: str, lines:list[str]):
+def _print_stats(company: str, policy: str, ts: str, lines:list[str]):
     n_sentences = len(lines)
     sentence_lengths = [len(line) for line in lines]
     p50 = int(np.percentile(sentence_lengths, 50)) if sentence_lengths else 0
@@ -60,13 +73,13 @@ def _check_doc(company: str, policy: str, ts: str, lines:list[str]):
     logger.debug(f"Doc {company}/{policy}{ts} yielded {n_sentences} sentences. "
                 f"Token quantiles: 50%: {p50}, 90%: {p90}")
 
-def _test_length(chunks: list[DocChunk]):
+def _warn_length(chunks: list[DocChunk]):
     for chunk in chunks:
         if len(chunk.text) > 8192: # max transformer tokens:
             logger.warning("%s/%s[%d] sentence length exceeded",
                         chunk.company, chunk.policy, chunk.chunk_idx)
 
-def _test_entropy(texts: list[str]):
+def _print_entropy(texts: list[str]):
     entropies = np.array([_paragraph_entropy(t) for t in texts])
     logger.debug("Sentence-level word entropies:")
     p5 = np.percentile(entropies,5) if texts else 0
@@ -79,14 +92,3 @@ def _test_entropy(texts: list[str]):
     logger.debug("Q50: {:.4e}".format(p50))
     logger.debug("Q75: {:.4e}".format(p75))
     logger.debug("Q95: {:.4e}".format(p95))
-
-def main(company: str, policy: str, timestamp: str, tree: str) -> str:
-    chunks = annotate_doc(company, policy, timestamp, tree)
-    chunks = _entropy_pooling(chunks)
-    texts = [x.text for x in chunks]
-    
-    _check_doc(company, policy, timestamp, texts)
-    _test_length(chunks)
-    _test_entropy(texts)
-
-    return json.dumps([str(chunk) for chunk in chunks], indent=2)

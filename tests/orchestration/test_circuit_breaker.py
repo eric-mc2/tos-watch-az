@@ -4,7 +4,7 @@ Tests entity logic in isolation using MockEntityContext.
 """
 import unittest
 from datetime import datetime, timezone
-from src.circuit_breaker import circuit_breaker_entity, GET_STATUS, RESET, TRIP
+from src.orchestration.circuit_breaker import circuit_breaker_entity, GET_STATUS, RESET, TRIP
 
 class MockEntityContext:
     """Mock DurableEntityContext for testing the circuit breaker entity"""

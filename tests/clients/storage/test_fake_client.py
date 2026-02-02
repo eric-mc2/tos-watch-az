@@ -1,41 +1,23 @@
 import pytest
-from src.clients.storage.azure import AzureStorageAdapter
-from dotenv import load_dotenv
+from src.clients.storage.fake_client import FakeStorageAdapter
+
 
 @pytest.fixture
 def storage():
-    """Create a fresh storage adapter with a test container"""
-    load_dotenv()
-    
-    adapter = AzureStorageAdapter("test-integration-container")
-    
-    # Create container if it doesn't exist
-    if not adapter.exists_container():
-        adapter.create_container()
-    
-    yield adapter
-    
-    # Cleanup: remove all blobs and delete the container
-    try:
-        for blob_name in adapter.list_blobs():
-            adapter.remove_blob(blob_name)
-        
-        # Delete the container
-        client = adapter.get_blob_service_client()
-        container_client = client.get_container_client(adapter.container)
-        container_client.delete_container()
-    except:
-        pass
+    """Create a fresh storage adapter for each test"""
+    adapter = FakeStorageAdapter(container="test-container")
+    adapter.create_container()
+    return adapter
 
 
 def test_container_lifecycle(storage):
-    """Test checking container existence"""
+    """Test creating and checking container existence"""
     assert storage.exists_container()
 
 
 def test_upload_and_download_blob(storage):
     """Test uploading and downloading blob data"""
-    data = b"Hello, Azure!"
+    data = b"Hello, World!"
     blob_name = "test.txt"
     
     storage.upload_blob(data, blob_name, content_type="text/plain")

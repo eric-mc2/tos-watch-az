@@ -1,13 +1,10 @@
 import pytest
-from unittest.mock import MagicMock
 from datetime import datetime, timezone
-from asyncio import sleep
 import time
 from azure import durable_functions as df
-from src.rate_limiter import rate_limiter_entity, TRY_ACQUIRE
-from src.orchestrator import orchestrator_logic, WorkflowConfig
-from src.circuit_breaker import circuit_breaker_entity, GET_STATUS
-from requests.exceptions import ConnectionError, ReadTimeout
+from src.orchestration.rate_limiter import rate_limiter_entity, TRY_ACQUIRE
+from src.orchestration.orchestrator import orchestrator_logic, WorkflowConfig
+from src.orchestration.circuit_breaker import circuit_breaker_entity, GET_STATUS
 from src.app_utils import pretty_error
 import json
 
@@ -418,7 +415,7 @@ def test_tasks_resume_after_circuit_resets(entity_state_store, circuit_breaker_c
     - Breaker resets
     - Tasks resume
     """
-    from src.circuit_breaker import TRIP, GET_STATUS, RESET, circuit_breaker_entity
+    from src.orchestration.circuit_breaker import GET_STATUS, RESET, circuit_breaker_entity
     
     # Initialize open circuit by tripping it with failures
     workflow_type = "test_workflow"

@@ -1,28 +1,29 @@
 import json
 from src.claude_utils import sanitize_response
-from src.differ import has_diff, clean_diff
-from pathlib import Path
+from src.services.differ import DiffService
 
 def test_is_diff():
+    differ = DiffService()
     diff = {}
-    assert not has_diff(json.dumps(diff))
+    assert not differ.has_diff(json.dumps(diff))
     diff = {'diffs': []}
-    assert not has_diff(json.dumps(diff))
+    assert not differ.has_diff(json.dumps(diff))
     diff = {'diffs': [{'tag': 'equal'}]}
-    assert not has_diff(json.dumps(diff))
+    assert not differ.has_diff(json.dumps(diff))
     diff = {'diffs': [{'tag': 'replace'}]}
-    assert has_diff(json.dumps(diff))
+    assert differ.has_diff(json.dumps(diff))
     diff = {'diffs': [{'tag': 'insert'}]}
-    assert has_diff(json.dumps(diff))
+    assert differ.has_diff(json.dumps(diff))
     diff = {'diffs': [{'tag': 'delete'}]}
-    assert has_diff(json.dumps(diff))
+    assert differ.has_diff(json.dumps(diff))
     diff = {'diffs': [{'tag': 'equal'}, {'tag': 'replace'}]}
-    assert has_diff(json.dumps(diff))
+    assert differ.has_diff(json.dumps(diff))
     
 def test_prompt():
+    differ = DiffService()
     diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
-    prompt = clean_diff(json.dumps(diff))
+    prompt = differ.clean_diff(json.dumps(diff))
     assert all('UNCHANGED' not in x.before and 'UNCHANGED' not in x.after for x in prompt.diffs)
     assert any('OLD' in x.before and 'NEW' in x.after for x in prompt.diffs)
 

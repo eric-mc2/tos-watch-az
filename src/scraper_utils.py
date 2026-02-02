@@ -1,7 +1,5 @@
 import logging
-from src.blob_utils import load_json_blob
 from src.log_utils import setup_logger
-from pathlib import Path
 from validators import url as is_valid
 from validators import ValidationError
 
@@ -42,15 +40,3 @@ def sanitize_path_component(path_component):
         sanitized = sanitized.removesuffix(ext)
     # Ensure it's not empty
     return sanitized if sanitized else 'default'
-
-
-def load_urls(input_blob_name):
-     # Download the URLs file from blob storage
-     # Validate URL
-    urls = load_json_blob(input_blob_name)
-    for company, url_list in urls.items():
-        for url in url_list:
-            if not validate_url(url):
-                raise ValueError(f"Invalid URL format: {url}")
-    return urls
-

@@ -1,11 +1,9 @@
-import os
 import pytest
 import json
-from src.summarizer import SYSTEM_PROMPT, _chunk_prompt
-from src.differ import DiffSection, DiffDoc
-from src.claude_utils import call_api, Message, TOKEN_LIMIT
-from src.blob_utils import load_text_blob, set_connection_key
-from pathlib import Path
+from src.summarizer import SYSTEM_PROMPT
+from src.services.differ import DiffDoc
+from src.claude_utils import call_api, Message
+from src.clients.storage.blob_utils import load_text_blob, set_connection_key
 from dotenv import load_dotenv
 
 @pytest.fixture()
@@ -21,7 +19,6 @@ def test_summary(setup):
     print(txt)
 
 def test_chunks(setup):
-    from src.differ import _diff_byline, _diff_byspan
     diff = load_text_blob("05-diffs-clean/x-ai/terms-of-service/20250614010956.json")
     diff = DiffDoc.model_validate_json(diff)
     # chunks = _chunk_prompt(diff)

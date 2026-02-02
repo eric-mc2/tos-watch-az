@@ -5,16 +5,15 @@ import ulid
 import numpy as np
 from itertools import chain
 from src.log_utils import setup_logger
-from src.blob_utils import load_text_blob, load_json_blob, parse_blob_path, load_blob, check_blob
+from src.clients.storage.blob_utils import load_text_blob, parse_blob_path, check_blob
 from src.stages import Stage
 from src.prompt_eng import load_true_labels
-from src.differ import DiffSection, DiffDoc
+from src.services.differ import DiffDoc
 from src.claude_utils import call_api, Message, TOKEN_LIMIT, extract_json_from_response
 from functools import lru_cache
 from itertools import accumulate
 from schemas.summary.v3 import VERSION as SCHEMA_VERSION
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
-from schemas.summary.registry import CLASS_REGISTRY
 
 logger = setup_logger(__name__, logging.DEBUG)
 

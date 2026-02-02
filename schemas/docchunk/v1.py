@@ -5,7 +5,7 @@ from typing import Self
 
 
 @dataclass
-class DocChunk():
+class DocChunk:
     company: str
     policy: str
     version_ts: str
