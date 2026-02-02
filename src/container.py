@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-import os
 from src.clients.llm.protocol import LLMClient
-from src.clients.storage.protocol import BlobStorageProtocol
 from src.services.blob import BlobService
 from src.services.differ import DiffService
+from src.services.metadata_scraper import MetadataScraper
+
 
 @dataclass
 class ServiceContainer:
@@ -15,10 +15,11 @@ class ServiceContainer:
 
     # Services (business logic)
     differ_service: DiffService
+    wayback_service: MetadataScraper
 
     @classmethod
     def create_production(cls) -> 'ServiceContainer':
-        from src.clients.storage.azure import AzureStorageAdapter
+        from src.clients.storage.client import AzureStorageAdapter
         """Create container with production dependencies"""
         blob_storage = BlobService(AzureStorageAdapter())
         llm_client = None #ClaudeAdapter(os.environ['ANTHROPIC_API_KEY'])
@@ -27,18 +28,20 @@ class ServiceContainer:
             storage=blob_storage,
             llm=llm_client,
             differ_service=DiffService(blob_storage),
+            wayback_service=MetadataScraper(blob_storage),
         )
 
     @classmethod
-    def create_dev(cls, **overrides) -> 'ServiceContainer':
+    def create_dev(cls) -> 'ServiceContainer':
         """Create container with test doubles"""
-        from tests.clients.storage.fake_azure import FakeStorageAdapter
+        from src.clients.storage.fake_client import FakeStorageAdapter
 
-        blob_storage = overrides.get('blob_storage', BlobService(FakeStorageAdapter()))
+        blob_storage = BlobService(FakeStorageAdapter('test-integration'))
         llm_client = None #overrides.get('llm_client', FakeLLMClient())
 
         return cls(
             storage=blob_storage,
             llm=llm_client,
             differ_service=DiffService(blob_storage),
+            wayback_service=MetadataScraper(blob_storage),
         )
