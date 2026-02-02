@@ -176,3 +176,30 @@ def test_clean_diff_preserves_content(container, setup_test_docs):
     
     assert 'service' in all_before or 'support' in all_before
     assert 'platform' in all_after or 'help' in all_after
+
+
+def test_is_diff(container):
+    differ = container.differ_service
+    diff = {}
+    assert not differ.has_diff(json.dumps(diff))
+    diff = {'diffs': []}
+    assert not differ.has_diff(json.dumps(diff))
+    diff = {'diffs': [{'tag': 'equal'}]}
+    assert not differ.has_diff(json.dumps(diff))
+    diff = {'diffs': [{'tag': 'replace'}]}
+    assert differ.has_diff(json.dumps(diff))
+    diff = {'diffs': [{'tag': 'insert'}]}
+    assert differ.has_diff(json.dumps(diff))
+    diff = {'diffs': [{'tag': 'delete'}]}
+    assert differ.has_diff(json.dumps(diff))
+    diff = {'diffs': [{'tag': 'equal'}, {'tag': 'replace'}]}
+    assert differ.has_diff(json.dumps(diff))
+
+
+def test_prompt(container):
+    differ = container.differ_service
+    diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']},
+                      {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
+    prompt = differ.clean_diff(json.dumps(diff))
+    assert all('UNCHANGED' not in x.before and 'UNCHANGED' not in x.after for x in prompt.diffs)
+    assert any('OLD' in x.before and 'NEW' in x.after for x in prompt.diffs)
