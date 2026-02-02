@@ -1,6 +1,6 @@
 import pytest
 from requests import HTTPError
-from src.snapshot_scraper import SnapshotScraper
+from src.services.snapshot_scraper import SnapshotScraper
 from src.clients.http.fake_client import FakeHttpClient, FakeHttpResponse
 from src.clients.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService

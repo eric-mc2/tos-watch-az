@@ -4,8 +4,8 @@ from src.services.blob import BlobService
 from src.clients.http.client import RequestsAdapter
 from src.clients.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
-from src.seeder import STATIC_URLS
-from src.scraper_utils import sanitize_urlpath
+from src.transforms.seeds import STATIC_URLS
+from src.utils.path_utils import extract_policy
 
 @pytest.fixture
 def prod_http_client():
@@ -39,5 +39,5 @@ class TestMetadataScraperIntegration:
         metadata_scraper.scrape_wayback_metadata(url, "company1")
 
         # Verify blob was uploaded
-        policy = sanitize_urlpath(url)
+        policy = extract_policy(url)
         assert metadata_scraper.storage.check_blob(f"{Stage.META.value}/company1/{policy}/metadata.json")

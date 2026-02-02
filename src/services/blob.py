@@ -2,10 +2,9 @@ import os
 import logging
 import json
 from collections import namedtuple
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from src.clients.storage.protocol import BlobStorageProtocol
 
 logger = setup_logger(__name__, logging.INFO)

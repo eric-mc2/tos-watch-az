@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass, asdict
 from bleach.sanitizer import Cleaner
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client = None

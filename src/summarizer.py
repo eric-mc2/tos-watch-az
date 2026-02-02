@@ -4,7 +4,7 @@ import os
 import ulid
 import numpy as np
 from itertools import chain
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from src.clients.storage.blob_utils import load_text_blob, parse_blob_path, check_blob
 from src.stages import Stage
 from src.prompt_eng import load_true_labels

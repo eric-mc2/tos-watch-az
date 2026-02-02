@@ -2,7 +2,7 @@ import numpy as np
 from collections import Counter
 import logging
 import json
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from src.transforms.doctree import DocTree
 from schemas.docchunk.v1 import DocChunk
 

@@ -7,13 +7,13 @@ from collections import Counter
 from dotenv import load_dotenv
 from azure import durable_functions as df
 
-from src.clients.container import ServiceContainer
+from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from src.clients.storage.blob_utils import list_blobs, load_json_blob, set_connection_key
-from src.scraper_utils import sanitize_urlpath
+from src.utils.path_utils import extract_policy
 from src.stages import Stage
-from src.seeder import STATIC_URLS
+from src.transforms.seeds import STATIC_URLS
 
 setup_logger(__name__, logging.WARNING)
 logging.getLogger("azure").setLevel(logging.WARNING)
@@ -44,7 +44,7 @@ def validate_files(env, *args, **kwargs) -> dict:
     for company, url_list in urls.items():
         for url in url_list:
             meta_counter += 1
-            policy = sanitize_urlpath(url)
+            policy = extract_policy(url)
             blob_name = f"{Stage.META.value}/{company}/{policy}/manifest.json"
             if blob_name not in blobs:
                 missing_metadata.append(blob_name)

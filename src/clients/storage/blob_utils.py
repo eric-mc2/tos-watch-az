@@ -3,13 +3,12 @@ import os
 import logging
 from azure.storage.blob import ContentSettings
 import json
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from collections import namedtuple
 from pathlib import Path
 from functools import lru_cache
 from datetime import datetime, timezone
-import atexit 
-from typing import Optional
+import atexit
 
 logger = setup_logger(__name__, logging.INFO)
 

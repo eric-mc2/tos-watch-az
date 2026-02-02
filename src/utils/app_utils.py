@@ -6,7 +6,7 @@ import traceback
 import os
 from functools import wraps
 from dataclasses import dataclass, asdict
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 

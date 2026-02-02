@@ -3,8 +3,8 @@ import json
 from dataclasses import dataclass
 import pandas as pd
 
-from src.log_utils import setup_logger
-from src.scraper_utils import sanitize_urlpath
+from src.utils.log_utils import setup_logger
+from src.utils.path_utils import extract_policy
 from src.stages import Stage
 from src.services.blob import BlobService
 from src.clients.http.protocol import HttpProtocol
@@ -17,7 +17,7 @@ class MetadataScraper:
     http_client: HttpProtocol
 
     def scrape_wayback_metadata(self, url, company):
-        policy = sanitize_urlpath(url)
+        policy = extract_policy(url)
         blob_name = f"{Stage.META.value}/{company}/{policy}/metadata.json"
 
         if self.storage.check_blob(blob_name, touch=True):

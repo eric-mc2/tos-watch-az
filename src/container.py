@@ -4,7 +4,7 @@ from src.services.blob import BlobService
 from src.services.differ import DiffService
 from src.services.metadata_scraper import MetadataScraper
 from src.clients.http.client import RequestsAdapter
-from src.snapshot_scraper import SnapshotScraper
+from src.services.snapshot_scraper import SnapshotScraper
 
 
 @dataclass

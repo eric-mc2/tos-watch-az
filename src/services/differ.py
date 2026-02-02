@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from os.path import basename
 from typing import Iterable
 
-from src.log_utils import setup_logger
+from src.utils.log_utils import setup_logger
 from schemas.docchunk.v1 import DocChunk
 from src.services.blob import BlobService
 from src.stages import Stage

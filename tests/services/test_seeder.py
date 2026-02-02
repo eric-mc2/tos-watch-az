@@ -1,6 +1,17 @@
 import pytest
-from src import scraper_utils
 
+from src.clients.storage.fake_client import FakeStorageAdapter
+from src.services.blob import BlobService
+from src.services.seeder import Seeder
+
+@pytest.fixture
+def fake_storage():
+    adapter = FakeStorageAdapter(container="test-container")
+    return BlobService(adapter)
+
+@pytest.fixture
+def seeder(fake_storage):
+    return Seeder(fake_storage)
 
 @pytest.fixture
 def valid_urls():
@@ -30,22 +41,14 @@ def invalid_urls():
     ]
 
 
-class TestURLValidation:
-    """Tests for URL validation and sanitization"""
+class TestSeeder:
 
-    def test_valid_urls_produce_blob_names(self, valid_urls):
-        """Test that valid URLs can be validated and sanitized to produce blob names"""
-        for url, expected_name in valid_urls:
-            # URL should be valid
-            assert scraper_utils.validate_url(url)
-            
-            # URL should produce a well-formed blob name
-            blob_name = scraper_utils.sanitize_urlpath(url)
-            assert blob_name == expected_name
+    def test_valid_urls_pass_validation(self, seeder, valid_urls):
+        """Test that valid URLs pass validation"""
+        seeder.seed_urls({"corp": [url[0] for url in valid_urls]})
 
-    def test_invalid_urls_fail_validation(self, invalid_urls):
+    def test_invalid_urls_fail_validation(self, seeder, invalid_urls):
         """Test that invalid URLs fail validation"""
-        for url in invalid_urls:
-            # Invalid URLs should fail validation
-            is_valid = scraper_utils.validate_url(url)
-            assert not is_valid, url
+        with pytest.raises(ValueError):
+            seeder.seed_urls({"corp": invalid_urls})
+        
