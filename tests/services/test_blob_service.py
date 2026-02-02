@@ -1,18 +1,12 @@
 import pytest
 import json
-from datetime import datetime, timezone
-from src.services.blob import BlobService
-from tests.clients.storage.fake_azure import FakeStorageAdapter
-
+from src.container import ServiceContainer
 
 @pytest.fixture
 def blob_service():
     """Create a BlobService with FakeStorageAdapter for testing."""
-    service = BlobService(container="test-container")
-    # Replace the real adapter with fake
-    service.adapter = FakeStorageAdapter(container="test-container")
-    service.adapter.create_container()
-    return service
+    services = ServiceContainer.create_dev()
+    return services.storage
 
 
 @pytest.fixture
@@ -178,9 +172,3 @@ def test_remove_blob(blob_service):
     
     blob_service.remove_blob("test/delete.txt")
     assert not blob_service.adapter.exists_blob("test/delete.txt")
-
-
-def test_ensure_container(blob_service):
-    """Test ensuring container exists."""
-    blob_service.ensure_container()
-    assert blob_service.adapter.exists_container()

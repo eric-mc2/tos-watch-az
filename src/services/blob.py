@@ -10,15 +10,15 @@ from src.clients.storage.protocol import BlobStorageProtocol
 
 logger = setup_logger(__name__, logging.INFO)
 
-DEFAULT_CONTAINER = "documents"
-
 class BlobService:
     adapter: BlobStorageProtocol
-    container: str = DEFAULT_CONTAINER
+    container: str
 
-    def __init__(self, container: str = DEFAULT_CONTAINER):
-        self.adapter = BlobStorageProtocol(container)
-        self.adapter.ensure_container()
+    def __init__(self, adapter: BlobStorageProtocol):
+        self.adapter = adapter
+        self.container = adapter.container
+        if not self.adapter.exists_container():
+            self.adapter.create_container()
 
     # Domain Specific Parsing
     def parse_blob_path(self, path: str):
@@ -65,7 +65,7 @@ class BlobService:
         if exists and touch:
             metadata = self.adapter.load_metadata(blob_name)
             metadata["touched"] = datetime.now(timezone.utc).isoformat()
-            self.adapter.upload_metadata(blob_name, metadata)
+            self.adapter.upload_metadata(metadata, blob_name)
         return exists
 
 
@@ -118,10 +118,10 @@ class BlobService:
         data = self.adapter.load_blob(name)
         try:
             txt = data.decode('utf-8')
+            return txt
         except Exception as e:
             logger.error(f"Error decoding text blob {name}:\n{e}")
             raise
-        return txt
 
 
     def upload_blob(self, data, blob_name, content_type, metadata=None) -> None:
