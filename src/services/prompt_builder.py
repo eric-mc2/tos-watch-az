@@ -1,6 +1,7 @@
 # TODO: The next thing is to have a second agent in the conversation or after it basically either directly doing RAG or
 #     just asking it to double-check that the thing mentioned is real.
 # TODO: When the two documents are really just not the same at all then how can we chunk it?
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -16,8 +17,10 @@ from src.services.blob import BlobService
 from src.services.differ import DiffDoc
 from src.services.llm import TOKEN_LIMIT
 from src.services.prompt_chunker import PromptChunker
-from src.services.summarizer import logger
 from src.stages import Stage
+from src.utils.log_utils import setup_logger
+
+logger = setup_logger(__name__, logging.DEBUG)
 
 PROMPT_VERSION = "v6"
 N_ICL = 3
@@ -54,6 +57,7 @@ Respond with valid JSON only:
 @dataclass
 class PromptBuilder:
     storage: BlobService
+    _cache = None
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
         examples = self.read_examples()
@@ -69,8 +73,10 @@ class PromptBuilder:
                               current = prompt)
 
 
-    @lru_cache(1)
     def read_examples(self) -> list[Message]:
+        if self._cache:
+            return self._cache
+        
         # TODO: Need to create a test set of labels or make sure this file is available in the test env.
         gold = load_true_labels(os.path.join(Stage.LABELS.value, "substantive_v1.json"))
         # Filter to false negatives
@@ -103,4 +109,5 @@ class PromptBuilder:
             logger.warning("No labeled examples found for ICL.")
         icl_queries = list(np.array(icl_queries)[order])[:limit]
         icl_responses = list(np.array(icl_responses)[order])[:limit]
-        return list(chain.from_iterable(zip(icl_queries, icl_responses)))
+        self._cache = list(chain.from_iterable(zip(icl_queries, icl_responses)))
+        return self._cache

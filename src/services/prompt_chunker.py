@@ -8,7 +8,7 @@ class PromptChunker:
     token_limit: int
     headroom: float = 0.8
 
-    def chunk_prompt(self, diffs) -> list[DiffDoc]:
+    def chunk_prompt(self, diffs: DiffDoc) -> list[DiffDoc]:
         limit = self.token_limit * self.headroom
 
         # XXX: Edge case: need to handle any or many single diffs being larger than limit.
@@ -20,11 +20,11 @@ class PromptChunker:
 
         # XXX: approx! slightly under-counts characters!
         # XXX: character count <> token count! over-estimates by a factor!
-        chunk_sizes = [len(d.before) + len(d.after) for d in diffs]
+        chunk_sizes = [len(d.before) + len(d.after) for d in diffs.diffs]
 
         page_nums = [size // limit for size in accumulate(chunk_sizes)]
         pages = []
-        for i,d in enumerate(diffs):
+        for i,d in enumerate(diffs.diffs):
             if i == 0 or page_nums[i-1] != page_nums[i]:
                 pages.append(DiffDoc(diffs=[d]))
             else:

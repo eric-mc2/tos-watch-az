@@ -1,24 +1,39 @@
 import pytest
 import json
 
-from src.container import ServiceContainer
-from src.services.prompt_builder import SYSTEM_PROMPT
-from src.clients.llm.protocol import Message
 from schemas.summary.v3 import Summary
+from src.clients.llm.protocol import Message
+from src.services.differ import DiffDoc, DiffSection
+from src.services.prompt_builder import SYSTEM_PROMPT
+from src.services.summarizer import Summarizer
+from src.services.llm import LLMService
+from src.clients.llm.client import ClaudeAdapter
+from src.services.blob import BlobService
+from src.clients.storage.fake_client import FakeStorageAdapter
 
 @pytest.fixture
 def llm():
-    container = ServiceContainer.create_production()
-    return container.llm
-
+    llm_adapter = ClaudeAdapter()
+    return LLMService(llm_adapter)
+    
 @pytest.fixture
 def storage():
-    container = ServiceContainer.create_production()
-    return container.llm
+    adapter = FakeStorageAdapter('test-container')
+    return BlobService(adapter)
 
-def test_summary(llm):
-    diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']}, 
-                      {'tag': 'replace', 'before': ['We are good!'], 'after': ['We are evil.']}]}
-    prompt = [Message("user", json.dumps(diff))]
-    txt = llm.call_unsafe(SYSTEM_PROMPT, prompt, Summary)
-    print(txt)
+def test_summary(llm, storage):
+    # Arrange
+    diff = DiffDoc(diffs=[
+        DiffSection(index=0, 
+                    before="Our policy is to do good.", 
+                    after="Our policy is to do evil.")
+    ])
+    storage.upload_json_blob(diff.model_dump_json(), "test.json")
+
+    # Act
+    summarizer = Summarizer(storage=storage, llm=llm)
+    txt, meta = summarizer.summarize("test.json")
+
+    # Assert
+    resp = Summary.model_validate_json(txt)
+    assert resp.chunks[0].practically_substantive

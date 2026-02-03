@@ -6,7 +6,7 @@ from src.utils.log_utils import setup_logger
 from src.clients.llm.protocol import Message, LLMProtocol
 
 logger = setup_logger(__name__, logging.DEBUG)
-_client: anthropic.Anthropic
+_client: anthropic.Anthropic = None
 
 class ClaudeAdapter(LLMProtocol):
 
@@ -30,6 +30,9 @@ class ClaudeAdapter(LLMProtocol):
 
 
     def call(self, system: str, messages: list[Message]) -> str:
+        if not system or not system.strip():
+            raise ValueError("Claude API requires non-empty system text.")
+
         client = self._get_client()
         response = client.messages.create(
             model="claude-3-5-haiku-20241022",
@@ -37,7 +40,7 @@ class ClaudeAdapter(LLMProtocol):
             system=[{
                 "type": "text",
                 "text": system,
-                "cache_control": {"type": "ephemeral"}
+                "cache_control": {"type": "ephemeral"},
             }],
             messages=[asdict(m) for m in messages]
         )

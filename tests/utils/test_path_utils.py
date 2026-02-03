@@ -1,5 +1,7 @@
 import pytest
 
+from src.utils import path_utils
+
 
 @pytest.fixture
 def valid_urls():
@@ -36,15 +38,15 @@ class TestURLValidation:
         """Test that valid URLs can be validated and sanitized to produce blob names"""
         for url, expected_name in valid_urls:
             # URL should be valid
-            assert scraper_utils.validate_url(url)
+            assert path_utils.validate_url(url)
             
             # URL should produce a well-formed blob name
-            blob_name = scraper_utils.extract_policy(url)
+            blob_name = path_utils.extract_policy(url)
             assert blob_name == expected_name
 
     def test_invalid_urls_fail_validation(self, invalid_urls):
         """Test that invalid URLs fail validation"""
         for url in invalid_urls:
             # Invalid URLs should fail validation
-            is_valid = scraper_utils.validate_url(url)
+            is_valid = path_utils.validate_url(url)
             assert not is_valid, url

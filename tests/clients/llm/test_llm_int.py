@@ -1,10 +1,11 @@
 import pytest
+from src.clients.llm.protocol import Message
 from src.clients.storage.client import AzureStorageAdapter
 from dotenv import load_dotenv
 from src.clients.llm.client import ClaudeAdapter
 
 
-@pytest.fixture
+@pytest.fixture(scope='module')
 def llm():
     """Create a fresh storage adapter with a test container"""
     load_dotenv()
@@ -20,6 +21,12 @@ def llm():
 
 def test_hello(llm):
     """Test connection"""
-    txt = llm.call("echo: hello world")
+    txt = llm.call("echo means repeat back to me verbatim", 
+                   [Message("user", "echo 'hello world'")])
     assert txt == "hello world"
+
+def test_empty_system_instruction(llm):
+    """Test connection"""
+    with pytest.raises(ValueError):
+        llm.call("", [Message("user", "echo 'hello world'")])
 

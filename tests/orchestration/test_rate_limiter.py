@@ -38,7 +38,7 @@ class TestRateLimiterEntity(unittest.TestCase):
 
     config = WorkflowConfig(10, 60, 0.1, "test_processor", 2, 1)
     
-    @patch("src.rate_limiter.datetime")
+    @patch("src.orchestration.rate_limiter.datetime")
     def test_initial_status(self, mock_time):
         mock_time.fromisoformat = datetime.fromisoformat
 
@@ -55,7 +55,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status, expected.to_dict())
         
         
-    @patch("src.rate_limiter.datetime")
+    @patch("src.orchestration.rate_limiter.datetime")
     def test_under_limit(self, mock_time):
         mock_time.fromisoformat = datetime.fromisoformat
 
@@ -81,7 +81,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertEqual(status.remaining, self.config.rate_limit_rpm - n_tasks)
 
 
-    @patch("src.rate_limiter.datetime")
+    @patch("src.orchestration.rate_limiter.datetime")
     def test_tripped(self, mock_time):
         mock_time.fromisoformat = datetime.fromisoformat
 
@@ -114,7 +114,7 @@ class TestRateLimiterEntity(unittest.TestCase):
         self.assertFalse(result)
         self.assertEqual(status.remaining, 0)
 
-    @patch("src.rate_limiter.datetime")
+    @patch("src.orchestration.rate_limiter.datetime")
     def test_reset(self, mock_time):
         # XXX: I wish I could selectively mock just the now method instead of re-enabling fromisoformat
         mock_time.fromisoformat = datetime.fromisoformat

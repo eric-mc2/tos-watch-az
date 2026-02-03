@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 import ulid
 
-from schemas.summary.v3 import VERSION as SCHEMA_VERSION
+from schemas.summary.v3 import VERSION as SCHEMA_VERSION, Summary
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.services.llm import LLMService
@@ -24,7 +24,9 @@ class Summarizer:
 
         responses = []
         for message in messages:
-            txt = self.llm.call_unsafe(message.system, message.history + [message.current])
+            txt = self.llm.call_unsafe(message.system, 
+                                       message.history + [message.current],
+                                       Summary)
             parsed = self.llm.extract_json_from_response(txt)
             if parsed['success']:
                 responses.append(parsed['data'])
