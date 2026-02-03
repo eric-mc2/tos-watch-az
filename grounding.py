@@ -1,6 +1,6 @@
 import argilla as rg
 import os
-from src.clients.storage.blob_utils import list_blobs_nest, load_text_blob, set_connection_key, load_json_blob, load_metadata
+from src.adapters.storage.blob_utils import list_blobs_nest, load_text_blob, set_connection_key, load_json_blob, load_metadata
 from src.stages import Stage
 import time
 import json

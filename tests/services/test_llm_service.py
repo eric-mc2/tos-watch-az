@@ -1,6 +1,6 @@
 import pytest
 from src.services.llm import LLMService
-from src.clients.llm.fake_client import FakeLLMAdapter
+from src.adapters.llm.fake_client import FakeLLMAdapter
 
 @pytest.fixture
 def fake_llm():

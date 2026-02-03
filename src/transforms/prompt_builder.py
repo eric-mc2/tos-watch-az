@@ -4,19 +4,18 @@
 import logging
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from itertools import chain
 from typing import Iterable
 
 import numpy as np
 
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
-from src.clients.llm.protocol import Message, PromptMessages
+from src.adapters.llm.protocol import Message, PromptMessages
 from src.prompt_eng import load_true_labels
 from src.services.blob import BlobService
-from src.services.differ import DiffDoc
+from src.transforms.differ import DiffDoc
 from src.services.llm import TOKEN_LIMIT
-from src.services.prompt_chunker import PromptChunker
+from src.transforms.prompt_chunker import PromptChunker
 from src.stages import Stage
 from src.utils.log_utils import setup_logger
 

@@ -4,7 +4,7 @@ from requests import HTTPError
 from bs4 import BeautifulSoup
 import chardet  # Add this import for encoding detection
 
-from src.clients.http.protocol import HttpProtocol
+from src.adapters.http.protocol import HttpProtocol
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.stages import Stage

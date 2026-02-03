@@ -1,5 +1,5 @@
 import pytest
-from src.clients.storage.client import AzureStorageAdapter
+from src.adapters.storage.client import AzureStorageAdapter
 from dotenv import load_dotenv
 
 @pytest.fixture

@@ -1,17 +1,17 @@
 import pytest
 import requests
 import json
-from src.services.metadata_scraper import MetadataScraper
+from src.transforms.metadata_scraper import MetadataScraper
 from src.services.blob import BlobService
-from src.clients.http.fake_client import FakeHttpClient, FakeHttpResponse
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.http.fake_client import FakeHttpAdapter, FakeHttpResponse
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
-import http.client as http_client
+
 
 @pytest.fixture
 def fake_http_client():
     """Provides a configurable fake HTTP client"""
-    client = FakeHttpClient()
+    client = FakeHttpAdapter()
     yield client
     client.reset()
 

@@ -1,5 +1,5 @@
 import requests
-from src.clients.http.protocol import HttpProtocol, HttpResponseProtocol
+from src.adapters.http.protocol import HttpProtocol, HttpResponseProtocol
 
 
 class RequestsAdapter(HttpProtocol):

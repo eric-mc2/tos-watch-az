@@ -24,7 +24,7 @@ class DiffDoc(BaseModel):
 logger = setup_logger(__name__, logging.INFO)
 
 @dataclass
-class DiffService:
+class Differ:
     storage: BlobService
 
     def diff_and_save(self, blob_name: str):

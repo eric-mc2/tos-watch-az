@@ -1,15 +1,12 @@
 import pytest
-import json
 
 from schemas.summary.v3 import Summary
-from src.clients.llm.protocol import Message
-from src.services.differ import DiffDoc, DiffSection
-from src.services.prompt_builder import SYSTEM_PROMPT
-from src.services.summarizer import Summarizer
+from src.transforms.differ import DiffDoc, DiffSection
+from src.transforms.summarizer import Summarizer
 from src.services.llm import LLMService
-from src.clients.llm.client import ClaudeAdapter
+from src.adapters.llm.client import ClaudeAdapter
 from src.services.blob import BlobService
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 
 @pytest.fixture
 def llm():

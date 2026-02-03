@@ -1,20 +1,19 @@
 from dataclasses import dataclass
-from socket import create_connection
 
-from src.clients.http.protocol import HttpProtocol
-from src.clients.llm.client import ClaudeAdapter
-from src.clients.llm.fake_client import FakeLLMAdapter
-from src.clients.http.client import RequestsAdapter
-from src.clients.http.fake_client import FakeHttpClient
-from src.clients.storage.client import AzureStorageAdapter
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.http.protocol import HttpProtocol
+from src.adapters.llm.client import ClaudeAdapter
+from src.adapters.llm.fake_client import FakeLLMAdapter
+from src.adapters.http.client import RequestsAdapter
+from src.adapters.http.fake_client import FakeHttpAdapter
+from src.adapters.storage.client import AzureStorageAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService
-from src.services.differ import DiffService
+from src.transforms.differ import Differ
 from src.services.llm import LLMService
-from src.services.metadata_scraper import MetadataScraper
-from src.services.seeder import Seeder
-from src.services.snapshot_scraper import SnapshotScraper
-from src.services.summarizer import Summarizer
+from src.transforms.metadata_scraper import MetadataScraper
+from src.transforms.seeder import Seeder
+from src.transforms.snapshot_scraper import SnapshotScraper
+from src.transforms.summarizer import Summarizer
 
 
 @dataclass
@@ -27,7 +26,7 @@ class ServiceContainer:
 
     # Services (business logic)
     seeder_service: Seeder
-    differ_service: DiffService
+    differ_service: Differ
     wayback_service: MetadataScraper
     snapshot_service: SnapshotScraper
     summarizer_service: Summarizer
@@ -44,7 +43,7 @@ class ServiceContainer:
     def create_dev(cls) -> 'ServiceContainer':
         """Create container with test doubles"""
         blob_storage = BlobService(FakeStorageAdapter('test-integration'))
-        http_client = FakeHttpClient()
+        http_client = FakeHttpAdapter()
         llm_client = LLMService(FakeLLMAdapter())
         return cls.create_container(blob_storage, http_client, llm_client)
 
@@ -54,7 +53,7 @@ class ServiceContainer:
             storage=blob_storage,
             llm=llm_client,
             seeder_service=Seeder(blob_storage),
-            differ_service=DiffService(blob_storage),
+            differ_service=Differ(blob_storage),
             wayback_service=MetadataScraper(blob_storage, http_client),
             snapshot_service=SnapshotScraper(blob_storage, http_client),
             summarizer_service=Summarizer(blob_storage, llm_client),

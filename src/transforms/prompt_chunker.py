@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from itertools import accumulate
 
-from src.services.differ import DiffDoc
+from src.transforms.differ import DiffDoc
 
 @dataclass
 class PromptChunker:

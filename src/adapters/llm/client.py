@@ -3,7 +3,7 @@ import logging
 import os
 from dataclasses import asdict
 from src.utils.log_utils import setup_logger
-from src.clients.llm.protocol import Message, LLMProtocol
+from src.adapters.llm.protocol import Message, LLMProtocol
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client: anthropic.Anthropic = None
@@ -15,7 +15,7 @@ class ClaudeAdapter(LLMProtocol):
         # Note: we don't need to close the client. In practice it's better to keep one single
         # client open during the lifetime of the applicaiton. Not per function invocation.
         global _client
-        if _client is None:
+        if _client is None or _client.is_closed():
             key = os.environ.get('ANTHROPIC_API_KEY')
             if not key:
                 raise ValueError("Missing environment variable ANTHROPIC_API_KEY")
@@ -27,6 +27,7 @@ class ClaudeAdapter(LLMProtocol):
         global _client
         if _client is not None:
             _client.close()
+            _client = None
 
 
     def call(self, system: str, messages: list[Message]) -> str:

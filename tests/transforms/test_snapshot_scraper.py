@@ -1,14 +1,14 @@
 import pytest
 from requests import HTTPError
-from src.services.snapshot_scraper import SnapshotScraper
-from src.clients.http.fake_client import FakeHttpClient, FakeHttpResponse
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.transforms.snapshot_scraper import SnapshotScraper
+from src.adapters.http.fake_client import FakeHttpAdapter, FakeHttpResponse
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService
 from src.stages import Stage
 
 @pytest.fixture
 def fake_http_client():
-    client = FakeHttpClient()
+    client = FakeHttpAdapter()
     yield client
     client.reset()
 

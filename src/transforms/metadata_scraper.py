@@ -7,7 +7,7 @@ from src.utils.log_utils import setup_logger
 from src.utils.path_utils import extract_policy
 from src.stages import Stage
 from src.services.blob import BlobService
-from src.clients.http.protocol import HttpProtocol
+from src.adapters.http.protocol import HttpProtocol
 
 logger = setup_logger(__name__, logging.INFO)
 

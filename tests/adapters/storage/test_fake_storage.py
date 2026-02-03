@@ -1,5 +1,5 @@
 import pytest
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 
 
 @pytest.fixture

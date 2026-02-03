@@ -10,7 +10,7 @@ from azure import durable_functions as df
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
 from src.utils.log_utils import setup_logger
-from src.clients.storage.blob_utils import list_blobs, load_json_blob, set_connection_key
+from src.adapters.storage.blob_utils import list_blobs, load_json_blob, set_connection_key
 from src.utils.path_utils import extract_policy
 from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS

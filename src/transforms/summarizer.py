@@ -7,7 +7,7 @@ from schemas.summary.v3 import VERSION as SCHEMA_VERSION, Summary
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.services.llm import LLMService
-from src.services.prompt_builder import PromptBuilder, PROMPT_VERSION
+from src.transforms.prompt_builder import PromptBuilder, PROMPT_VERSION
 
 logger = setup_logger(__name__, logging.DEBUG)
 

@@ -1,8 +1,8 @@
 import pytest
-from src.services.metadata_scraper import MetadataScraper
+from src.transforms.metadata_scraper import MetadataScraper
 from src.services.blob import BlobService
-from src.clients.http.client import RequestsAdapter
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.http.client import RequestsAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
 from src.utils.path_utils import extract_policy

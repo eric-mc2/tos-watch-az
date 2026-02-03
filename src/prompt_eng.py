@@ -1,7 +1,7 @@
 import pandas as pd
 from pydantic import ValidationError
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from src.clients.storage.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob, touch_blobs
+from src.adapters.storage.blob_utils import list_blobs, parse_blob_path, load_metadata, load_json_blob, touch_blobs
 from src.stages import Stage
 import os
 from functools import lru_cache

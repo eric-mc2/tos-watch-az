@@ -1,4 +1,4 @@
-from src.clients.storage.protocol import BlobStorageProtocol
+from src.adapters.storage.protocol import BlobStorageProtocol
 
 DEFAULT_CONNECTION = "FAKE"
 

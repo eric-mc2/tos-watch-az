@@ -5,7 +5,7 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 from src.utils.log_utils import setup_logger
-from src.clients.storage.protocol import BlobStorageProtocol
+from src.adapters.storage.protocol import BlobStorageProtocol
 
 logger = setup_logger(__name__, logging.INFO)
 

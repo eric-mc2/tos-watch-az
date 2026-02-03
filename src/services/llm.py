@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Any
 from bleach.sanitizer import Cleaner
 from src.utils.log_utils import setup_logger
-from src.clients.llm.protocol import Message, LLMProtocol
+from src.adapters.llm.protocol import Message, LLMProtocol
 
 logger = setup_logger(__name__, logging.DEBUG)
 _client = None

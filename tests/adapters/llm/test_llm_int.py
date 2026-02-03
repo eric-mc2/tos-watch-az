@@ -1,8 +1,8 @@
 import pytest
-from src.clients.llm.protocol import Message
-from src.clients.storage.client import AzureStorageAdapter
+from src.adapters.llm.protocol import Message
+from src.adapters.storage.client import AzureStorageAdapter
 from dotenv import load_dotenv
-from src.clients.llm.client import ClaudeAdapter
+from src.adapters.llm.client import ClaudeAdapter
 
 
 @pytest.fixture(scope='module')

@@ -1,7 +1,7 @@
 from typing import Any, Optional
 import json as json_lib
 from requests import HTTPError
-from src.clients.http.protocol import HttpResponseProtocol, HttpProtocol
+from src.adapters.http.protocol import HttpResponseProtocol, HttpProtocol
 
 
 class FakeHttpResponse(HttpResponseProtocol):
@@ -22,7 +22,7 @@ class FakeHttpResponse(HttpResponseProtocol):
             raise HTTPError(f"HTTP {self.status_code}")
 
 
-class FakeHttpClient(HttpProtocol):
+class FakeHttpAdapter(HttpProtocol):
     """Fake HTTP client for testing with configurable responses"""
 
     def __init__(self):

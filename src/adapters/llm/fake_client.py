@@ -1,4 +1,4 @@
-from src.clients.llm.protocol import LLMProtocol, Message
+from src.adapters.llm.protocol import LLMProtocol, Message
 
 class FakeLLMAdapter(LLMProtocol):
 

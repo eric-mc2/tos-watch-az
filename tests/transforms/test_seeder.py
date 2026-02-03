@@ -1,8 +1,8 @@
 import pytest
 
-from src.clients.storage.fake_client import FakeStorageAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService
-from src.services.seeder import Seeder
+from src.transforms.seeder import Seeder
 
 @pytest.fixture
 def fake_storage():

@@ -1,6 +1,6 @@
 import pytest
 import json
-from src.services.differ import DiffService, DiffSection, DiffDoc
+from src.transforms.differ import Differ, DiffSection, DiffDoc
 from src.container import ServiceContainer
 from src.stages import Stage
 from schemas.docchunk.v1 import DocChunk
@@ -122,7 +122,7 @@ def test_has_diff_detects_changes(container, setup_test_docs):
     
     diff, _ = differ.compute_diff(blob1, blob2)
     
-    assert DiffService.has_diff(diff) is True
+    assert Differ.has_diff(diff) is True
 
 
 def test_has_diff_detects_no_changes(container, sample_docchunks_v1):
@@ -139,7 +139,7 @@ def test_has_diff_detects_no_changes(container, sample_docchunks_v1):
     
     diff, _ = differ.compute_diff(blob1, blob2)
     
-    assert DiffService.has_diff(diff) is False
+    assert Differ.has_diff(diff) is False
 
 
 def test_clean_diff_filters_equal_sections(container, setup_test_docs):
@@ -148,7 +148,7 @@ def test_clean_diff_filters_equal_sections(container, setup_test_docs):
     differ = container.differ_service
     
     diff, _ = differ.compute_diff(blob1, blob2)
-    cleaned = DiffService.clean_diff(diff)
+    cleaned = Differ.clean_diff(diff)
     
     assert isinstance(cleaned, DiffDoc)
     assert len(cleaned.diffs) > 0
@@ -165,7 +165,7 @@ def test_clean_diff_preserves_content(container, setup_test_docs):
     differ = container.differ_service
     
     diff, _ = differ.compute_diff(blob1, blob2)
-    cleaned = DiffService.clean_diff(diff)
+    cleaned = Differ.clean_diff(diff)
     
     # Should have changes since we modified text
     assert len(cleaned.diffs) > 0

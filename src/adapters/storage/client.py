@@ -1,7 +1,7 @@
 import os
 import atexit
 from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings
-from src.clients.storage.protocol import BlobStorageProtocol
+from src.adapters.storage.protocol import BlobStorageProtocol
 
 DEFAULT_CONNECTION = "AzureWebJobsStorage"
 _client : BlobServiceClient = None
