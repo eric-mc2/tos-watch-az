@@ -83,7 +83,7 @@ class PromptBuilder:
         icl_queries = []
         icl_responses = []
         for row in gold.itertuples():
-            path = self.storage.parse_blob_path(row.blob_path)
+            path = self.storage.parse_blob_path(str(row.blob_path))
             diff_path = os.path.join(Stage.DIFF_CLEAN.value, path.company, path.policy, path.timestamp + ".json")
             if not self.storage.check_blob(diff_path):
               # For some reason or another (like random sampling across different envs), some snapshots may be missing
@@ -100,10 +100,10 @@ class PromptBuilder:
 
         # Pick shortest examples to economize on tokens
         # If the first k already exceed the prompt length, use 0 < k
-        lengths = [len(x.content) for x in icl_queries]
-        order = np.argsort(lengths)
-        lengths = np.cumsum(np.array(lengths)[order])
-        limit = min(N_ICL, np.searchsorted(lengths, TOKEN_LIMIT))
+        lengths_list = [len(x.content) for x in icl_queries]
+        order = np.argsort(lengths_list)
+        lengths = np.cumsum(np.array(lengths_list)[order])
+        limit = min(N_ICL, int(np.searchsorted(lengths, TOKEN_LIMIT)))
         if len(icl_queries) < limit:
             logger.warning("No labeled examples found for ICL.")
         icl_queries = list(np.array(icl_queries)[order])[:limit]

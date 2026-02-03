@@ -46,7 +46,7 @@ class BlobService:
     # Domain Specific Queries
     def list_blobs_nest(self) -> dict:
         """Represent container as dictionary."""
-        directory = {}
+        directory : dict[str, Any]= {}
         for name in self.adapter.list_blobs():
             namepath = Path(name)
             subdir = directory
@@ -124,24 +124,24 @@ class BlobService:
             raise
 
 
-    def upload_blob(self, data: Any, blob_name: str, content_type: str, metadata: Optional[dict]) -> None:
+    def upload_blob(self, data: Any, blob_name: str, content_type: str, metadata: Optional[dict]=None) -> None:
         logger.debug(f"Uploading blob to {self.container}/{blob_name}")
         self.adapter.upload_blob(data, blob_name, content_type, metadata)
 
 
-    def upload_text_blob(self, data: str, blob_name: str, metadata: Optional[dict]) -> None:
+    def upload_text_blob(self, data: str, blob_name: str, metadata: Optional[dict]=None) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'text/plain; charset=utf-8'
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 
-    def upload_json_blob(self, data: str, blob_name: str, metadata: Optional[dict]) -> None:
+    def upload_json_blob(self, data: str, blob_name: str, metadata: Optional[dict]=None) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'application/json; charset=utf-8'
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 
-    def upload_html_blob(self, cleaned_html: str, blob_name: str, metadata: Optional[dict]) -> None:
+    def upload_html_blob(self, cleaned_html: str, blob_name: str, metadata: Optional[dict]=None) -> None:
         html_bytes = cleaned_html.encode('utf-8')
         content_type = 'text/html; charset=utf-8'
         self.upload_blob(html_bytes, blob_name, content_type, metadata)

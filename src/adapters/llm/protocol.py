@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Protocol, List
+from typing import Protocol, List, Literal
 
 
 @dataclass
 class Message:
-    role: str
+    role: Literal["user", "assistant"]
     content: str
 
 @dataclass

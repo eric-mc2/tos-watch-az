@@ -1,4 +1,4 @@
-import argilla as rg
+import argilla as rg  # type: ignore
 import os
 from src.adapters.storage.blob_utils import list_blobs_nest, load_text_blob, set_connection_key, load_json_blob, load_metadata
 from src.stages import Stage
@@ -7,6 +7,8 @@ import json
 import difflib
 from dotenv import load_dotenv
 import argparse
+
+# TODO: refactor to properly used DI services and dev/stage/prod
 
 def create_dataset(client: rg.Argilla, name):
     dataset = client.datasets(name)

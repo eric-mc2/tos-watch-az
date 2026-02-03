@@ -1,12 +1,15 @@
+from typing import Optional
+
 import anthropic
 import logging
 import os
 from dataclasses import asdict
+from anthropic.types import MessageParam
 from src.utils.log_utils import setup_logger
 from src.adapters.llm.protocol import Message, LLMProtocol
 
 logger = setup_logger(__name__, logging.DEBUG)
-_client: anthropic.Anthropic = None
+_client: Optional[anthropic.Anthropic] = None
 
 class ClaudeAdapter(LLMProtocol):
 
@@ -43,7 +46,7 @@ class ClaudeAdapter(LLMProtocol):
                 "text": system,
                 "cache_control": {"type": "ephemeral"},
             }],
-            messages=[asdict(m) for m in messages]
+            messages=[MessageParam(content=m.content, role=m.role) for m in messages]
         )
         if response.stop_reason != 'end_turn':
             pass  # might need to fix
@@ -51,5 +54,5 @@ class ClaudeAdapter(LLMProtocol):
             raise ValueError("Empty LLM response")
         if len(response.content) > 1:
             logger.warning("Multiple LLM outputs")
-        txt = response.content[0].text
+        txt = response.content[0].text # type:ignore
         return txt

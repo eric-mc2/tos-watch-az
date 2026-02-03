@@ -1,3 +1,5 @@
+from typing import Callable
+
 import pandas as pd
 from pydantic import ValidationError
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -10,22 +12,22 @@ from schemas.summary.registry import CLASS_REGISTRY
 @lru_cache(5)
 def load_true_labels(label_blob: str="") -> pd.DataFrame:
     if not label_blob:
-        gold = []
+        gold_list = []
         for blob in list_blobs():
             if blob.startswith(Stage.LABELS.value):
-                gold.append(load_true_labels(blob))
-        return pd.concat(gold)
+                gold_list.append(load_true_labels(blob))
+        return pd.concat(gold_list)
     else:
-        gold = []
+        gold_list = []
         labels = load_json_blob(label_blob)
         for label in labels:
-            gold.append(label['metadata'] | dict(
+            gold_list.append(label['metadata'] | dict(
                 practically_substantive_true = label['responses']['practically_substantive'][0]['value'],
                 legally_substantive_true = label['responses']['legally_substantive'][0]['value'],
                 practically_substantive_pred = label['suggestions']['practically_substantive']['value'],
                 legally_substantive_pred = label['suggestions']['legally_substantive']['value'],
             ))
-        gold = pd.DataFrame.from_records(gold)
+        gold = pd.DataFrame.from_records(gold_list)  # type: ignore
         gold['practically_substantive_true'] = gold['practically_substantive_true'].map({'True':1,'False':0})
         gold['legally_substantive_true'] = gold['legally_substantive_true'].map({'True':1,'False':0})
         gold['practically_substantive_pred'] = gold['practically_substantive_pred'].map({'True':1,'False':0})
@@ -37,7 +39,7 @@ def load_true_labels(label_blob: str="") -> pd.DataFrame:
 def load_pred_labels() -> pd.DataFrame:
     blobs = list_blobs()
     clean_blobs = [b for b in blobs if b.startswith(Stage.SUMMARY_CLEAN.value)]
-    pred = []
+    pred_list = []
     for blob in clean_blobs:
         path = parse_blob_path(blob)
         if path.run_id == "latest":
@@ -52,12 +54,12 @@ def load_pred_labels() -> pd.DataFrame:
             parse_error = False
         except (ValidationError, TypeError):
             parse_error = True
-        pred.append(meta | dict(
+        pred_list.append(meta | dict(
             blob_path = key,
             parse_error = parse_error,
             practically_substantive = summary.practically_substantive.rating if not parse_error else None,
         ))
-    pred = pd.DataFrame.from_records(pred)
+    pred = pd.DataFrame.from_records(pred_list)  # type: ignore
     pred['practically_substantive'] = pred['practically_substantive'].map({True:1.0,False:0.0})
     return pred
 
@@ -66,9 +68,9 @@ def prompt_eval() -> str:
             .rename(columns={'practically_substantive_true':'practically_substantive',
                              'legally_substantive_true':'legally_substantive'}))
     pred = load_pred_labels()
-    gold['blob_path'] = gold['blob_path'].apply(lambda x: parse_blob_path(x))
+    gold['blob_path'] = gold['blob_path'].apply(parse_blob_path)
     gold['blob_path'] = gold['blob_path'].apply(lambda x: os.path.join(x.company, x.policy, x.timestamp))
-    pred['blob_path'] = pred['blob_path'].apply(lambda x: parse_blob_path(x))
+    pred['blob_path'] = pred['blob_path'].apply(parse_blob_path)
     pred['blob_path'] = pred['blob_path'].apply(lambda x: os.path.join(x.company, x.policy, x.timestamp))
     compare = gold.merge(pred, on=["blob_path"], how="left", suffixes=("_true","_pred"))
 
@@ -88,19 +90,15 @@ def prompt_eval() -> str:
     confusion = compare[compare.parse_error == False]
     if confusion.empty:
         return "No matching predictions x labels."
-    
-    accuracy = (confusion.groupby(groups).apply(lambda x: 
-                    accuracy_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('accuracy').round(2))
-    precision = (confusion.groupby(groups).apply(lambda x: 
-                    precision_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('precision').round(2))
-    recall = (confusion.groupby(groups).apply(lambda x: 
-                    recall_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('recall').round(2))
-    f1 = (confusion.groupby(groups).apply(lambda x: 
-                    f1_score(x['practically_substantive_true'], x['practically_substantive_pred']))
-                    .rename('f1').round(2))
+
+    def compute_metric(x: pd.Series, metric: Callable, name: str) -> float:
+        return metric(x['practically_substantive_true'], x['practically_substantive_pred']).rename(name).round(2)
+
+    accuracy = confusion.groupby(groups).agg(compute_metric, metric=accuracy_score, name="accuracy")
+    precision = confusion.groupby(groups).agg(compute_metric, metric=precision_score, name="precision")
+    recall = confusion.groupby(groups).agg(compute_metric, metric=recall_score, name="recall")
+    f1 = confusion.groupby(groups).agg(compute_metric, metric=f1_score, name="f1")
+
     semantic = pd.concat([accuracy, precision, recall, f1], axis=1).reset_index()
 
     html = "<h1>TOTALS:</h1>" + totals.to_html(index=False) + \

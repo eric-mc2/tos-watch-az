@@ -1,17 +1,19 @@
 import os
 import atexit
+from typing import Optional, Callable
+
 from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings
 from src.adapters.storage.protocol import BlobStorageProtocol
 
 DEFAULT_CONNECTION = "AzureWebJobsStorage"
-_client : BlobServiceClient = None
+_client : Optional[BlobServiceClient] = None
 
 class AzureStorageAdapter(BlobStorageProtocol):
 
     def __init__(self, container: str, key: str = DEFAULT_CONNECTION):
         super().__init__(container, key)
         global _client
-        if _client:
+        if _client is not None:
             _client.close()
             _client = None
 
@@ -84,7 +86,7 @@ class AzureStorageAdapter(BlobStorageProtocol):
         return self._load_blob(name, loader)
 
 
-    def _load_blob(self, name: str, getter: callable):
+    def _load_blob(self, name: str, getter: Callable):
         blob_service_client = self.get_blob_service_client()
         blob_client = blob_service_client.get_blob_client(container=self.container, blob=name)
         if not blob_client.exists():

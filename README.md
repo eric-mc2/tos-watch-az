@@ -94,6 +94,8 @@ cd tos-watch-az
 # Install dependencies
 pip install -r requirements.txt
 
+pip install git+https://github.com/microsoft/python-type-stubs.git 
+
 # Set the following environment variables in the shell or a .env file:
 AzureWebJobsStorage="your-connection-string"
 WEBSITE_HOSTNAME="your azure functions url"
@@ -101,6 +103,34 @@ ANTHROPIC_API_KEY="your api key"
 AZURE_FUNCTION_MASTER_KEY="your api key"
 ARGILLA_API_KEY="your api key"
 HF_TOKEN="your api key"
+```
+## Development
+
+### Local Development
+
+```bash
+# Start azurite service in VSCode
+# ... business logic will not use it but orchestration services still need a full-feature table service
+open vscode and use Azurite: Start command
+
+# Start the Azure Functions runtime locally
+task dev
+
+# Run tests
+pytest
+
+# Deploy to Azure
+func azure functionapp publish [function-app-name]
+```
+
+### Staging environment
+
+```bash
+# Start azurite service in VSCode
+open vscode and use Azurite: Start command
+
+# Start the Azure Functions runtime locally
+task stage
 ```
 
 ## Usage
@@ -122,7 +152,7 @@ Follow these [instructions](https://docs.argilla.io/latest/getting_started/quick
 Run command to seed the instance with random examples for labeling.
 
 ```bash
-python grounding.py --action add
+python labeling.py --action add
 ```
 
 **Roadmap:**
@@ -133,7 +163,7 @@ python grounding.py --action add
 Label the examples in the Argilla UI. Then download with: 
 
 ```bash
-python grounding.py --action download
+python labeling.py --action download
 ```
 
 ### Running Experiments
@@ -171,19 +201,4 @@ curl -X POST https://[your-function-app].azurewebsites.net/api/reset_circuit_bre
 
 # Kill running / paused tasks in a given pipeline stage
 python health_checks.py --output [filename] killall --env {DEV,PROD} --workflow_type [STAGE]
-```
-
-## Development
-
-### Local Development
-
-```bash
-# Start the Azure Functions runtime locally
-func start
-
-# Run tests
-pytest
-
-# Deploy to Azure
-func azure functionapp publish [function-app-name]
 ```

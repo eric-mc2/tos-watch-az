@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  GREETING: Hello, world!
+
+tasks:
+  default:
+    desc: Print help message
+    cmds:
+      - task --list
+    silent: true
+
+  dev:
+    desc: Run function app in dev mode
+    cmds:
+      - func start
+    env:
+      LIFECYCLE_ENV: DEV
+
+  stage:
+    desc: Run function app in staging mode
+    cmds:
+      - func start
+    env:
+      LIFECYCLE_ENV: STAGE
+
+  prod:
+    desc: Run function app in production mode
+    cmds:
+      - func start
+    env:
+      LIFECYCLE_ENV: PROD
+
+  list-tasks:
+    desc: List current tasks in Azure runtime
+    cmds:
+      - python -m scripts.health_checks tasks {{.CLI_ARGS}}
+
+  list-missing:
+    desc: List missing files in pipeline
+    cmds:
+      - python -m scripts.health_checks files {{.CLI_ARGS}}
+
+  kill-tasks:
+    desc: Kill running tasks in Azure runtime
+    cmds:
+      - python -m scripts.health_checks kill {{.CLI_ARGS}}
+
+  label-data:
+    desc: Create small dataset to manually label in Argilla/HF web interface
+    cmds:
+      - python scripts/labeling.py --action add
+
+  download-labels:
+    desc: Download labeled dataset from Argilla HF space
+    cmds:
+      - python scripts/labeling.py --action download

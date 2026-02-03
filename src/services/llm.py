@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 from typing import Any
 from bleach.sanitizer import Cleaner
+
+from schemas.summary.v0 import SummaryBase
 from src.utils.log_utils import setup_logger
 from src.adapters.llm.protocol import Message, LLMProtocol
 
@@ -19,19 +21,19 @@ TOKEN_LIMIT = 50000  # TODO: Next priority is breaking up summaries to be robust
 class LLMService:
     adapter: LLMProtocol
 
-    def call_unsafe(self, system: str, messages: list[Message], validator: BaseModel) -> str:
+    def call_unsafe(self, system: str, messages: list[Message]) -> str:
         """Call LLM."""
         self.validate_input(system, messages)
         resp = self.adapter.call(system, messages)
         return resp
 
-    def call_and_validate(self, system: str, messages: list[Message], validator: BaseModel) -> str:
+    def call_and_validate(self, system: str, messages: list[Message], validator: type[SummaryBase]) -> str:
         """Call LLM and validate output against a Pydantic model."""
         self.validate_input(system, messages)
         resp = self.adapter.call(system, messages)
         return self.validate_output(resp, validator)
 
-    def validate_output(self, resp: str, validator: BaseModel) -> str:
+    def validate_output(self, resp: str, validator: type[SummaryBase]) -> str:
         """Extract JSON from response, validate against model, and sanitize."""
         result = self.extract_json_from_response(resp)
         if not result['success']:

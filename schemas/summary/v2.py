@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from schemas.summary.registry import register
+from schemas.summary.v0 import SummaryBase
 
 VERSION = "v2"
 
@@ -8,5 +9,5 @@ class Substantive(BaseModel):
     reason: str
 
 @register(VERSION)
-class Summary(BaseModel):
+class Summary(SummaryBase):
     practically_substantive: Substantive

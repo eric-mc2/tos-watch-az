@@ -1,10 +1,10 @@
 from azure import durable_functions as df
 from datetime import datetime
 import logging
-from src.utils.log_utils import setup_logger
 from dataclasses import dataclass, asdict, fields
 from typing import Self
 import math
+from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.INFO)
 

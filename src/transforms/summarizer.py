@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-import ulid
+import ulid  # type: ignore
 
 from schemas.summary.v3 import VERSION as SCHEMA_VERSION, Summary
 from src.utils.log_utils import setup_logger
@@ -24,9 +24,7 @@ class Summarizer:
 
         responses = []
         for message in messages:
-            txt = self.llm.call_unsafe(message.system, 
-                                       message.history + [message.current],
-                                       Summary)
+            txt = self.llm.call_unsafe(message.system, message.history + [message.current])
             parsed = self.llm.extract_json_from_response(txt)
             if parsed['success']:
                 responses.append(parsed['data'])

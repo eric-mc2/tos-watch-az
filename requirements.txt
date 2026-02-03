@@ -19,3 +19,6 @@ requests
 ulid
 validators
 mypy
+go-task-bin
+types-bleach
+types-requests

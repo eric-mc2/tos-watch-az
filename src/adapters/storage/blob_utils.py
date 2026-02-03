@@ -99,7 +99,7 @@ def list_blobs(container=DEFAULT_CONTAINER) -> list[str]:
     
 def list_blobs_nest(container=DEFAULT_CONTAINER) -> dict:
     """Represent container as dictionary."""
-    directory = {}
+    directory = {}  # type: ignore
     for name in list_blobs(container):
         namepath = Path(name)
         subdir = directory

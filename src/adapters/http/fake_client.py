@@ -25,7 +25,7 @@ class FakeHttpResponse(HttpResponseProtocol):
 class FakeHttpAdapter(HttpProtocol):
     """Fake HTTP client for testing with configurable responses"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._responses : dict[str, FakeHttpResponse] = {}
         self._default_response = FakeHttpResponse()
         self._error_response: Optional[FakeHttpResponse] = None

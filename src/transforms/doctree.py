@@ -1,6 +1,6 @@
 from collections import defaultdict
 from typing import Iterator, Self
-from bs4.element import PageElement
+from bs4.element import PageElement, Tag
 from enum import Enum
 from bs4 import BeautifulSoup
 import json
@@ -186,7 +186,8 @@ def _parse_doctree(html: PageElement, root: DocTree) -> DocTree:
     """Split the html text into chunks per high-level document structure,
         also respecting semantic structure."""
     RECURSE_TAGS = ['html','body','main','article','section','div','c-wiz','ul','ol','table','tbody','tr','td']
-    for elem in html.children:
+    children = html.children if hasattr(html, 'children') else []
+    for elem in children:
         tag = elem.name if elem.name else "text"
         if tag in RECURSE_TAGS:
             leaf = DocTree("", tag)

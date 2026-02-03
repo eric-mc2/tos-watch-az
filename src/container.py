@@ -17,6 +17,8 @@ from src.transforms.snapshot_scraper import SnapshotScraper
 from src.transforms.summarizer import Summarizer
 
 
+TEnv = Literal["DEV", "STAGE", "PROD"]
+
 @dataclass
 class ServiceContainer:
     """Dependency injection container"""
@@ -33,7 +35,7 @@ class ServiceContainer:
     summarizer_service: Summarizer
 
     @classmethod
-    def create(cls, env: Literal["DEV", "STAGE", "PROD"]):
+    def create(cls, env: TEnv):
         if env == "PROD":
             return cls.create_production()
         else:

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from src.adapters.storage.protocol import BlobStorageProtocol
 
 DEFAULT_CONNECTION = "FAKE"
@@ -46,7 +48,7 @@ class FakeStorageAdapter(BlobStorageProtocol):
             raise ValueError(f"Blob {self.container}/{name} does not exist!")
         return self._blobs[self.container][name]
 
-    def upload_blob(self, data: bytes, blob_name: str, content_type: str, metadata: dict = None) -> None:
+    def upload_blob(self, data: bytes, blob_name: str, content_type: str, metadata: Optional[dict] = None) -> None:
         self._blobs[self.container][blob_name] = data
         if metadata:
             self.upload_metadata(metadata, blob_name)
