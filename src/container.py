@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from src.adapters.http.protocol import HttpProtocol
 from src.adapters.llm.client import ClaudeAdapter
@@ -30,6 +31,13 @@ class ServiceContainer:
     wayback_service: MetadataScraper
     snapshot_service: SnapshotScraper
     summarizer_service: Summarizer
+
+    @classmethod
+    def create(cls, env: Literal["DEV", "STAGE", "PROD"]):
+        if env == "PROD":
+            return cls.create_production()
+        else:
+            return cls.create_dev()
 
     @classmethod
     def create_production(cls) -> 'ServiceContainer':

@@ -4,6 +4,7 @@ import json
 from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Optional
 from src.utils.log_utils import setup_logger
 from src.adapters.storage.protocol import BlobStorageProtocol
 
@@ -58,7 +59,7 @@ class BlobService:
 
 
     # Domain Specific Operations
-    def check_blob(self, blob_name, touch=False) -> bool:
+    def check_blob(self, blob_name: str, touch: bool=False) -> bool:
         blob_name = blob_name.removeprefix(f"{self.container}/")
         exists = self.adapter.exists_blob(blob_name)
         if exists and touch:
@@ -99,7 +100,7 @@ class BlobService:
 
 
     # Convenience Methods
-    def load_json_blob(self, name) -> dict:
+    def load_json_blob(self, name: str) -> dict:
         name = name.removeprefix(f"{self.container}/")
         logger.debug(f"Downloading blob: {self.container}/{name}")
         data = self.adapter.load_blob(name)
@@ -111,7 +112,7 @@ class BlobService:
             raise
 
 
-    def load_text_blob(self, name) -> str:
+    def load_text_blob(self, name: str) -> str:
         name = name.removeprefix(f"{self.container}/")
         logger.debug(f"Downloading blob: {self.container}/{name}")
         data = self.adapter.load_blob(name)
@@ -123,35 +124,35 @@ class BlobService:
             raise
 
 
-    def upload_blob(self, data, blob_name, content_type, metadata=None) -> None:
+    def upload_blob(self, data: Any, blob_name: str, content_type: str, metadata: Optional[dict]) -> None:
         logger.debug(f"Uploading blob to {self.container}/{blob_name}")
         self.adapter.upload_blob(data, blob_name, content_type, metadata)
 
 
-    def upload_text_blob(self, data, blob_name, metadata=None) -> None:
+    def upload_text_blob(self, data: str, blob_name: str, metadata: Optional[dict]) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'text/plain; charset=utf-8'
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 
-    def upload_json_blob(self, data: str, blob_name, metadata=None) -> None:
+    def upload_json_blob(self, data: str, blob_name: str, metadata: Optional[dict]) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'application/json; charset=utf-8'
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 
-    def upload_html_blob(self, cleaned_html, blob_name, metadata=None) -> None:
+    def upload_html_blob(self, cleaned_html: str, blob_name: str, metadata: Optional[dict]) -> None:
         html_bytes = cleaned_html.encode('utf-8')
         content_type = 'text/html; charset=utf-8'
         self.upload_blob(html_bytes, blob_name, content_type, metadata)
 
-    def upload_metadata(self, data, blob_name) -> None:
+    def upload_metadata(self, data: dict, blob_name: str) -> None:
         if not self.adapter.exists_blob(blob_name):
             return
         logger.debug(f"Uploading metadata to {self.container}/{blob_name}")
         self.adapter.upload_metadata(data, blob_name)
 
-    def remove_blob(self, blob_name) -> None:
+    def remove_blob(self, blob_name: str) -> None:
         if not self.adapter.exists_blob(blob_name):
             return
         logger.debug(f"Deleting blob {blob_name}")

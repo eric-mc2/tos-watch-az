@@ -70,21 +70,21 @@ class AzureStorageAdapter(BlobStorageProtocol):
         return blobs
 
 
-    def load_metadata(self, name) -> dict:
+    def load_metadata(self, name: str) -> dict:
         def loader(client: BlobClient):
             return client.get_blob_properties().metadata
 
         return self._load_blob(name, loader)
 
 
-    def load_blob(self, name) -> bytes:
+    def load_blob(self, name: str) -> bytes:
         def loader(client: BlobClient):
             return client.download_blob().readall()
 
         return self._load_blob(name, loader)
 
 
-    def _load_blob(self, name, getter):
+    def _load_blob(self, name: str, getter: callable):
         blob_service_client = self.get_blob_service_client()
         blob_client = blob_service_client.get_blob_client(container=self.container, blob=name)
         if not blob_client.exists():

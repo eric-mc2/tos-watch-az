@@ -4,3 +4,6 @@ class FakeLLMAdapter(LLMProtocol):
 
     def call(self, system: str, messages: list[Message]) -> str:
         return "Hello world"
+    
+    def close(self):
+        pass

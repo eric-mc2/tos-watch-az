@@ -83,7 +83,7 @@ class MetadataScraper:
 
         return snapshots
 
-    def sample_wayback_metadata(metadata: list[dict], company, policy) -> list[dict]:
+    def sample_wayback_metadata(self, metadata: list[dict], company: str, policy: str) -> list[dict]:
         # For testing, take an evenly spaced sample of snaps
         N = 10
         rfc3339 = "%Y%m%d%H%M%S"
