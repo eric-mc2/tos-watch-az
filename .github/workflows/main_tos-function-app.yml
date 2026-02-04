@@ -5,7 +5,8 @@
 name: Build and deploy Python project to Azure Function App - tos-function-app
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
   workflow_dispatch:
@@ -15,8 +16,42 @@ env:
   PYTHON_VERSION: '3.12' # set this to the python version to use (supports 3.6, 3.7, 3.8)
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create and start virtual environment
+        run: python -m venv venv
+
+      - name: Install dependencies
+        run: |
+          source venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Run mypy
+        run: |
+          source venv/bin/activate
+          mypy src/ scripts/ schemas/ function_app.py
+
+      - name: Run unit tests
+        run: |
+          source venv/bin/activate
+          pytest tests/ -v
+
   build:
     runs-on: ubuntu-latest
+    needs: test
+    if: github.event.pull_request.merged == true
     permissions:
       contents: read #This is required for actions/checkout
 

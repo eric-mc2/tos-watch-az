@@ -19,13 +19,6 @@ tasks:
     env:
       LIFECYCLE_ENV: DEV
 
-  stage:
-    desc: Run function app in staging mode
-    cmds:
-      - func start
-    env:
-      LIFECYCLE_ENV: STAGE
-
   prod:
     desc: Run function app in production mode
     cmds:
