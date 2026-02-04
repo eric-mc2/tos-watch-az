@@ -3,9 +3,8 @@ import atexit
 from typing import Optional, Callable
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings
-from src.adapters.storage.protocol import BlobStorageProtocol
+from src.adapters.storage.protocol import BlobStorageProtocol, DEFAULT_CONNECTION
 
-DEFAULT_CONNECTION = "AzureWebJobsStorage"
 _client : Optional[BlobServiceClient] = None
 
 class AzureStorageAdapter(BlobStorageProtocol):
@@ -16,11 +15,6 @@ class AzureStorageAdapter(BlobStorageProtocol):
         if _client is not None:
             _client.close()
             _client = None
-
-
-    # Connection management
-    def get_connection_key(self):
-        return self.key
 
 
     def get_blob_service_client(self, ) -> BlobServiceClient:

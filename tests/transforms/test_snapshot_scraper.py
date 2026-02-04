@@ -15,7 +15,7 @@ def fake_http_client():
 
 @pytest.fixture
 def fake_storage():
-    adapter = FakeStorageAdapter(container="test-container")
+    adapter = FakeStorageAdapter()
     adapter.create_container()
     service = BlobService(adapter)
     return service

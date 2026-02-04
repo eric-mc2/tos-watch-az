@@ -16,7 +16,7 @@ def prod_http_client():
 @pytest.fixture
 def fake_blob_service():
     """Fake blob service using FakeStorageAdapter"""
-    adapter = FakeStorageAdapter(container='test-container')
+    adapter = FakeStorageAdapter()
     adapter.create_container()
     return BlobService(adapter)
 

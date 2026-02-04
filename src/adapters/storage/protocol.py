@@ -1,17 +1,19 @@
 from typing import Any, Optional, Protocol
 from azure.storage.blob import BlobServiceClient
 
+CONTAINER_NAME = 'documents' # TODO: can't change this because blob triggers are hardcoded
 DEFAULT_CONNECTION: str = "AzureWebJobsStorage"
 
 class BlobStorageProtocol(Protocol):
     container: str
     key: str
     
-    def __init__(self, container, key = DEFAULT_CONNECTION):
+    def __init__(self, container: str = CONTAINER_NAME, key = DEFAULT_CONNECTION):
         self.container = container
         self.key = key
 
-    def get_connection_key(self): ...
+    def get_connection_key(self):
+        return self.key
 
     def get_blob_service_client(self) -> BlobServiceClient: ...
 

@@ -16,7 +16,7 @@ def llm():
     
 @pytest.fixture
 def storage():
-    adapter = FakeStorageAdapter('test-container')
+    adapter = FakeStorageAdapter()
     return BlobService(adapter)
 
 def test_summary(llm, storage):

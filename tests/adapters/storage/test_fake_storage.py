@@ -5,7 +5,7 @@ from src.adapters.storage.fake_client import FakeStorageAdapter
 @pytest.fixture
 def storage():
     """Create a fresh storage adapter for each test"""
-    adapter = FakeStorageAdapter(container="test-container")
+    adapter = FakeStorageAdapter()
     adapter.create_container()
     return adapter
 

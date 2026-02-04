@@ -1,12 +1,10 @@
 from typing import Optional
 
-from src.adapters.storage.protocol import BlobStorageProtocol
-
-DEFAULT_CONNECTION = "FAKE"
+from src.adapters.storage.protocol import BlobStorageProtocol, DEFAULT_CONNECTION, CONTAINER_NAME
 
 class FakeStorageAdapter(BlobStorageProtocol):
 
-    def __init__(self, container: str, key: str = DEFAULT_CONNECTION):
+    def __init__(self, container: str = CONTAINER_NAME, key: str = DEFAULT_CONNECTION):
         super().__init__(container, key)
         # In-memory storage: {container: {blob_name: bytes}}
         self._blobs: dict[str, dict[str, bytes]] = {}
@@ -14,9 +12,6 @@ class FakeStorageAdapter(BlobStorageProtocol):
         self._metadata: dict[str, dict[str, dict]] = {}
         self.container = container
 
-
-    def get_connection_key(self) -> str:
-        return self.key
 
     def get_blob_service_client(self):
         return None  # Not needed for fake
