@@ -9,6 +9,7 @@ from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
 from schemas.summary.registry import CLASS_REGISTRY
+from src.transforms.seeds import STATIC_URLS
 from src.utils.log_utils import setup_logger
 from src.utils.app_utils import http_wrap, pretty_error
 from src.stages import Stage
@@ -78,11 +79,17 @@ async def reset_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     return await reset_cb(req, client)
 
 
-@app.route(route="seed_urls", auth_level=func.AuthLevel.FUNCTION)
-@http_wrap
-def seed_urls(req: func.HttpRequest) -> func.HttpResponse:
-    """Post seed URLs to blob storage for scraping"""
-    container.seeder_service.seed_urls()
+@app.route(route="meta_trigger", auth_level=func.AuthLevel.FUNCTION)
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def meta_trigger(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    """Initiate wayback snapshots from static URL list"""
+    urls = STATIC_URLS
+    for company, url_list in urls.items():
+        for url in url_list:
+            orchestration_input = OrchData(url, "meta", company).to_dict()
+            logger.info(f"Initiating orchestration for {company}/{url}")
+            await client.start_new("orchestrator", None, orchestration_input)
     return func.HttpResponse("OK")
 
 

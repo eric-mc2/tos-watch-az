@@ -1,5 +1,6 @@
 import pytest
 
+from src.transforms.seeds import STATIC_URLS
 from src.utils import path_utils
 
 
@@ -30,6 +31,12 @@ def invalid_urls():
         "www.example.com"
     ]
 
+
+class TestSeeds:
+    def test_seed_urls(self):
+        for url in STATIC_URLS:
+            assert path_utils.validate_url(url)
+            assert path_utils.extract_policy(url)
 
 class TestURLValidation:
     """Tests for URL validation and sanitization"""
