@@ -50,7 +50,7 @@ def setup_test_docs(container, sample_docchunks_v1, sample_docchunks_v2):
 def test_find_diff_peers_finds_adjacent_files(container, setup_test_docs):
     """Test that find_diff_peers correctly identifies adjacent document versions"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     # Test finding peers for the second blob
     peers = list(differ.find_diff_peers(blob2))
@@ -61,7 +61,7 @@ def test_find_diff_peers_finds_adjacent_files(container, setup_test_docs):
 
 def test_find_diff_peers_finds_both_neighbors(container, sample_docchunks_v1):
     """Test that middle document finds both before and after neighbors"""
-    differ = container.differ_service
+    differ = container.differ_transform
     company = "testco"
     policy = "terms"
     
@@ -83,7 +83,7 @@ def test_find_diff_peers_finds_both_neighbors(container, sample_docchunks_v1):
 def test_compute_diff_returns_diff_strings(container, setup_test_docs):
     """Test that compute_diff returns valid diff strings"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     diff, span_diff = differ.compute_diff(blob1, blob2)
     
@@ -103,7 +103,7 @@ def test_compute_diff_returns_diff_strings(container, setup_test_docs):
 def test_diff_and_save_creates_diff_files(container, setup_test_docs):
     """Test that diff_and_save creates diff files in storage"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     differ.diff_and_save(blob2)
     
@@ -118,7 +118,7 @@ def test_diff_and_save_creates_diff_files(container, setup_test_docs):
 def test_has_diff_detects_changes(container, setup_test_docs):
     """Test that has_diff correctly identifies when documents differ"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     diff, _ = differ.compute_diff(blob1, blob2)
     
@@ -127,7 +127,7 @@ def test_has_diff_detects_changes(container, setup_test_docs):
 
 def test_has_diff_detects_no_changes(container, sample_docchunks_v1):
     """Test that has_diff returns False for identical documents"""
-    differ = container.differ_service
+    differ = container.differ_transform
     company = "testco"
     policy = "privacy"
     
@@ -145,7 +145,7 @@ def test_has_diff_detects_no_changes(container, sample_docchunks_v1):
 def test_clean_diff_filters_equal_sections(container, setup_test_docs):
     """Test that clean_diff only returns non-equal diff sections"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     diff, _ = differ.compute_diff(blob1, blob2)
     cleaned = Differ.clean_diff(diff)
@@ -162,7 +162,7 @@ def test_clean_diff_filters_equal_sections(container, setup_test_docs):
 def test_clean_diff_preserves_content(container, setup_test_docs):
     """Test that clean_diff preserves the actual diff content"""
     blob1, blob2 = setup_test_docs
-    differ = container.differ_service
+    differ = container.differ_transform
     
     diff, _ = differ.compute_diff(blob1, blob2)
     cleaned = Differ.clean_diff(diff)
@@ -179,7 +179,7 @@ def test_clean_diff_preserves_content(container, setup_test_docs):
 
 
 def test_is_diff(container):
-    differ = container.differ_service
+    differ = container.differ_transform
     diff = {}
     assert not differ.has_diff(json.dumps(diff))
     diff = {'diffs': []}
@@ -197,7 +197,7 @@ def test_is_diff(container):
 
 
 def test_prompt(container):
-    differ = container.differ_service
+    differ = container.differ_transform
     diff = {'diffs': [{'tag': 'equal', 'before': ['UNCHANGED'], 'after': ['UNCHANGED']},
                       {'tag': 'replace', 'before': ['OLD'], 'after': ['NEW']}]}
     prompt = differ.clean_diff(json.dumps(diff))

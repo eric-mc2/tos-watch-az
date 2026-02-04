@@ -11,12 +11,12 @@ import numpy as np
 
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
 from src.adapters.llm.protocol import Message, PromptMessages
-from src.prompt_eng import load_true_labels
 from src.services.blob import BlobService
 from src.transforms.differ import DiffDoc
 from src.services.llm import TOKEN_LIMIT
 from src.transforms.prompt_chunker import PromptChunker
 from src.stages import Stage
+from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -56,6 +56,7 @@ Respond with valid JSON only:
 @dataclass
 class PromptBuilder:
     storage: BlobService
+    prompt_eng: PromptEng
     _cache = None
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
@@ -77,7 +78,7 @@ class PromptBuilder:
             return self._cache
         
         # TODO: Need to create a test set of labels or make sure this file is available in the test env.
-        gold = load_true_labels(os.path.join(Stage.LABELS.value, "substantive_v1.json"))
+        gold = self.prompt_eng.load_true_labels(os.path.join(Stage.LABELS.value, "substantive_v1.json"))
         # Filter to false negatives
         gold = gold[(gold['practically_substantive_true']==0) & (gold['practically_substantive_pred']==1)]
         icl_queries = []

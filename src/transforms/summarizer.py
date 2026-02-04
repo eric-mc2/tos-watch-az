@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import ulid  # type: ignore
 
 from schemas.summary.v3 import VERSION as SCHEMA_VERSION, Summary
+from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.services.llm import LLMService
@@ -16,10 +17,11 @@ logger = setup_logger(__name__, logging.DEBUG)
 class Summarizer:
     storage: BlobService
     llm: LLMService
+    prompt_eng: PromptEng
 
     def summarize(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Summarizing {blob_name}")
-        prompter = PromptBuilder(self.storage)
+        prompter = PromptBuilder(self.storage, self.prompt_eng)
         messages = prompter.build_prompt(blob_name)
 
         responses = []

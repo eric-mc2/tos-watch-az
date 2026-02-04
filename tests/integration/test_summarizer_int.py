@@ -2,6 +2,7 @@ import pytest
 
 from schemas.summary.v3 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
+from src.transforms.prompt_eng import PromptEng
 from src.transforms.summarizer import Summarizer
 from src.services.llm import LLMService
 from src.adapters.llm.client import ClaudeAdapter
@@ -28,7 +29,7 @@ def test_summary(llm, storage):
     storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
     # Act
-    summarizer = Summarizer(storage=storage, llm=llm)
+    summarizer = Summarizer(storage=storage, llm=llm, prompt_eng=PromptEng())
     txt, meta = summarizer.summarize("test.json")
 
     # Assert
