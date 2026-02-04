@@ -209,7 +209,7 @@ def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> N
                 connection=container.storage.adapter.get_connection_key())
 @pretty_error
 def single_diff(input_blob: func.InputStream) -> None:
-    differ = container.differ_service
+    differ = container.differ_transform
     blob_name = input_blob.name.removeprefix("documents/")
     differ.diff_and_save(blob_name)
 #
@@ -223,8 +223,8 @@ def single_diff(input_blob: func.InputStream) -> None:
 @pretty_error
 def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]) -> None:
     blob = input_blob.read().decode()
-    if container.differ_service.has_diff(blob):
-        diff = container.differ_service.clean_diff(blob)
+    if container.differ_transform.has_diff(blob):
+        diff = container.differ_transform.clean_diff(blob)
         output_blob.set(diff.model_dump_json())
 
 
