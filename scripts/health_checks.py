@@ -9,10 +9,14 @@ from collections import Counter
 from dotenv import load_dotenv
 from azure import durable_functions as df  # type: ignore
 
+from src.adapters.http.client import RequestsAdapter
+from src.adapters.llm.client import ClaudeAdapter
+from src.adapters.storage.client import AzureStorageAdapter
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
+from src.services.blob import BlobService
+from src.services.llm import LLMService
 from src.utils.log_utils import setup_logger
-from src.adapters.storage.blob_utils import list_blobs, load_json_blob, set_connection_key
 from src.utils.path_utils import extract_policy
 from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
@@ -21,23 +25,24 @@ from src.transforms.seeds import STATIC_URLS
 
 setup_logger(__name__, logging.WARNING)
 logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 load_dotenv()
 
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
-container = ServiceContainer.create_production()
-
 def validate_files(env, *args, **kwargs) -> dict:
+    # TODO: Consolidate environment handling into service container?
     conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
-    set_connection_key(conn_key)
+    storage = BlobService(AzureStorageAdapter("documents", conn_key))
+    http = RequestsAdapter()
+    llm = LLMService(ClaudeAdapter())
+    container = ServiceContainer.create_container(storage, http, llm)
     try:
-        blobs = set(list_blobs())
+        blobs = set(container.storage.adapter.list_blobs())
     except RuntimeError as e:
         return {"error": str(e)}
-    if "static_urls.json" not in blobs:
-        return {"error": "URLs blob missing"}
     urls = STATIC_URLS
     missing_metadata: list[str] = []
     missing_snaps: list[str] = []
@@ -53,9 +58,9 @@ def validate_files(env, *args, **kwargs) -> dict:
             if blob_name not in blobs:
                 missing_metadata.append(blob_name)
                 continue
-            metadata = load_json_blob(blob_name)
+            metadata = container.storage.load_json_blob(blob_name)
             assert isinstance(metadata, list)
-            meta = container.wayback_service.sample_wayback_metadata(metadata, company, policy)
+            meta = container.wayback_transform.sample_wayback_metadata(metadata, company, policy)
             for row in meta:
                 timestamp = row['timestamp']
                 snap_counter += 1
@@ -142,7 +147,6 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
 
 
 def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
-
     params = {}
 
     if runtimes is None:
@@ -175,6 +179,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
 
     names = Counter([t['name'] for t in filtered_data])
     statuses = Counter([t['runtime_status'] for t in filtered_data])
+    # TODO: Add waiting for circuit reporting
     throttled = Counter([t['custom_status'] is not None and 'Throttled' in t.get('custom_status', '') for t in filtered_data])
     workflows = Counter([t['input_data'].get('workflow_type') for t in filtered_data])
     companies = Counter([t['input_data'].get('company') for t in filtered_data])

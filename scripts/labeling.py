@@ -1,6 +1,6 @@
 import argilla as rg  # type: ignore
 import os
-from src.adapters.storage.blob_utils import list_blobs_nest, load_text_blob, set_connection_key, load_json_blob, load_metadata
+from src.container import ServiceContainer
 from src.stages import Stage
 import time
 import json
@@ -8,7 +8,7 @@ import difflib
 from dotenv import load_dotenv
 import argparse
 
-# TODO: refactor to properly used DI services and dev/stage/prod
+container = ServiceContainer.create_production()
 
 def create_dataset(client: rg.Argilla, name):
     dataset = client.datasets(name)
@@ -89,7 +89,7 @@ def create_dataset(client: rg.Argilla, name):
 
 def create_records(dataset, schema_version, prompt_version, max_examples=10):
     # Stream from blob storage
-    blob_names = list_blobs_nest()
+    blob_names = container.storage.list_blobs_nest()
     
     records = []
     for company, policies in blob_names[Stage.SUMMARY_CLEAN.value].items():
@@ -98,7 +98,7 @@ def create_records(dataset, schema_version, prompt_version, max_examples=10):
                 for file in files:
                     # Only add records for specified versions
                     summ_name = os.path.join(Stage.SUMMARY_CLEAN.value, company, policy, timestamp, file)
-                    metadata = load_metadata(summ_name)
+                    metadata = container.storage.adapter.load_metadata(summ_name)
                     if metadata['schema_version'] != schema_version or metadata['prompt_version'] != prompt_version:
                         continue
 
@@ -120,7 +120,7 @@ def create_records(dataset, schema_version, prompt_version, max_examples=10):
                         continue
 
                     
-                    summary_txt = load_text_blob(summ_name)
+                    summary_txt = container.storage.load_text_blob(summ_name)
                     summary = json.loads(summary_txt)
 
                     records.append(rg.Record(
@@ -149,7 +149,7 @@ def create_records(dataset, schema_version, prompt_version, max_examples=10):
 
 
 def template_diffs(diff_name) -> dict:
-    diff_obj = load_json_blob(diff_name)
+    diff_obj = container.storage.load_json_blob(diff_name)
     # xxx: argilla does NOT accept list values.
     # so must be a string-keyed dict
     diffs = {}
@@ -218,7 +218,6 @@ if __name__ == "__main__":
     schema_version = "v1"
     prompt_version = "v1"
     if args.action == "add":
-        set_connection_key("AzureWebJobsStorage")
         dataset = create_dataset(client, dataset_version)
         create_records(dataset, schema_version, prompt_version, 20)
     if args.action == "download":
