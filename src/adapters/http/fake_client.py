@@ -1,51 +1,47 @@
-from typing import Any, Optional
-import json as json_lib
-from requests import HTTPError
-from src.adapters.http.protocol import HttpResponseProtocol, HttpProtocol
-
-
-class FakeHttpResponse(HttpResponseProtocol):
-    """Fake HTTP response for testing"""
-
-    def __init__(self, status_code: int = 200, text: str = "", json_data: Optional[Any] = None):
-        self.status_code = status_code
-        self.text = text
-        self._json_data = json_data
-
-    def json(self):
-        if self._json_data is not None:
-            return self._json_data
-        return json_lib.loads(self.text)
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise HTTPError(f"HTTP {self.status_code}")
+from datetime import datetime
+from typing import Optional
+from requests import Response
+from src.adapters.http.protocol import HttpProtocol
+from urllib.parse import urlparse
 
 
 class FakeHttpAdapter(HttpProtocol):
     """Fake HTTP client for testing with configurable responses"""
 
     def __init__(self) -> None:
-        self._responses : dict[str, FakeHttpResponse] = {}
-        self._default_response = FakeHttpResponse()
-        self._error_response: Optional[FakeHttpResponse] = None
+        self._responses: dict[str, Response] = {}
+        self._default_response: Optional[Response] = None
+        self._error_response: Optional[Response] = None
         self._call_count = 0
         self._error_until_call: Optional[int] = None
 
-    def configure_response(self, url: str, response: FakeHttpResponse):
-        """Configure a specific response for a URL"""
-        self._responses[url] = response
+    def _create_response(self, status_code: int = 200, text: str = "", json_data: Optional[dict] = None) -> Response:
+        """Create a fake requests.Response object"""
+        response = Response()
+        response.status_code = status_code
+        response._content = text.encode('utf-8') if text else b''
+        
+        if json_data is not None:
+            import json
+            response._content = json.dumps(json_data).encode('utf-8')
+            response.headers['Content-Type'] = 'application/json'
+        
+        return response
 
-    def configure_default_response(self, response: FakeHttpResponse):
+    def configure_response(self, url: str, status_code: int = 200, text: str = "", json_data: Optional[dict] = None):
+        """Configure a specific response for a URL"""
+        self._responses[url] = self._create_response(status_code, text, json_data)
+
+    def configure_default_response(self, status_code: int = 200, text: str = "", json_data: Optional[dict] = None):
         """Configure default response for unconfigured URLs"""
-        self._default_response = response
+        self._default_response = self._create_response(status_code, text, json_data)
 
     def configure_error(self, status_code: int, until_call: Optional[int] = None):
         """Configure the client to return an error response"""
-        self._error_response = FakeHttpResponse(status_code=status_code)
+        self._error_response = self._create_response(status_code=status_code)
         self._error_until_call = until_call
 
-    def get(self, url: str, **kwargs) -> FakeHttpResponse:
+    def get(self, url: str, **kwargs) -> Response:
         self._call_count += 1
 
         if self._error_response:
@@ -57,7 +53,7 @@ class FakeHttpAdapter(HttpProtocol):
     def reset(self):
         """Reset the fake client state"""
         self._responses = {}
-        self._default_response = FakeHttpResponse()
+        self._default_response = None
         self._error_response = None
         self._call_count = 0
         self._error_until_call = None
