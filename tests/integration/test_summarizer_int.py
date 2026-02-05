@@ -29,7 +29,7 @@ def test_summary(llm, storage):
     storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
     # Act
-    summarizer = Summarizer(storage=storage, llm=llm, prompt_eng=PromptEng())
+    summarizer = Summarizer(storage=storage, llm=llm, prompt_eng=PromptEng(storage))
     txt, meta = summarizer.summarize("test.json")
 
     # Assert

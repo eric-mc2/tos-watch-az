@@ -1,7 +1,7 @@
 import pytest
 from requests import HTTPError
 from src.transforms.snapshot_scraper import SnapshotScraper
-from src.adapters.http.fake_client import FakeHttpAdapter, FakeHttpResponse
+from src.adapters.http.fake_client import FakeHttpAdapter
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService
 from src.stages import Stage
@@ -37,11 +37,11 @@ class TestEncodingHandling:
         
         # Encode as windows-1252
         windows_1252_bytes = html_with_special_chars.encode('windows-1252')
-        
-        response = FakeHttpResponse(status_code=200)
-        response.content = windows_1252_bytes
-        response.headers = {'content-type': 'text/html; charset=windows-1252'}
-        
+
+        fake_http_client.configure_default_response(200,
+                                            text=windows_1252_bytes,
+                                            headers={'content-type': 'text/html; charset=windows-1252'})
+        response = fake_http_client.get("https://example.com")
         html_content, detected_encoding = scraper.decode_html(response)
         
         # Verify the special characters are preserved
@@ -55,11 +55,10 @@ class TestEncodingHandling:
         """Test that latin1 fallback handles invalid UTF-8"""
         # Create bytes that are valid latin1 but invalid UTF-8
         invalid_utf8 = b"<html><body>\xff\xfe</body></html>"
-        
-        response = FakeHttpResponse(status_code=200)
-        response.content = invalid_utf8
-        response.headers = {}
-        
+
+        fake_http_client.configure_default_response(200, text=invalid_utf8)
+        response = fake_http_client.get("https://example.com")
+
         html_content, detected_encoding = scraper.decode_html(response)
         
         # Should not crash and should return something
@@ -67,14 +66,13 @@ class TestEncodingHandling:
         assert len(html_content) > 0
 
 
-    def test_charset_extracted_from_quotes_in_header(self, scraper):
+    def test_charset_extracted_from_quotes_in_header(self, scraper, fake_http_client):
         """Test charset detection with quoted values in Content-Type header"""
         html_bytes = "<html><body>Test</body></html>".encode('iso-8859-1')
-        
-        response = FakeHttpResponse(status_code=200)
-        response.content = html_bytes
-        response.headers = {'content-type': 'text/html; charset="iso-8859-1"'}
-        
+
+        fake_http_client.configure_default_response(200, text=html_bytes, headers={'content-type': 'text/html; charset="iso-8859-1"'})
+        response = fake_http_client.get("https://example.com")
+
         html_content, detected_encoding = scraper.decode_html(response)
         
         assert detected_encoding == 'iso-8859-1'
@@ -169,11 +167,10 @@ class TestBlobNaming:
     def test_get_website_creates_correct_blob_path(self, scraper, fake_http_client, fake_storage):
         """Test blob path format: 02-snapshots/{company}/{policy}/{timestamp}.html"""
         html_content = "<html><body>Test</body></html>"
-        response = FakeHttpResponse(status_code=200)
-        response.content = html_content.encode('utf-8')
-        response.headers = {'content-type': 'text/html; charset=utf-8'}
-        
-        fake_http_client.configure_default_response(response)
+
+        fake_http_client.configure_default_response(200,
+                                                    text=html_content.encode('utf-8'),
+                                                    headers={'content-type': 'text/html; charset=utf-8'})
         
         scraper.get_website(
             company="acme",
@@ -190,14 +187,13 @@ class TestBlobNaming:
     def test_get_wayback_snapshot_constructs_correct_url_and_blob(self, scraper, fake_http_client, fake_storage):
         """Test wayback snapshot URL construction and blob naming"""
         html_content = "<html><body>Wayback content</body></html>"
-        response = FakeHttpResponse(status_code=200)
-        response.content = html_content.encode('utf-8')
-        response.headers = {}
-        
+
         task_id = "20240115/https://example.com/tos"
         expected_url = f"https://web.archive.org/web/{task_id}"
         
-        fake_http_client.configure_response(expected_url, response)
+        fake_http_client.configure_response(expected_url,
+                                            status_code=200,
+                                            text=html_content.encode('utf-8'))
         
         scraper.get_wayback_snapshot(
             company="testco",
@@ -246,12 +242,12 @@ class TestHttpErrorRetry:
         """Test retry logic: fails with headers, succeeds without"""
         # Configure to return error on first call, succeed on second
         fake_http_client.configure_error(403, until_call=1)
-        
-        success_response = FakeHttpResponse(status_code=200)
-        success_response.content = b"<html><body>Success</body></html>"
-        success_response.headers = {}
-        fake_http_client.configure_default_response(success_response)
-        
+
+        fake_http_client.configure_default_response(
+            200,
+            text=b"<html><body>Success</body></html>"
+        )
+
         # Should not raise exception due to retry
         scraper.get_website(
             company="testco",
@@ -311,11 +307,12 @@ class TestIntegration:
         </body>
         </html>
         """
-        
-        response = FakeHttpResponse(status_code=200)
-        response.content = complex_html.encode('utf-8')
-        response.headers = {'content-type': 'text/html; charset=utf-8'}
-        fake_http_client.configure_default_response(response)
+
+        fake_http_client.configure_default_response(
+            200,
+            text=complex_html.encode('utf-8'),
+            headers={'content-type': 'text/html; charset=utf-8'}
+        )
         
         scraper.get_website(
             company="bigcorp",

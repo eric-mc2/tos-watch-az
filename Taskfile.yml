@@ -12,7 +12,20 @@ tasks:
       - task --list
     silent: true
 
-  dev:
+  linter:
+    desc: Run mypy
+    cmds:
+      - mypy src/ schemas/ scripts/ function_app.py
+
+  tests:
+    desc: Run unit tests
+    cmds:
+      - pytest tests/transforms/test_snapshot_scraper.py --ignore tests/integration
+    env:
+      PYTHONPATH: "{{.ROOT_DIR}}"
+    interactive: true
+
+  run-dev:
     desc: Run function app in dev mode
     cmds:
       - func start

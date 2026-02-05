@@ -7,7 +7,7 @@ def storage():
     """Create a fresh storage adapter with a test container"""
     load_dotenv()
     
-    adapter = AzureStorageAdapter("test-integration-container")
+    adapter = AzureStorageAdapter()
     
     # Create container if it doesn't exist
     if not adapter.exists_container():

@@ -34,9 +34,10 @@ def invalid_urls():
 
 class TestSeeds:
     def test_seed_urls(self):
-        for url in STATIC_URLS:
-            assert path_utils.validate_url(url)
-            assert path_utils.extract_policy(url)
+        for company, urls in STATIC_URLS.items():
+            for url in urls:
+                assert path_utils.validate_url(url)
+                assert path_utils.extract_policy(url)
 
 class TestURLValidation:
     """Tests for URL validation and sanitization"""

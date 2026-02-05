@@ -3,7 +3,7 @@ import requests
 import json
 from src.transforms.metadata_scraper import MetadataScraper
 from src.services.blob import BlobService
-from src.adapters.http.fake_client import FakeHttpAdapter, FakeHttpResponse
+from src.adapters.http.fake_client import FakeHttpAdapter
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
 
@@ -50,7 +50,8 @@ class TestMetadataScraperIntegration:
                                                    fake_blob_service, sample_wayback_metadata):
         """Test successful metadata scraping with caching"""
         fake_http_client.configure_default_response(
-            FakeHttpResponse(status_code=200, json_data=sample_wayback_metadata)
+            status_code=200,
+            json_data=sample_wayback_metadata
         )
         
         metadata_scraper.scrape_wayback_metadata("https://example.com", "company1")
@@ -85,7 +86,7 @@ class TestMetadataScraperEdgeCases:
     def test_json_decode_error(self, metadata_scraper, fake_http_client):
         """Test handling of invalid JSON response"""
         fake_http_client.configure_default_response(
-            FakeHttpResponse(status_code=200, text="Scheduled Maintenance")
+            status_code=200, text="Scheduled Maintenance"
         )
         
         with pytest.raises(Exception):

@@ -1,12 +1,15 @@
 import pytest
 import json
+
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.container import ServiceContainer
+from src.services.blob import BlobService
+
 
 @pytest.fixture
 def blob_service():
     """Create a BlobService with FakeStorageAdapter for testing."""
-    services = ServiceContainer.create_dev()
-    return services.storage
+    return BlobService(FakeStorageAdapter())
 
 
 @pytest.fixture

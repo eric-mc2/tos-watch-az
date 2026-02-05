@@ -16,8 +16,6 @@ def llm():
     # Teardown
     adapter.close()
 
-    yield None
-
 
 def test_hello(llm):
     """Test connection"""
