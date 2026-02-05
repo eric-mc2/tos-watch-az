@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from requests import HTTPError
+from requests import HTTPError, Response
 from bs4 import BeautifulSoup
 import chardet  # Add this import for encoding detection
 
@@ -17,7 +17,7 @@ class SnapshotScraper:
     http_client: HttpProtocol
 
     @staticmethod
-    def decode_html(resp):
+    def decode_html(resp: Response):
         # Handle encoding properly
         # First, try to detect the actual encoding from the response
         import re

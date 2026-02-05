@@ -7,17 +7,19 @@ from src.adapters.storage.protocol import BlobStorageProtocol, DEFAULT_CONNECTIO
 
 _client : Optional[BlobServiceClient] = None
 
+# TODO: Need to check interplay between this and service and function app w.r.t. CONTAINER/ prefix.
+
 class AzureStorageAdapter(BlobStorageProtocol):
 
-    def __init__(self, container: str, key: str = DEFAULT_CONNECTION):
-        super().__init__(container, key)
+    def __init__(self, key: str = DEFAULT_CONNECTION):
+        super().__init__(key)
         global _client
         if _client is not None:
             _client.close()
             _client = None
 
 
-    def get_blob_service_client(self, ) -> BlobServiceClient:
+    def get_blob_service_client(self) -> BlobServiceClient:
         global _client
         """Get blob service client from connection string environment variable"""
         if _client is not None:
@@ -47,7 +49,8 @@ class AzureStorageAdapter(BlobStorageProtocol):
 
 
     # Read Ops
-    def exists_blob(self, blob_name) -> bool:
+    def exists_blob(self, blob_name: str) -> bool:
+        blob_name = blob_name.removeprefix(f"{self.container}/")
         client = self.get_blob_service_client()
         container_client = client.get_container_client(self.container)
         blob_client = container_client.get_blob_client(blob_name)
@@ -66,30 +69,30 @@ class AzureStorageAdapter(BlobStorageProtocol):
         return blobs
 
 
-    def load_metadata(self, name: str) -> dict:
+    def load_metadata(self, blob_name: str) -> dict:
         def loader(client: BlobClient):
             return client.get_blob_properties().metadata
+        return self._load_blob(blob_name, loader)
 
-        return self._load_blob(name, loader)
 
-
-    def load_blob(self, name: str) -> bytes:
+    def load_blob(self, blob_name: str) -> bytes:
         def loader(client: BlobClient):
             return client.download_blob().readall()
+        return self._load_blob(blob_name, loader)
 
-        return self._load_blob(name, loader)
 
-
-    def _load_blob(self, name: str, getter: Callable):
+    def _load_blob(self, blob_name: str, getter: Callable):
+        blob_name = blob_name.removeprefix(f"{self.container}/")
         blob_service_client = self.get_blob_service_client()
-        blob_client = blob_service_client.get_blob_client(container=self.container, blob=name)
+        blob_client = blob_service_client.get_blob_client(container=self.container, blob=blob_name)
         if not blob_client.exists():
-            raise ValueError(f"Blob {self.container}/{name} does not exist!")
+            raise ValueError(f"Blob {self.container}/{blob_name} does not exist!")
         return getter(blob_client)
 
 
     # Write Ops
-    def upload_blob(self, data, blob_name, content_type, metadata=None) -> None:
+    def upload_blob(self, data, blob_name: str, content_type: str, metadata=None) -> None:
+        blob_name = blob_name.removeprefix(f"{self.container}/")
         blob_service_client = self.get_blob_service_client()
         # Upload to blob storage with explicit UTF-8 encoding
         blob_client = blob_service_client.get_blob_client(
@@ -107,8 +110,8 @@ class AzureStorageAdapter(BlobStorageProtocol):
             metadata=metadata
         )
 
-
-    def upload_metadata(self, data, blob_name) -> None:
+    def upload_metadata(self, data, blob_name: str) -> None:
+        blob_name = blob_name.removeprefix(f"{self.container}/")
         blob_service_client = self.get_blob_service_client()
         blob_client = blob_service_client.get_blob_client(
             container=self.container,
@@ -118,7 +121,8 @@ class AzureStorageAdapter(BlobStorageProtocol):
 
 
     # Delete Ops
-    def remove_blob(self, blob_name) -> None:
+    def remove_blob(self, blob_name: str) -> None:
+        blob_name = blob_name.removeprefix(f"{self.container}/")
         blob_service_client = self.get_blob_service_client()
         blob_client = blob_service_client.get_blob_client(
             container=self.container,

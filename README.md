@@ -118,7 +118,7 @@ HF_TOKEN="your api key"
 open vscode and use Azurite: Start command
 
 # Start the Azure Functions runtime locally
-task dev
+task run-dev
 
 # Run tests
 pytest
@@ -127,14 +127,14 @@ pytest
 func azure functionapp publish [function-app-name]
 ```
 
-### Staging environment
+### Production environment
 
 ```bash
 # Start azurite service in VSCode
 open vscode and use Azurite: Start command
 
 # Start the Azure Functions runtime locally
-task stage
+task run-prod
 ```
 
 ## Usage

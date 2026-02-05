@@ -35,7 +35,7 @@ KILL_ALL = "KILL_ALL"
 def validate_files(env, *args, **kwargs) -> dict:
     # TODO: Consolidate environment handling into service container?
     conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
-    storage = BlobService(AzureStorageAdapter("documents", conn_key))
+    storage = BlobService(AzureStorageAdapter(conn_key))
     http = RequestsAdapter()
     llm = LLMService(ClaudeAdapter())
     container = ServiceContainer.create_container(storage, http, llm)

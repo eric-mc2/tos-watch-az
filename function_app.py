@@ -23,10 +23,10 @@ app = func.FunctionApp()
 logger = setup_logger(__name__, logging.DEBUG)
 logging.getLogger('azure').setLevel(logging.WARNING)
 
-ENV = os.environ.get("LIFECYCLE_ENV", "DEV")
+ENV = os.environ.get("ENV", "DEV")
 assert ENV in get_args(TEnv)
 
-container = ServiceContainer.create(ENV)
+container = ServiceContainer.create(ENV)  # type: ignore
 
 @app.orchestration_trigger(context_name="context")
 @pretty_error
@@ -60,7 +60,7 @@ async def check_circuit_breaker(req: func.HttpRequest, client: df.DurableOrchest
     from src.orchestration.orchestrator import WORKFLOW_CONFIGS
     if hasattr(req, "params") and req.params is not None and "workflow_type" in req.params:
         workflow_type = req.params["workflow_type"]
-        data = await check_cb(workflow_type, client)
+        data = [await check_cb(workflow_type, client)]
     else:
         data = [await check_cb(w, client) for w in WORKFLOW_CONFIGS.keys()]
 
@@ -209,10 +209,8 @@ def annotate_snap(input_blob: func.InputStream, output_blob: func.Out[str]) -> N
                 connection=container.storage.adapter.get_connection_key())
 @pretty_error
 def single_diff(input_blob: func.InputStream) -> None:
-    differ = container.differ_transform
-    blob_name = input_blob.name.removeprefix("documents/")
-    differ.diff_and_save(blob_name)
-#
+    container.differ_transform.diff_and_save(input_blob.name)
+
 @app.blob_trigger(arg_name="input_blob",
                 path="documents/05-diffs-raw/{company}/{policy}/{timestamp}.json",
                 connection=container.storage.adapter.get_connection_key(),
@@ -235,8 +233,8 @@ def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]) -> Non
 @pretty_error
 async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the summarizer workflow orchestration."""
-    blob_name = input_blob.name.removeprefix("documents/")
-    parts = container.storage.parse_blob_path(blob_name)
+    parts = container.storage.parse_blob_path(p.name)
+    blob_name = container.storage.unparse_blob_path(parts)
     orchestration_input = OrchData(blob_name, "summarizer", parts.company, parts.policy, parts.timestamp).to_dict()
     logger.info(f"Initiating orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
@@ -263,10 +261,9 @@ def summarizer_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
-    blob_name = input_blob.name.removeprefix("documents/")
-    in_path = container.storage.parse_blob_path(blob_name)
+    in_path = container.storage.parse_blob_path(input_blob.name)
     txt = input_blob.read().decode()
-    metadata = container.storage.adapter.load_metadata(blob_name)
+    metadata = container.storage.adapter.load_metadata(input_blob.name)
     schema = CLASS_REGISTRY[metadata['schema_version']]
     cleaned_txt = container.summarizer_transform.llm.validate_output(txt, schema)
 
@@ -275,7 +272,7 @@ def parse_summary(input_blob: func.InputStream) -> None:
     # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
     out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
     container.storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
-    logger.info(f"Successfully validated blob: {blob_name}")
+    logger.info(f"Successfully validated blob: {input_blob.name}")
 
 
 # @app.route(route="prompt_experiment", auth_level=func.AuthLevel.FUNCTION)

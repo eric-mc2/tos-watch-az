@@ -44,17 +44,25 @@ class ServiceContainer:
     @classmethod
     def create_production(cls) -> 'ServiceContainer':
         """Create container with production dependencies"""
-        blob_storage = BlobService(AzureStorageAdapter("documents", "APP_BLOB_CONNECTION_STRING"))
+        blob_storage = BlobService(AzureStorageAdapter("APP_BLOB_CONNECTION_STRING"))
         http_client = RequestsAdapter()
         llm_client = LLMService(ClaudeAdapter())
         return cls.create_container(blob_storage, http_client, llm_client)
 
     @classmethod
     def create_dev(cls) -> 'ServiceContainer':
-        """Create container with test doubles"""
-        blob_storage = BlobService(AzureStorageAdapter("documents"))
+        """Create container with integration dependencies """
+        blob_storage = BlobService(AzureStorageAdapter())
         http_client = RequestsAdapter()
         llm_client = LLMService(ClaudeAdapter())
+        return cls.create_container(blob_storage, http_client, llm_client)
+
+    @classmethod
+    def create_test(cls) -> 'ServiceContainer':
+        """Create container with test doubles"""
+        blob_storage = BlobService(FakeStorageAdapter())
+        http_client = FakeHttpAdapter()
+        llm_client = LLMService(FakeLLMAdapter())
         return cls.create_container(blob_storage, http_client, llm_client)
 
     

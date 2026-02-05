@@ -43,6 +43,11 @@ class BlobService:
             raise ValueError(f"Invalid path {path}")
 
 
+    @staticmethod
+    def unparse_blob_path(path: tuple):
+        return '/'.join(path)
+
+
     # Domain Specific Queries
     def list_blobs_nest(self) -> dict:
         """Represent container as dictionary."""
@@ -60,7 +65,6 @@ class BlobService:
 
     # Domain Specific Operations
     def check_blob(self, blob_name: str, touch: bool=False) -> bool:
-        blob_name = blob_name.removeprefix(f"{self.container}/")
         exists = self.adapter.exists_blob(blob_name)
         if exists and touch:
             metadata = self.adapter.load_metadata(blob_name)
@@ -100,32 +104,28 @@ class BlobService:
 
 
     # Convenience Methods
-    def load_json_blob(self, name: str) -> dict:
-        name = name.removeprefix(f"{self.container}/")
-        logger.debug(f"Downloading blob: {self.container}/{name}")
-        data = self.adapter.load_blob(name)
+    def load_json_blob(self, blob_name: str) -> dict:
+        data = self.adapter.load_blob(blob_name)
         try:
             json_data = json.loads(data.decode('utf-8'))
             return json_data
         except Exception as e:
-            logger.error(f"Invalid json blob {name}:\n{e}")
+            logger.error(f"Invalid json blob {blob_name}:\n{e}")
             raise
 
 
-    def load_text_blob(self, name: str) -> str:
-        name = name.removeprefix(f"{self.container}/")
-        logger.debug(f"Downloading blob: {self.container}/{name}")
-        data = self.adapter.load_blob(name)
+    def load_text_blob(self, blob_name: str) -> str:
+        data = self.adapter.load_blob(blob_name)
         try:
             txt = data.decode('utf-8')
             return txt
         except Exception as e:
-            logger.error(f"Error decoding text blob {name}:\n{e}")
+            logger.error(f"Error decoding text blob {blob_name}:\n{e}")
             raise
 
 
     def upload_blob(self, data: Any, blob_name: str, content_type: str, metadata: Optional[dict]=None) -> None:
-        logger.debug(f"Uploading blob to {self.container}/{blob_name}")
+        logger.debug(f"Uploading blob to {blob_name}")
         self.adapter.upload_blob(data, blob_name, content_type, metadata)
 
 
@@ -146,11 +146,13 @@ class BlobService:
         content_type = 'text/html; charset=utf-8'
         self.upload_blob(html_bytes, blob_name, content_type, metadata)
 
+
     def upload_metadata(self, data: dict, blob_name: str) -> None:
         if not self.adapter.exists_blob(blob_name):
             return
-        logger.debug(f"Uploading metadata to {self.container}/{blob_name}")
+        logger.debug(f"Uploading metadata to {blob_name}")
         self.adapter.upload_metadata(data, blob_name)
+
 
     def remove_blob(self, blob_name: str) -> None:
         if not self.adapter.exists_blob(blob_name):
