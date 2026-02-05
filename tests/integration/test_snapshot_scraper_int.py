@@ -44,5 +44,5 @@ class TestSnapshotScraperIntegration:
                     success += 1
                 except HTTPError as e:
                     fails += 1
-        # TODO: This fails on a bunch of urls.
-        print(f"Success: {success}. Fails: {fails}")
+        assert fails == 0, f"Success {success}. Fails {fails}"
+            

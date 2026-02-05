@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from requests import HTTPError, Response
+from requests import Response
 from bs4 import BeautifulSoup
 import chardet  # Add this import for encoding detection
 
@@ -15,6 +15,7 @@ logger = setup_logger(__name__, logging.INFO)
 class SnapshotScraper:
     storage: BlobService
     http_client: HttpProtocol
+
 
     @staticmethod
     def decode_html(resp: Response):
@@ -84,18 +85,7 @@ class SnapshotScraper:
             # Don't try-cach this because want to fail fast if blob service is out.
             logger.info(f"Blob {blob_name} exists. Skipping.")
         else:
-            logger.debug(f"Requesting html for {url}")
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Charset': 'utf-8, iso-8859-1;q=0.5'
-            }
-            resp = self.http_client.get(url, timeout=90, headers=headers)
-            try:
-                resp.raise_for_status()
-            except HTTPError as e:
-                # Try without these headers for kicks. Sometimes works (meta.com)
-                resp = self.http_client.get(url, timeout=90)
-                resp.raise_for_status()
+            resp = self.http_client.get(url)
 
             logger.debug(f"Testing html encoding.")
             html_content, detected_encoding = self.decode_html(resp)
@@ -106,3 +96,5 @@ class SnapshotScraper:
 
             self.storage.upload_html_blob(cleaned_html, blob_name)
             logger.info(f"Saved snapshot to blob: {blob_name}")
+
+    
