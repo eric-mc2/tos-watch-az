@@ -18,7 +18,7 @@ def prod_http_client():
 class TestHttpIntegration:
     """Integration tests for end-to-end behavior"""
 
-    @pytest.skip
+    @pytest.mark.skip
     def test_successful_scrape(self, prod_http_client):
         """Test successful metadata scraping with caching"""
         success = 0

@@ -21,7 +21,7 @@ tasks:
     desc: Run unit tests
     cmds:
       - mypy tests/
-      - pytest tests/transforms/test_snapshot_scraper.py --ignore tests/integration
+      - pytest tests/ --ignore tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
     interactive: true
