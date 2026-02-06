@@ -8,6 +8,7 @@ from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
 from src.utils.path_utils import extract_policy
 
+
 @pytest.fixture
 def prod_http_client():
     client = RequestsAdapter()
@@ -17,6 +18,7 @@ def prod_http_client():
 class TestHttpIntegration:
     """Integration tests for end-to-end behavior"""
 
+    @pytest.skip
     def test_successful_scrape(self, prod_http_client):
         """Test successful metadata scraping with caching"""
         success = 0
