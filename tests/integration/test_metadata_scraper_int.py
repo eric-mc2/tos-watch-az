@@ -36,7 +36,7 @@ class TestMetadataScraperIntegration:
         """Test successful metadata scraping with caching"""
 
         company = "grammarly"
-        url = STATIC_URLS[company][0]
+        url = STATIC_URLS[company][1]
         metadata_scraper.scrape_wayback_metadata(url, company)
 
         # Verify blob was uploaded

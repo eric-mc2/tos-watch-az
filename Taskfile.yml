@@ -17,11 +17,29 @@ tasks:
     cmds:
       - mypy src/ schemas/ scripts/ function_app.py
 
-  tests:
+  tests-unit:
     desc: Run unit tests
     cmds:
       - mypy tests/
       - pytest tests/ --ignore tests/integration
+    env:
+      PYTHONPATH: "{{.ROOT_DIR}}"
+    interactive: true
+  
+  tests-int:
+    desc: Run integration tests
+    cmds:
+      - mypy tests/
+      - pytest tests/integration
+    env:
+      PYTHONPATH: "{{.ROOT_DIR}}"
+    interactive: true
+  
+  tests-all:
+    desc: Run all tests
+    cmds:
+      - mypy tests/
+      - pytest tests/
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
     interactive: true
