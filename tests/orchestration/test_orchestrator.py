@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 import time
-from azure import durable_functions as df
+from azure import durable_functions as df  # type: ignore
 from src.orchestration.rate_limiter import rate_limiter_entity, TRY_ACQUIRE
 from src.orchestration.orchestrator import orchestrator_logic, WorkflowConfig
 from src.orchestration.circuit_breaker import circuit_breaker_entity, GET_STATUS

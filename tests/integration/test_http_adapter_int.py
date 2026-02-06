@@ -14,33 +14,17 @@ def prod_http_client():
     return client
 
 
-@pytest.fixture
-def fake_blob_service():
-    """Fake blob service using FakeStorageAdapter"""
-    adapter = FakeStorageAdapter()
-    adapter.create_container()
-    return BlobService(adapter)
-
-
-@pytest.fixture
-def snapshot_scraper(fake_blob_service, prod_http_client) -> SnapshotScraper:
-    """SnapshotScraper with fake/real dependencies"""
-    return SnapshotScraper(
-        storage=fake_blob_service,
-        http_client=prod_http_client,
-    )
-
-class TestSnapshotScraperIntegration:
+class TestHttpIntegration:
     """Integration tests for end-to-end behavior"""
 
-    def test_successful_scrape(self, snapshot_scraper):
+    def test_successful_scrape(self, prod_http_client):
         """Test successful metadata scraping with caching"""
         success = 0
         fails = 0
         for company, urls in STATIC_URLS.items():
             for url in urls:
                 try:
-                    resp = snapshot_scraper.fetch(url)
+                    resp = prod_http_client.get_and_raise(url)
                     success += 1
                 except HTTPError as e:
                     fails += 1

@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from requests import Response
+from requests import Response, HTTPError
 from bs4 import BeautifulSoup
 import chardet  # Add this import for encoding detection
 
@@ -85,16 +85,23 @@ class SnapshotScraper:
             # Don't try-cach this because want to fail fast if blob service is out.
             logger.info(f"Blob {blob_name} exists. Skipping.")
         else:
-            resp = self.http_client.get(url)
+            try:
+                resp = self.http_client.get_and_raise(url)
+                logger.debug(f"Testing html encoding.")
+                html_content, detected_encoding = self.decode_html(resp)
 
-            logger.debug(f"Testing html encoding.")
-            html_content, detected_encoding = self.decode_html(resp)
+                # Extract and clean the HTML with encoding info
+                logger.debug("Cleaning html.")
+                cleaned_html = self.extract_main_text(html_content, encoding=detected_encoding or None)
 
-            # Extract and clean the HTML with encoding info
-            logger.debug("Cleaning html.")
-            cleaned_html = self.extract_main_text(html_content, encoding=detected_encoding or None)
+                self.storage.upload_html_blob(cleaned_html, blob_name)
+                logger.info(f"Saved snapshot to blob: {blob_name}")
 
-            self.storage.upload_html_blob(cleaned_html, blob_name)
-            logger.info(f"Saved snapshot to blob: {blob_name}")
+            except HTTPError as e:
+                if e.response.status_code == 403:
+                    pass  # Don't want 403's to trip circuit breaker. 403's are not correlated in this context
+                else:
+                    raise
+
 
     

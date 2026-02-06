@@ -56,7 +56,6 @@ class RequestsAdapter(HttpProtocol):
         try:
             resp = requests.get(url, timeout=90, headers=headers)
             resp.raise_for_status()
-            return resp
         except HTTPError as e:
             if e.response.status_code == 403:
                 logger.warning(f"Got 403 with default headers, trying alternatives...")
@@ -93,8 +92,5 @@ class RequestsAdapter(HttpProtocol):
                 logger.debug("Trying with minimal headers as last resort")
                 time.sleep(1)
                 resp = requests.get(url, timeout=90)
-                resp.raise_for_status()
                 return resp
-            else:
-                raise
-
+        return resp

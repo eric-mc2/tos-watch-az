@@ -238,31 +238,6 @@ class TestHttpErrorRetry:
             )
 
 
-    def test_first_fails_second_succeeds_without_headers(self, scraper, fake_http_client, fake_storage):
-        """Test retry logic: fails with headers, succeeds without"""
-        # Configure to return error on first call, succeed on second
-        fake_http_client.configure_error(403, until_call=1)
-
-        fake_http_client.configure_default_response(
-            200,
-            text=b"<html><body>Success</body></html>"
-        )
-
-        # Should not raise exception due to retry
-        scraper.get_website(
-            company="testco",
-            policy="privacy",
-            timestamp="20240301",
-            url="https://example.com/retry-test"
-        )
-        
-        # Blob should be created from second attempt
-        assert fake_storage.check_blob(f"{Stage.SNAP.value}/testco/privacy/20240301.html")
-        
-        # Verify client was called twice
-        assert fake_http_client._call_count == 2
-
-
     def test_skips_existing_blob(self, scraper, fake_http_client, fake_storage):
         """Test that existing blobs are skipped without HTTP request"""
         blob_name = f"{Stage.SNAP.value}/existing/policy/20240101.html"
