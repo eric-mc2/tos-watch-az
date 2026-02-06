@@ -141,7 +141,7 @@ def scraper_processor(input_data: dict) -> None:
 
 
 @app.timer_trigger(arg_name="input_timer",
-                   schedule="*/10 * * * *")  # 0 0 * * 1
+                   schedule="0 0 * * 1")
 @app.durable_client_input(client_name="client")
 @pretty_error
 async def scraper_scheduled_trigger(input_timer: func.TimerRequest,
