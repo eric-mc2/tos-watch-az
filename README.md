@@ -3,7 +3,7 @@
 > Automated monitoring and analysis of major platform Terms of Service changes using Azure Durable Functions and Anthropic API
 
 ![Build Status](https://github.com/eric-mc2/tos-watch-az/actions/workflows/main_tos-function-app.yml/badge.svg)
-![Tests](https://github.com/eric-mc2/tos-watch-az/actions/workflows/main_tos-function-app.yml/badge.svg?job=test)
+![Tests](https://github.com/<org>/<repo>/actions/workflows/test.yml/badge.svg?branch=main)
 
 
 [![Azure Functions](https://img.shields.io/badge/Azure-Functions-blue)](https://azure.microsoft.com/en-us/services/functions/)
