@@ -8,7 +8,6 @@
 
 [![Azure Functions](https://img.shields.io/badge/Azure-Functions-blue)](https://azure.microsoft.com/en-us/services/functions/)
 [![Python](https://img.shields.io/badge/Python-3.9+-green)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Overview
 
