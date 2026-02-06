@@ -57,7 +57,7 @@ class FakeHttpAdapter(HttpProtocol):
         self._error_response = self._create_response(status_code=status_code)
         self._error_until_call = until_call
 
-    def get(self, url: str, **kwargs) -> Response:
+    def get(self, url: str, mode: str, **kwargs) -> Response:
         self._call_count += 1
 
         if self._error_response is not None:

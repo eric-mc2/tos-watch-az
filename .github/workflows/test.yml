@@ -16,10 +16,18 @@ on:
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
   PYTHON_VERSION: '3.12' # set this to the python version to use (supports 3.6, 3.7, 3.8)
+  AzureWebJobsStorage: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite
+        ports:
+          - 10000:10000
+          - 10001:10001
+          - 10002:10002
     permissions:
       contents: read
     steps:
@@ -39,7 +47,7 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
 
-      - name: Run mypy
+      - name: Run linter
         run: |
           source venv/bin/activate
           mypy src/ scripts/ schemas/ function_app.py
@@ -47,4 +55,9 @@ jobs:
       - name: Run unit tests
         run: |
           source venv/bin/activate
-          pytest tests/ -v
+          pytest tests/ -v --ignore tests/integration
+      
+      - name: Run integration tests
+        run: |
+          source venv/bin/activate
+          pytest tests/integration -v --ignore tests/integration/test_summarizer_int.py

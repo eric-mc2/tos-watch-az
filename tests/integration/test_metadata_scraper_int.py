@@ -35,9 +35,10 @@ class TestMetadataScraperIntegration:
     def test_successful_metadata_scrape_and_cache(self, metadata_scraper):
         """Test successful metadata scraping with caching"""
 
-        url = STATIC_URLS["google"][0]
-        metadata_scraper.scrape_wayback_metadata(url, "company1")
+        company = "grammarly"
+        url = STATIC_URLS[company][0]
+        metadata_scraper.scrape_wayback_metadata(url, company)
 
         # Verify blob was uploaded
         policy = extract_policy(url)
-        assert metadata_scraper.storage.check_blob(f"{Stage.META.value}/company1/{policy}/metadata.json")
+        assert metadata_scraper.storage.check_blob(f"{Stage.META.value}/{company}/{policy}/metadata.json")
