@@ -7,6 +7,7 @@ import os
 from functools import wraps
 from dataclasses import dataclass, asdict
 from src.utils.log_utils import setup_logger
+from dotenv import load_dotenv
 
 logger = setup_logger(__name__, logging.DEBUG)
 
@@ -93,3 +94,13 @@ def condensed_tb(exc) -> str:
             f'{filename}:{frame.lineno} in {frame.name}'
         )
     return "\n".join(condensed_trace)
+
+def load_env_vars():
+    app_env = os.environ.get("APP_ENV", "DEV")
+    if app_env == "PROD":
+        # Points to real production resources
+        # nb: In the actual prod environment these are injected by the runtime.
+        load_dotenv(".env.prod")
+    else:
+        # For local (integration) development
+        load_dotenv(".env.dev")

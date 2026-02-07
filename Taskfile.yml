@@ -24,6 +24,7 @@ tasks:
       - pytest tests/ --ignore tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
+      APP_ENV: DEV
     interactive: true
   
   tests-int:
@@ -33,6 +34,7 @@ tasks:
       - pytest tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
+      APP_ENV: DEV
     interactive: true
   
   tests-all:
@@ -42,6 +44,7 @@ tasks:
       - pytest tests/
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
+      APP_ENV: DEV
     interactive: true
 
   run-dev:
@@ -49,14 +52,14 @@ tasks:
     cmds:
       - func start
     env:
-      ENV: DEV
+      APP_ENV: DEV
 
   run-prod:
     desc: Run function app in production mode
     cmds:
       - func start
     env:
-      ENV: PROD
+      APP_ENV: PROD
 
   list-tasks:
     desc: List current tasks in Azure runtime

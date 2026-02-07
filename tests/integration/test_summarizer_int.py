@@ -1,4 +1,5 @@
 import pytest
+import os
 
 from schemas.summary.v3 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
@@ -8,6 +9,9 @@ from src.services.llm import LLMService
 from src.adapters.llm.client import ClaudeAdapter
 from src.services.blob import BlobService
 from src.adapters.storage.fake_client import FakeStorageAdapter
+
+APP_ENV = os.environ.get("APP_ENV", "PROD")
+
 
 @pytest.fixture
 def llm():
@@ -19,6 +23,7 @@ def storage():
     adapter = FakeStorageAdapter()
     return BlobService(adapter)
 
+@pytest.mark.skipif(APP_ENV != "DEV", reason="Skip for CI")
 def test_summary(llm, storage):
     # Arrange
     diff = DiffDoc(diffs=[

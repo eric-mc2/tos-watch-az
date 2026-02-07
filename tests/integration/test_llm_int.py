@@ -1,14 +1,13 @@
 import pytest
 from src.adapters.llm.protocol import Message
-from src.adapters.storage.client import AzureStorageAdapter
-from dotenv import load_dotenv
 from src.adapters.llm.client import ClaudeAdapter
+from src.utils.app_utils import load_env_vars
 
 
 @pytest.fixture(scope='module')
 def llm():
     """Create a fresh storage adapter with a test container"""
-    load_dotenv()
+    load_env_vars()
     adapter = ClaudeAdapter()
 
     yield adapter

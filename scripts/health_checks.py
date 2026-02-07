@@ -6,7 +6,6 @@ import logging
 import os
 import argparse
 from collections import Counter
-from dotenv import load_dotenv
 from azure import durable_functions as df  # type: ignore
 
 from src.adapters.http.client import RequestsAdapter
@@ -16,6 +15,7 @@ from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
 from src.services.blob import BlobService
 from src.services.llm import LLMService
+from src.utils.app_utils import load_env_vars
 from src.utils.log_utils import setup_logger
 from src.utils.path_utils import extract_policy
 from src.stages import Stage
@@ -27,7 +27,7 @@ setup_logger(__name__, logging.WARNING)
 logging.getLogger("azure").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-load_dotenv()
+load_env_vars()
 
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"

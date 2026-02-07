@@ -1,11 +1,13 @@
 import pytest
 from src.adapters.storage.client import AzureStorageAdapter
-from dotenv import load_dotenv
+
+from src.utils.app_utils import load_env_vars
+
 
 @pytest.fixture
 def storage():
     """Create a fresh storage adapter with a test container"""
-    load_dotenv()
+    load_env_vars()
     
     adapter = AzureStorageAdapter()
     
