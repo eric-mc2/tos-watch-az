@@ -96,8 +96,8 @@ def condensed_tb(exc) -> str:
     return "\n".join(condensed_trace)
 
 def load_env_vars():
-    app_env = os.environ.get("APP_ENV", "DEV")
-    if app_env == "PROD":
+    target_env = os.environ.get("TARGET_ENV", "DEV")
+    if target_env == "PROD":
         # Points to real production resources
         # nb: In the actual prod environment these are injected by the runtime.
         load_dotenv(".env.prod")

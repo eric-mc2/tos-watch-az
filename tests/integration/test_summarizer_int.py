@@ -10,7 +10,7 @@ from src.adapters.llm.client import ClaudeAdapter
 from src.services.blob import BlobService
 from src.adapters.storage.fake_client import FakeStorageAdapter
 
-APP_ENV = os.environ.get("APP_ENV", "PROD")
+RUNTIME_ENV = os.environ.get("RUNTIME_ENV", "PROD")
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def storage():
     adapter = FakeStorageAdapter()
     return BlobService(adapter)
 
-@pytest.mark.skipif(APP_ENV != "DEV", reason="Skip for CI")
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 def test_summary(llm, storage):
     # Arrange
     diff = DiffDoc(diffs=[
