@@ -47,6 +47,12 @@ tasks:
       APP_ENV: DEV
     interactive: true
 
+  tests-stage:
+    desc: Run all tests emulating github actions staging env.
+    cmds:
+      - act -W '.github/workflows/test.yml' --rm
+    interactive: true
+
   run-dev:
     desc: Run function app in dev mode
     cmds:
@@ -85,3 +91,4 @@ tasks:
     desc: Download labeled dataset from Argilla HF space
     cmds:
       - python scripts/labeling.py --action download
+
