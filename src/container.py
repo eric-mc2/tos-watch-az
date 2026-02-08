@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Literal
 import os
 
 from src.adapters.http.protocol import HttpProtocol
@@ -15,7 +14,7 @@ from src.services.llm import LLMService
 from src.transforms.metadata_scraper import MetadataScraper
 from src.transforms.prompt_eng import PromptEng
 from src.transforms.snapshot_scraper import SnapshotScraper
-from src.transforms.summarizer import Summarizer
+from src.transforms.summary.summarizer import Summarizer
 
 @dataclass
 class ServiceContainer:

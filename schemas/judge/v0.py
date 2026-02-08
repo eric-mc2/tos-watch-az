@@ -2,9 +2,9 @@ from pydantic import BaseModel
 from schemas.registry import register
 
 VERSION = "v0"
-MODULE = "summary"
+MODULE = "judge"
 
 @register(MODULE, VERSION)
-class SummaryBase(BaseModel):
+class JudgeBase(BaseModel):
     # This is intentionally empty to basically facilitate a union type.
     pass

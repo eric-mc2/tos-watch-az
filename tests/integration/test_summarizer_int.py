@@ -4,7 +4,7 @@ import os
 from schemas.summary.v3 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
 from src.transforms.prompt_eng import PromptEng
-from src.transforms.summarizer import Summarizer
+from src.transforms.summary.summarizer import Summarizer
 from src.services.llm import LLMService
 from src.adapters.llm.client import ClaudeAdapter
 from src.services.blob import BlobService

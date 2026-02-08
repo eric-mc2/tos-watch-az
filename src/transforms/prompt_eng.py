@@ -4,7 +4,8 @@ import pandas as pd
 from pydantic import ValidationError
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from schemas.summary.registry import CLASS_REGISTRY
+from schemas.registry import SCHEMA_REGISTRY
+from schemas.summary.v0 import MODULE
 from src.services.blob import BlobService
 from src.stages import Stage
 
@@ -66,7 +67,7 @@ class PromptEng:
             key = os.path.join(Stage.DIFF_RAW.value, path.company, path.policy, path.timestamp + ".json")
             meta = self.storage.adapter.load_metadata(blob)
     
-            schema = CLASS_REGISTRY[meta['schema_version']]
+            schema = SCHEMA_REGISTRY[MODULE][meta['schema_version']]
             summary_raw = self.storage.load_json_blob(blob)
             try:
                 summary = schema(**summary_raw)

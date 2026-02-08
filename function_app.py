@@ -7,7 +7,8 @@ import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
-from schemas.summary.registry import CLASS_REGISTRY
+from schemas.registry import SCHEMA_REGISTRY
+from schemas.summary.v0 import MODULE
 from src.transforms.seeds import STATIC_URLS
 from src.utils.log_utils import setup_logger
 from src.utils.app_utils import http_wrap, pretty_error, load_env_vars
@@ -260,7 +261,7 @@ def parse_summary(input_blob: func.InputStream) -> None:
     in_path = container.storage.parse_blob_path(input_blob.name)
     txt = input_blob.read().decode()
     metadata = container.storage.adapter.load_metadata(input_blob.name)
-    schema = CLASS_REGISTRY[metadata['schema_version']]
+    schema = SCHEMA_REGISTRY[MODULE][metadata['schema_version']]
     cleaned_txt = container.summarizer_transform.llm.validate_output(txt, schema)
 
     out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")

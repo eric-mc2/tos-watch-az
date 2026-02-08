@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List
-from schemas.summary.registry import register
-from schemas.summary.v0 import SummaryBase
+from schemas.registry import register
+from schemas.summary.v0 import SummaryBase, MODULE
 
 VERSION = "v1"
 
@@ -9,7 +9,7 @@ class Substantive(BaseModel):
     rating: bool
     explanation: str
 
-@register(VERSION)
+@register(MODULE, VERSION)
 class Summary(SummaryBase):
     legally_substantive: Substantive
     practically_substantive: Substantive

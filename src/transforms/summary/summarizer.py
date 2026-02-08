@@ -3,12 +3,12 @@ import logging
 from dataclasses import dataclass
 import ulid  # type: ignore
 
-from schemas.summary.v3 import VERSION as SCHEMA_VERSION, Summary
+from schemas.summary.v3 import VERSION as SCHEMA_VERSION
 from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.services.llm import LLMService
-from src.transforms.prompt_builder import PromptBuilder, PROMPT_VERSION
+from src.transforms.summary.prompt_builder import PromptBuilder, PROMPT_VERSION
 
 logger = setup_logger(__name__, logging.DEBUG)
 

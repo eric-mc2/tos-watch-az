@@ -14,7 +14,7 @@ from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.transforms.differ import DiffDoc
 from src.services.llm import TOKEN_LIMIT
-from src.transforms.prompt_chunker import PromptChunker
+from src.transforms.summary.prompt_chunker import PromptChunker
 from src.stages import Stage
 from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
