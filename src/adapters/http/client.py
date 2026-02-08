@@ -13,11 +13,11 @@ class RequestsAdapter(HttpProtocol):
 
     # Different User-Agent strings to try
     USER_AGENTS = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (+https://tos-watch.com; support@tos-watch.com)',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (+https://tos-watch.com; support@tos-watch.com)',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15 (+https://tos-watch.com; support@tos-watch.com)',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0 (+https://tos-watch.com; support@tos-watch.com)',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (+https://tos-watch.com; support@tos-watch.com)',
     ]
 
     @staticmethod
@@ -46,18 +46,50 @@ class RequestsAdapter(HttpProtocol):
 
         return headers
 
+    @staticmethod
+    def get_api_headers(user_agent=None):
+        """Generate headers suitable for API requests"""
+        if user_agent is None:
+            user_agent = RequestsAdapter.USER_AGENTS[0]
 
-    def get(self, url: str, **kwargs) -> requests.Response:
-        logger.debug(f"Requesting html for {url}")
+        headers = {
+            'User-Agent': user_agent,
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Content-Type': 'application/json',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+        }
 
-        # Try with full browser headers first
-        headers = self.get_browser_headers()
+        return headers
+
+    def get(self, url: str, mode: str = 'browser', **kwargs) -> requests.Response:
+        """
+        Make a GET request with appropriate headers.
+
+        Args:
+            url: The URL to request
+            mode: Either 'browser' (default) or 'api' to determine header style
+            **kwargs: Additional arguments passed to requests.get
+        """
+        logger.debug(f"Requesting {mode} content for {url}")
+
+        # Choose headers based on mode
+        if mode == 'api':
+            headers = self.get_api_headers()
+        else:
+            headers = self.get_browser_headers()
+
+        # Set default timeout if not provided
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 90
 
         try:
-            resp = requests.get(url, timeout=90, headers=headers)
+            resp = requests.get(url, headers=headers, **kwargs)
             resp.raise_for_status()
         except HTTPError as e:
-            if e.response.status_code == 403:
+            if e.response.status_code == 403 and mode == 'browser':
                 logger.warning(f"Got 403 with default headers, trying alternatives...")
 
                 # Try different User-Agent strings
@@ -66,7 +98,7 @@ class RequestsAdapter(HttpProtocol):
                         logger.debug(f"Attempt {i + 1}: Trying with different User-Agent")
                         headers = self.get_browser_headers(user_agent=ua)
                         time.sleep(1)  # Small delay between attempts
-                        resp = requests.get(url, timeout=90, headers=headers)
+                        resp = requests.get(url, headers=headers, **kwargs)
                         resp.raise_for_status()
                         logger.debug(f"Success with User-Agent attempt {i + 1}")
                         return resp
@@ -81,7 +113,7 @@ class RequestsAdapter(HttpProtocol):
                     logger.debug(f"Trying with Referer: {referer}")
                     headers = self.get_browser_headers(referer=referer)
                     time.sleep(1)
-                    resp = requests.get(url, timeout=90, headers=headers)
+                    resp = requests.get(url, headers=headers, **kwargs)
                     resp.raise_for_status()
                     logger.info("Success with Referer header")
                     return resp
@@ -91,6 +123,6 @@ class RequestsAdapter(HttpProtocol):
                 # Last resort: minimal headers (sometimes works for meta.com)
                 logger.debug("Trying with minimal headers as last resort")
                 time.sleep(1)
-                resp = requests.get(url, timeout=90)
+                resp = requests.get(url, **kwargs)
                 return resp
         return resp

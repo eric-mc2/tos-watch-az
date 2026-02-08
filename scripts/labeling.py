@@ -5,10 +5,11 @@ from src.stages import Stage
 import time
 import json
 import difflib
-from dotenv import load_dotenv
 import argparse
 
-container = ServiceContainer.create_production()
+from src.utils.app_utils import load_env_vars
+
+container = ServiceContainer.create_real()
 
 def create_dataset(client: rg.Argilla, name):
     dataset = client.datasets(name)
@@ -202,7 +203,7 @@ def get_data(client: rg.Argilla, name: str):
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    load_env_vars()
 
     client = rg.Argilla(
         api_url="https://eric-mc22-tos-watch-ft.hf.space",

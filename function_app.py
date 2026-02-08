@@ -2,8 +2,7 @@
 import json
 import logging
 import os
-from typing import Generator, get_args
-from dotenv import load_dotenv
+from typing import Generator
 import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
@@ -11,22 +10,19 @@ from azure.functions.decorators.core import DataType
 from schemas.summary.registry import CLASS_REGISTRY
 from src.transforms.seeds import STATIC_URLS
 from src.utils.log_utils import setup_logger
-from src.utils.app_utils import http_wrap, pretty_error
+from src.utils.app_utils import http_wrap, pretty_error, load_env_vars
 from src.stages import Stage
 from src.orchestration.orchestrator import OrchData
-from src.container import ServiceContainer, TEnv
+from src.container import ServiceContainer
 
-load_dotenv()
+load_env_vars()
 
 app = func.FunctionApp()
 
 logger = setup_logger(__name__, logging.DEBUG)
 logging.getLogger('azure').setLevel(logging.WARNING)
 
-ENV = os.environ.get("ENV", "DEV")
-assert ENV in get_args(TEnv)
-
-container = ServiceContainer.create(ENV)  # type: ignore
+container = ServiceContainer.create()
 
 @app.orchestration_trigger(context_name="context")
 @pretty_error

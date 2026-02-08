@@ -31,8 +31,7 @@ class MetadataScraper:
         }
 
         try:
-            response = self.http_client.get(api_url, params=params, timeout=90)
-            response.raise_for_status()
+            response = self.http_client.get_and_raise(api_url, mode="api", params=params, timeout=90)
         except Exception as e:
             logger.error(f"Metadata request failed for {url}:\n{e}")
             raise

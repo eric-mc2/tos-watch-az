@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Literal
+import os
 
 from src.adapters.http.protocol import HttpProtocol
 from src.adapters.llm.client import ClaudeAdapter
@@ -16,9 +17,6 @@ from src.transforms.prompt_eng import PromptEng
 from src.transforms.snapshot_scraper import SnapshotScraper
 from src.transforms.summarizer import Summarizer
 
-
-TEnv = Literal["DEV", "PROD"]
-
 @dataclass
 class ServiceContainer:
     """Dependency injection container"""
@@ -34,31 +32,27 @@ class ServiceContainer:
     summarizer_transform: Summarizer
     prompt_transform: PromptEng
 
+
     @classmethod
-    def create(cls, env: TEnv):
-        if env == "PROD":
-            return cls.create_production()
+    def create(cls):
+        target_env = os.environ.get("TARGET_ENV", "DEV")
+        if target_env == "PROD":
+            return cls.create_real()
         else:
-            return cls.create_dev()
+            return cls.create_fake()
+
 
     @classmethod
-    def create_production(cls) -> 'ServiceContainer':
+    def create_real(cls) -> 'ServiceContainer':
         """Create container with production dependencies"""
-        blob_storage = BlobService(AzureStorageAdapter("APP_BLOB_CONNECTION_STRING"))
-        http_client = RequestsAdapter()
-        llm_client = LLMService(ClaudeAdapter())
-        return cls.create_container(blob_storage, http_client, llm_client)
-
-    @classmethod
-    def create_dev(cls) -> 'ServiceContainer':
-        """Create container with integration dependencies """
         blob_storage = BlobService(AzureStorageAdapter())
         http_client = RequestsAdapter()
         llm_client = LLMService(ClaudeAdapter())
         return cls.create_container(blob_storage, http_client, llm_client)
 
+
     @classmethod
-    def create_test(cls) -> 'ServiceContainer':
+    def create_fake(cls) -> 'ServiceContainer':
         """Create container with test doubles"""
         blob_storage = BlobService(FakeStorageAdapter())
         http_client = FakeHttpAdapter()

@@ -1,6 +1,4 @@
-*.secrets
 appsettings.json
-local.settings.json
 logs/*
 data/
 
@@ -10,8 +8,13 @@ data/
 # MacOS
 .DS_Store
 
-# Python Environments
+# Secrets
+local.settings.json
+*.secrets
 .env
+.env*
+
+# Python Environments
 .prompting_venv
 .venv
 env/

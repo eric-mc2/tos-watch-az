@@ -9,16 +9,18 @@ azure-storage-blob
 beautifulsoup4
 bleach
 chardet
+go-task-bin
+microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git
+mypy
 pandas
+pandas-stubs
 pydantic
 pydantic-xml
 pytest
 python-dotenv
-scikit-learn
 requests
-ulid
-validators
-mypy
-go-task-bin
+scikit-learn
 types-bleach
 types-requests
+ulid
+validators

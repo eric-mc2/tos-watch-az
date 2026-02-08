@@ -17,31 +17,51 @@ tasks:
     cmds:
       - mypy src/ schemas/ scripts/ function_app.py
 
-  tests:
+  tests-unit:
     desc: Run unit tests
     cmds:
       - mypy tests/
-      - pytest tests/transforms/test_snapshot_scraper.py --ignore tests/integration
+      - pytest tests/ --ignore tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
+    interactive: true
+  
+  tests-int:
+    desc: Run integration tests
+    cmds:
+      - mypy tests/
+      - pytest tests/integration
+    env:
+      PYTHONPATH: "{{.ROOT_DIR}}"
+      RUNTIME_ENV: "DEV"
+    interactive: true
+
+  tests-all:
+    desc: Run all tests
+    deps: [tests-unit, tests-int]
+    failfast: true
+    interactive: true
+
+  tests-stage:
+    desc: Run all tests emulating github actions staging env.
+    cmds:
+      - act -W '.github/workflows/test.yml' --rm
     interactive: true
 
   run-dev:
     desc: Run function app in dev mode
     cmds:
       - func start
-    env:
-      ENV: DEV
 
   run-prod:
     desc: Run function app in production mode
     cmds:
       - func start
     env:
-      ENV: PROD
+      TARGET_ENV: PROD
 
-  list-tasks:
-    desc: List current tasks in Azure runtime
+  list-jobs:
+    desc: List current jobs in Azure runtime
     cmds:
       - python -m scripts.health_checks tasks {{.CLI_ARGS}}
 
@@ -50,8 +70,8 @@ tasks:
     cmds:
       - python -m scripts.health_checks files {{.CLI_ARGS}}
 
-  kill-tasks:
-    desc: Kill running tasks in Azure runtime
+  kill-jobs:
+    desc: Kill running jobs in Azure runtime
     cmds:
       - python -m scripts.health_checks kill {{.CLI_ARGS}}
 
@@ -64,3 +84,4 @@ tasks:
     desc: Download labeled dataset from Argilla HF space
     cmds:
       - python scripts/labeling.py --action download
+

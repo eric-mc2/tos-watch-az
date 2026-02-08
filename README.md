@@ -3,7 +3,7 @@
 > Automated monitoring and analysis of major platform Terms of Service changes using Azure Durable Functions and Anthropic API
 
 ![Build Status](https://github.com/eric-mc2/tos-watch-az/actions/workflows/main_tos-function-app.yml/badge.svg)
-![Tests](https://github.com/eric-mc2/tos-watch-az/actions/workflows/main_tos-function-app.yml/badge.svg?job=test)
+![Tests](https://github.com/<org>/<repo>/actions/workflows/test.yml/badge.svg?branch=main)
 
 
 [![Azure Functions](https://img.shields.io/badge/Azure-Functions-blue)](https://azure.microsoft.com/en-us/services/functions/)
@@ -97,8 +97,6 @@ cd tos-watch-az
 # Install dependencies
 pip install -r requirements.txt
 
-pip install git+https://github.com/microsoft/python-type-stubs.git 
-
 # Set the following environment variables in the shell or a .env file:
 AzureWebJobsStorage="your-connection-string"
 WEBSITE_HOSTNAME="your azure functions url"
@@ -106,6 +104,12 @@ ANTHROPIC_API_KEY="your api key"
 AZURE_FUNCTION_MASTER_KEY="your api key"
 ARGILLA_API_KEY="your api key"
 HF_TOKEN="your api key"
+TARGET_ENV="DEV|PROD"  # what external/fake resources the app accesses 
+RUNTIME_ENV="DEV|PROD" # where the app is running
+
+# Install "act" tool to locally test Github Actions runners (optional)
+# See: https://nektosact.com/installation/index.html
+
 ```
 ## Development
 
@@ -120,20 +124,31 @@ open vscode and use Azurite: Start command
 task run-dev
 
 # Run tests
-pytest
+task tests-unit
+task tests-int
+```
 
-# Deploy to Azure
-func azure functionapp publish [function-app-name]
+### Staging env
+```bash
+# Test github actions locally
+task tests-stage
+
 ```
 
 ### Production environment
 
-```bash
-# Start azurite service in VSCode
-open vscode and use Azurite: Start command
+In a pinch if you need to run the app locally in hotfix mode:
 
-# Start the Azure Functions runtime locally
+```bash
+# Start the Azure Functions runtime locally, but pointed to production storage
 task run-prod
+```
+
+## Build and Deploy
+```
+# Preferred method is to complete a PR in github. (see .github/workflows/deploy.yml)
+# Otherwise:
+func azure functionapp publish [function-app-name]
 ```
 
 ## Usage
@@ -155,7 +170,7 @@ Follow these [instructions](https://docs.argilla.io/latest/getting_started/quick
 Run command to seed the instance with random examples for labeling.
 
 ```bash
-python labeling.py --action add
+task label-data
 ```
 
 **Roadmap:**
@@ -166,7 +181,7 @@ python labeling.py --action add
 Label the examples in the Argilla UI. Then download with: 
 
 ```bash
-python labeling.py --action download
+task download-labels
 ```
 
 ### Running Experiments
@@ -190,11 +205,13 @@ Commit and push the new version IF you want it to run in produciton.
 ### Checking System Health
 
 ```bash
+
 # Check running / pending tasks
-python health_checks.py --output [filename] tasks --env {DEV,PROD} --workflow_type [STAGE]
+task list-jobs -- --output [filename] tasks --env {DEV,PROD} --workflow_type [STAGE]
+# (note: the '--' syntax passes [args] to the underlying CLI app: task [command] -- [args])
 
 # Check missing blob outputs
-python health_checks.py --output [filename] files
+task list-missing -- --output [filename] files
 
 # Check circuit breaker status
 curl https://[your-function-app].azurewebsites.net/api/check_circuit_breaker?code=[function-key]
@@ -203,5 +220,5 @@ curl https://[your-function-app].azurewebsites.net/api/check_circuit_breaker?cod
 curl -X POST https://[your-function-app].azurewebsites.net/api/reset_circuit_breaker?workflow_type=[type]&code=[function-key]
 
 # Kill running / paused tasks in a given pipeline stage
-python health_checks.py --output [filename] killall --env {DEV,PROD} --workflow_type [STAGE]
+task kill-jobs -- --output [filename] killall --env {DEV,PROD} --workflow_type [STAGE]
 ```

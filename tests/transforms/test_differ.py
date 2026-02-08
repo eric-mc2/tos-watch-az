@@ -4,15 +4,9 @@ import json
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.services.blob import BlobService
 from src.transforms.differ import Differ, DiffSection, DiffDoc
-from src.container import ServiceContainer
 from src.stages import Stage
 from schemas.docchunk.v1 import DocChunk
 
-
-@pytest.fixture
-def container():
-    """Create test container with fake storage"""
-    return ServiceContainer.create_dev()
 
 @pytest.fixture
 def storage():
