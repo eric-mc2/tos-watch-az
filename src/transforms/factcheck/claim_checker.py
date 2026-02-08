@@ -3,8 +3,6 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-import ulid  # type: ignore
-
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.claim.v1 import Claims as ClaimsV1
 from schemas.claim.v0 import MODULE
@@ -12,6 +10,9 @@ from schemas.factcheck.v1 import VERSION as FACTCHECK_SCHEMA_VERSION
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
+from src.services.embedding import EmbeddingService
+from src.transforms.factcheck.vector_search import Indexer
+from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -34,47 +35,73 @@ OUTPUT FORMAT:
 @dataclass
 class ClaimCheckerBuilder:
     storage: BlobService
+    embedder: EmbeddingService
 
-    def build_prompt(self, blob_name: str) -> Iterator[PromptMessages]:
-        examples = [] # self.read_examples()
+    def build_prompt(self, blob_name: str, diff_blob_name: str) -> Iterator[PromptMessages]:
+        examples: list = []  # self.read_examples() for future ICL
         claims_text = self.storage.load_text_blob(blob_name)
         metadata = self.storage.adapter.load_metadata(blob_name)
         schema = SCHEMA_REGISTRY[MODULE][metadata['schema_version']]
         claims = schema.model_validate_json(claims_text)
         assert isinstance(claims, ClaimsV1)
 
+        # Build RAG index once for all claims
+        indexer = Indexer(storage=self.storage, embedder=self.embedder)
+        indexer.build(diff_blob_name)
+        logger.info(f"Built index with {indexer.get_index_size()} entries")
+        
+        # For each claim, retrieve relevant diffs and create prompt
         for claim in claims.claims:
-            prompt = Message("user", claim)
-            yield PromptMessages(system=SYSTEM_PROMPT,
-                             history=examples,
-                             current=prompt)
+            # Use RAG to find relevant document sections
+            relevant_diffs = indexer.search(claim)
+            
+            # Format the retrieved diffs as context
+            doc_context = self._format_diffs(relevant_diffs)
+            
+            prompt_data = dict(
+                claim=claim,
+                document=doc_context,
+            )
+            prompt = Message("user", json.dumps(prompt_data))
+            yield PromptMessages(
+                system=SYSTEM_PROMPT,
+                history=examples,
+                current=prompt
+            )
+    
+    @staticmethod
+    def _format_diffs(diff_doc) -> str:
+        """Format DiffDoc into readable context for the LLM."""
+        if not diff_doc.diffs:
+            return "No relevant document sections found."
+        
+        formatted_sections = []
+        for i, diff in enumerate(diff_doc.diffs, 1):
+            section = f"Section {i}:\n"
+            if diff.before:
+                section += f"Before: {diff.before}\n"
+            if diff.after:
+                section += f"After: {diff.after}\n"
+            formatted_sections.append(section)
+        
+        return "\n".join(formatted_sections)
 
 
 @dataclass
 class ClaimChecker:
     storage: BlobService
     llm: LLMService
+    executor: LLMTransform
+    embedder: EmbeddingService
 
-    def check_claim(self, blob_name: str) -> tuple[str, dict]:
-        logger.debug(f"Extracting claims from {blob_name}")
-        prompter = ClaimCheckerBuilder(self.storage)
-        messages = prompter.build_prompt(blob_name)
-
-        responses = []
-        for message in messages:
-            txt = self.llm.call_unsafe(message.system, message.history + [message.current])
-            parsed = self.llm.extract_json_from_response(txt)
-            if parsed['success']:
-                responses.append(parsed['data'])
-            else:
-                logger.warning(f"Failed to parse response: {parsed['error']}")
-                responses.append({"error": parsed['error'], "raw": txt})
-
-        response = json.dumps(dict(claims=responses))
-        metadata = dict(
-            run_id = ulid.ulid(),
-            prompt_version = PROMPT_VERSION,
-            schema_version = FACTCHECK_SCHEMA_VERSION,
+    def check_claim(self, blob_name: str, other_blob_name: str) -> tuple[str, dict]:
+        logger.debug(f"Checking claims from {blob_name}")
+        prompter = ClaimCheckerBuilder(self.storage, self.embedder)
+        messages = prompter.build_prompt(blob_name, other_blob_name)
+        return self.executor.execute_prompts(
+            messages, 
+            FACTCHECK_SCHEMA_VERSION, 
+            "factcheck", 
+            PROMPT_VERSION
         )
-        return response, metadata
 

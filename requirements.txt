@@ -21,6 +21,7 @@ pytest
 python-dotenv
 requests
 scikit-learn
+sentence-transformers
 types-bleach
 types-requests
 ulid

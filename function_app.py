@@ -1,15 +1,17 @@
 
 import json
 import logging
-import os
 from typing import Generator
 import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
-from schemas.registry import SCHEMA_REGISTRY
-from schemas.summary.v0 import MODULE
+from schemas.summary.v0 import MODULE as SUMMARY_MODULE
+from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
+from schemas.claim.v0 import MODULE as CLAIMS_MODULE
+from schemas.judge.v0 import MODULE as JUDGE_MODULE
 from src.transforms.seeds import STATIC_URLS
+from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser
 from src.utils.log_utils import setup_logger
 from src.utils.app_utils import http_wrap, pretty_error, load_env_vars
 from src.stages import Stage
@@ -240,16 +242,11 @@ async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.Durab
 @app.activity_trigger(input_name="input_data")
 @pretty_error(retryable=True)
 def summarizer_processor(input_data: dict) -> None:
-    blob_name = input_data['task_id']
-    in_path = container.storage.parse_blob_path(blob_name)
-    summary, metadata = container.summarizer_transform.summarize(blob_name)
-
-    # XXX: There is a race condition here IF you fan out across experiments. Would need new orchestrator for updating latest.
-    out_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
-    container.storage.upload_text_blob(summary, out_path, metadata=metadata)
-    latest_path = f"{Stage.SUMMARY_RAW.value}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.txt"
-    container.storage.upload_text_blob(summary, latest_path, metadata=metadata)
-    logger.info(f"Successfully summarized blob: {blob_name}")
+    processor = create_llm_activity_processor(container.storage,
+                                              container.summarizer_transform.summarize,
+                                              Stage.SUMMARY_RAW.value,
+                                              "summarizer")
+    return processor(input_data)
 
 
 @app.blob_trigger(arg_name="input_blob",
@@ -258,18 +255,126 @@ def summarizer_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
-    in_path = container.storage.parse_blob_path(input_blob.name)
-    txt = input_blob.read().decode()
-    metadata = container.storage.adapter.load_metadata(input_blob.name)
-    schema = SCHEMA_REGISTRY[MODULE][metadata['schema_version']]
-    cleaned_txt = container.summarizer_transform.llm.validate_output(txt, schema)
-
-    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
-    container.storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
     # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
-    out_path = os.path.join(Stage.SUMMARY_CLEAN.value, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
-    container.storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
-    logger.info(f"Successfully validated blob: {input_blob.name}")
+    parser = create_llm_parser(container.storage, container.summarizer_transform.llm, SUMMARY_MODULE, Stage.SUMMARY_CLEAN.value)
+    return parser(input_blob)
+
+
+# Claim Extraction Pipeline
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/08-summary-clean/{company}/{policy}/{timestamp}/latest.json",
+                connection=container.storage.adapter.get_connection_key())
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def claim_extractor_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+    """Blob trigger that starts the claim extractor workflow orchestration."""
+    parts = container.storage.parse_blob_path(input_blob.name)
+    blob_name = container.storage.unparse_blob_path(parts)
+    orchestration_input = OrchData(blob_name, "claim_extractor", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating claim extraction orchestration for {blob_name}")
+    await client.start_new("orchestrator", None, orchestration_input)
+
+
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def claim_extractor_processor(input_data: dict) -> None:
+    processor = create_llm_activity_processor(container.storage,
+                                              container.claim_extractor_transform.extract_claims,
+                                              Stage.CLAIM_RAW.value,
+                                              "claim_extractor")
+    return processor(input_data)
+
+
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/10-claim-raw/{company}/{policy}/{timestamp}/latest.txt",
+                connection=container.storage.adapter.get_connection_key(),
+                data_type=DataType.STRING)
+@pretty_error
+def parse_claims(input_blob: func.InputStream) -> None:
+    parser = create_llm_parser(container.storage,
+                               container.claim_extractor_transform.llm,
+                               CLAIMS_MODULE,
+                               Stage.CLAIM_CLEAN.value)
+    return parser(input_blob)
+
+
+# Claim Checking Pipeline
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/11-claim-clean/{company}/{policy}/{timestamp}/latest.json",
+                connection=container.storage.adapter.get_connection_key())
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def claim_checker_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+    """Blob trigger that starts the claim checker workflow orchestration."""
+    parts = container.storage.parse_blob_path(input_blob.name)
+    blob_name = container.storage.unparse_blob_path(parts)
+    orchestration_input = OrchData(blob_name, "claim_checker", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating claim checking orchestration for {blob_name}")
+    await client.start_new("orchestrator", None, orchestration_input)
+
+
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def claim_checker_processor(input_data: dict) -> None:
+    processor = create_llm_activity_processor(container.storage,
+                                              container.claim_checker_transform.check_claim,
+                                              Stage.FACTCHECK_RAW.value,
+                                              "claim_checker",
+                                              paired_input_stage=Stage.DIFF_CLEAN.value)
+    return processor(input_data)
+
+
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/12-factcheck-raw/{company}/{policy}/{timestamp}/latest.txt",
+                connection=container.storage.adapter.get_connection_key(),
+                data_type=DataType.STRING)
+@pretty_error
+def parse_factcheck(input_blob: func.InputStream) -> None:
+    parser = create_llm_parser(container.storage,
+                               container.claim_checker_transform.llm,
+                               FACTCHECK_MODULE,
+                               Stage.FACTCHECK_CLEAN.value)
+    return parser(input_blob)
+
+
+# Judge Pipeline
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/13-factcheck-clean/{company}/{policy}/{timestamp}/latest.json",
+                connection=container.storage.adapter.get_connection_key())
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def judge_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+    """Blob trigger that starts the judge workflow orchestration."""
+    parts = container.storage.parse_blob_path(input_blob.name)
+    blob_name = container.storage.unparse_blob_path(parts)
+    orchestration_input = OrchData(blob_name, "judge", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating judge orchestration for {blob_name}")
+    await client.start_new("orchestrator", None, orchestration_input)
+
+
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def judge_processor(input_data: dict) -> None:
+    # Judge needs summary blob from earlier stage
+    processor = create_llm_activity_processor(container.storage,
+                                              container.judge_transform.judge,
+                                              Stage.JUDGE_RAW.value,
+                                              "judge",
+                                              paired_input_stage=Stage.SUMMARY_CLEAN.value)
+    return processor(input_data)
+
+
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/14-judge-raw/{company}/{policy}/{timestamp}/latest.txt",
+                connection=container.storage.adapter.get_connection_key(),
+                data_type=DataType.STRING)
+@pretty_error
+def parse_judge(input_blob: func.InputStream) -> None:
+    parser = create_llm_parser(container.storage,
+                               container.judge_transform.llm,
+                               JUDGE_MODULE,
+                               Stage.JUDGE_CLEAN.value)
+    return parser(input_blob)
 
 
 # @app.route(route="prompt_experiment", auth_level=func.AuthLevel.FUNCTION)

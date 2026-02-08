@@ -1,8 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-
-import ulid  # type: ignore
+from typing import Iterator
 
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
@@ -14,6 +13,7 @@ from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
+from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -62,8 +62,8 @@ OUTPUT FORMAT:
 class JudgeBuilder:
     storage: BlobService
 
-    def build_prompt(self, summary_blob_name: str, facts_blob_name: str) -> PromptMessages:
-        examples = [] # self.read_examples()
+    def build_prompt(self, summary_blob_name: str, facts_blob_name: str) -> Iterator[PromptMessages]:
+        examples: list = [] # self.read_examples()
 
         # Get Summary
         summary_text = self.storage.load_text_blob(summary_blob_name)
@@ -81,39 +81,25 @@ class JudgeBuilder:
         assert isinstance(facts, FactCheck)
 
         # Build Prompt
-        prompt = dict(
+        prompt_data = dict(
             summary=summary,
             facts=facts,
         )
-        prompt = Message("user", json.dumps(prompt))
-        return PromptMessages(system=SYSTEM_PROMPT,
+        prompt_msg = Message("user", json.dumps(prompt_data))
+        yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
-                             current=prompt)
+                             current=prompt_msg)
 
 
 @dataclass
 class Judge:
     storage: BlobService
     llm: LLMService
+    executor: LLMTransform
 
-    def judge(self, summary_blob_name: str, facts_blob_name: str) -> tuple[str, dict]:
+    def judge(self, facts_blob_name: str, summary_blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Judging {summary_blob_name}")
         prompter = JudgeBuilder(self.storage)
-        message = prompter.build_prompt(summary_blob_name, facts_blob_name)
-
-        txt = self.llm.call_unsafe(message.system, message.history + [message.current])
-        parsed = self.llm.extract_json_from_response(txt)
-        if parsed['success']:
-            response = parsed['data']
-        else:
-            logger.warning(f"Failed to parse response: {parsed['error']}")
-            response = {"error": parsed['error'], "raw": txt}
-
-        response = json.dumps(response)
-        metadata = dict(
-            run_id = ulid.ulid(),
-            prompt_version = PROMPT_VERSION,
-            schema_version = JUDGE_SCHEMA_VERSION,
-        )
-        return response, metadata
+        messages = prompter.build_prompt(summary_blob_name, facts_blob_name)
+        return self.executor.execute_prompts(messages, JUDGE_SCHEMA_VERSION, "judge", PROMPT_VERSION)
 

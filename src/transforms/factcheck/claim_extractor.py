@@ -1,8 +1,6 @@
-import json
 import logging
 from dataclasses import dataclass
-
-import ulid  # type: ignore
+from typing import Iterator
 
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
@@ -12,6 +10,7 @@ from schemas.claim.v1 import VERSION as CLAIMS_SCHEMA_VERSION
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
+from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -50,8 +49,8 @@ you should respond with valid JSON:
 class ClaimExtractorBuilder:
     storage: BlobService
 
-    def build_prompt(self, blob_name: str) -> PromptMessages:
-        examples = [] # self.read_examples()
+    def build_prompt(self, blob_name: str) -> Iterator[PromptMessages]:
+        examples: list = [] # self.read_examples()
         summary_text = self.storage.load_text_blob(blob_name)
         metadata = self.storage.adapter.load_metadata(blob_name)
         schema = SCHEMA_REGISTRY[MODULE][metadata['schema_version']]
@@ -61,7 +60,7 @@ class ClaimExtractorBuilder:
 
         txt = '\n'.join([x.practically_substantive.reason for x in summary.chunks])
         prompt = Message("user", txt)
-        return PromptMessages(system=SYSTEM_PROMPT,
+        yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
                              current=prompt)
 
@@ -70,25 +69,11 @@ class ClaimExtractorBuilder:
 class ClaimExtractor:
     storage: BlobService
     llm: LLMService
+    executor: LLMTransform
 
     def extract_claims(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Extracting claims from {blob_name}")
         prompter = ClaimExtractorBuilder(self.storage)
-        message = prompter.build_prompt(blob_name)
-
-        txt = self.llm.call_unsafe(message.system, message.history + [message.current])
-        parsed = self.llm.extract_json_from_response(txt)
-        if parsed['success']:
-            response = parsed['data']
-        else:
-            logger.warning(f"Failed to parse response: {parsed['error']}")
-            response = {"error": parsed['error'], "raw": txt}
-
-        response = json.dumps(response)
-        metadata = dict(
-            run_id = ulid.ulid(),
-            prompt_version = PROMPT_VERSION,
-            schema_version = CLAIMS_SCHEMA_VERSION,
-        )
-        return response, metadata
+        messages = prompter.build_prompt(blob_name)
+        return self.executor.execute_prompts(messages, CLAIMS_SCHEMA_VERSION, "claim", PROMPT_VERSION)
 
