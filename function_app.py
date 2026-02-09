@@ -255,7 +255,6 @@ def summarizer_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
-    # XXX: There is a race condition here IF you fan out across versions. Would need new orchestrator for updating latest.
     parser = create_llm_parser(container.storage, container.summarizer_transform.llm, SUMMARY_MODULE, Stage.SUMMARY_CLEAN.value)
     return parser(input_blob)
 

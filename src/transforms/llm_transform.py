@@ -27,7 +27,7 @@ class LLMTransform:
         prompts: Iterable[PromptMessages], 
         schema_version: str, 
         module_name: str,
-        prompt_version: str | None = None
+        prompt_version: str,
     ) -> tuple[str, dict]:
         """
         Execute a sequence of prompts against the LLM and aggregate responses.
@@ -36,7 +36,7 @@ class LLMTransform:
             prompts: Iterable of PromptMessages to execute
             schema_version: Schema version for metadata
             module_name: Module name for metadata (e.g., "summary", "claim", "factcheck", "judge")
-            prompt_version: Optional prompt version for metadata tracking
+            prompt_version: Prompt version for metadata tracking
             
         Returns:
             Tuple of (json_string, metadata_dict)
@@ -57,13 +57,15 @@ class LLMTransform:
         metadata = dict(
             run_id=ulid.ulid(),
             schema_version=schema_version,
+            prompt_version=prompt_version,
         )
-        if prompt_version is not None:
-            metadata['prompt_version'] = prompt_version
         return response, metadata
 
 
-def create_llm_activity_processor(storage: BlobService, transform_fn: Callable, output_stage: str, workflow_name: str,
+def create_llm_activity_processor(storage: BlobService,
+                                  transform_fn: Callable,
+                                  output_stage: str,
+                                  workflow_name: str,
                                   paired_input_stage: str | None = None) -> Callable[[dict], None]:
     """
     Factory function to create a generic LLM activity processor.

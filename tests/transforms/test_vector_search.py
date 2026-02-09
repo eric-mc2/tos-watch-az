@@ -3,7 +3,7 @@ import json
 from src.services.embedding import EmbeddingService
 from src.services.blob import BlobService
 from src.adapters.embedding.fake_client import FakeEmbeddingAdapter
-from src.adapters.storage.fake_client import FakeBlobAdapter
+from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.transforms.factcheck.vector_search import Indexer
 from src.transforms.differ import DiffDoc, DiffSection
 
@@ -20,7 +20,7 @@ def embedding_service(fake_embedder):
 
 @pytest.fixture
 def fake_storage():
-    return BlobService(FakeBlobAdapter())
+    return BlobService(FakeStorageAdapter())
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def indexer_with_data(fake_storage, embedding_service, sample_diff_doc):
     # Store the sample diff doc in fake storage
     blob_name = "test_diffs.json"
     diff_json = sample_diff_doc.model_dump_json()
-    fake_storage.adapter._storage[blob_name] = diff_json.encode('utf-8')
+    fake_storage.upload_text_blob(diff_json, blob_name)
     
     # Create and build indexer
     indexer = Indexer(storage=fake_storage, embedder=embedding_service)
@@ -67,8 +67,8 @@ class TestVectorSearch:
         """Test that indexer builds successfully."""
         blob_name = "test_diffs.json"
         diff_json = sample_diff_doc.model_dump_json()
-        fake_storage.adapter._storage[blob_name] = diff_json.encode('utf-8')
-        
+        fake_storage.upload_text_blob(diff_json, blob_name)
+
         indexer = Indexer(storage=fake_storage, embedder=embedding_service)
         indexer.build(blob_name)
         
@@ -114,8 +114,8 @@ class TestVectorSearch:
         empty_diff = DiffDoc(diffs=[])
         blob_name = "empty_diffs.json"
         diff_json = empty_diff.model_dump_json()
-        fake_storage.adapter._storage[blob_name] = diff_json.encode('utf-8')
-        
+        fake_storage.upload_text_blob(diff_json, blob_name)
+
         indexer = Indexer(storage=fake_storage, embedder=embedding_service)
         indexer.build(blob_name)
         

@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from schemas.summary.v0 import SummaryBase, MODULE
 from schemas.summary.v2 import Summary as SummaryV2
 from typing import List
@@ -7,4 +9,4 @@ VERSION = "v3"
 
 @register(MODULE, VERSION)
 class Summary(SummaryBase):
-    chunks: List[SummaryV2]
+    chunks: List[SummaryV2] = Field(..., min_length=1)

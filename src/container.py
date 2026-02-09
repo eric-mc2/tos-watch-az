@@ -79,8 +79,8 @@ class ServiceContainer:
             wayback_transform=MetadataScraper(blob_storage, http_client),
             snapshot_transform=SnapshotScraper(blob_storage, http_client),
             summarizer_transform=Summarizer(blob_storage, llm_client, prompt_eng, llm_executor),
-            claim_extractor_transform=ClaimExtractor(blob_storage, llm_client, llm_executor),
-            claim_checker_transform=ClaimChecker(blob_storage, llm_client, llm_executor),
-            judge_transform=Judge(blob_storage, llm_client, llm_executor),
+            claim_extractor_transform=ClaimExtractor(blob_storage, llm_executor),
+            claim_checker_transform=ClaimChecker(blob_storage, llm_executor),
+            judge_transform=Judge(blob_storage, llm_executor),
             prompt_transform=prompt_eng,
         )

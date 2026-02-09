@@ -90,7 +90,6 @@ class ClaimCheckerBuilder:
 @dataclass
 class ClaimChecker:
     storage: BlobService
-    llm: LLMService
     executor: LLMTransform
     embedder: EmbeddingService
 

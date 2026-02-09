@@ -4,12 +4,11 @@ from typing import Iterator
 
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
-from schemas.summary.v0 import MODULE
+from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.summary.v3 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV3
 from schemas.claim.v1 import VERSION as CLAIMS_SCHEMA_VERSION
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
-from src.services.llm import LLMService
 from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
@@ -53,12 +52,17 @@ class ClaimExtractorBuilder:
         examples: list = [] # self.read_examples()
         summary_text = self.storage.load_text_blob(blob_name)
         metadata = self.storage.adapter.load_metadata(blob_name)
-        schema = SCHEMA_REGISTRY[MODULE][metadata['schema_version']]
+        schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
         summary = schema.model_validate_json(summary_text)
         summary = migrate(summary, SUMMARY_SCHEMA_VERSION)
         assert isinstance(summary, SummaryV3)
 
-        txt = '\n'.join([x.practically_substantive.reason for x in summary.chunks])
+        substantive = [x.practically_substantive for x in summary.chunks if x.practically_substantive.rating]
+
+        if not substantive:
+            return # Nothing to process downstream. Ends iterator
+
+        txt = "DOCUMENT ANALYSIS: \n" + '\n'.join([x.reason for x in substantive])
         prompt = Message("user", txt)
         yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
@@ -68,7 +72,6 @@ class ClaimExtractorBuilder:
 @dataclass
 class ClaimExtractor:
     storage: BlobService
-    llm: LLMService
     executor: LLMTransform
 
     def extract_claims(self, blob_name: str) -> tuple[str, dict]:

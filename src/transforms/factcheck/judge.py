@@ -82,8 +82,8 @@ class JudgeBuilder:
 
         # Build Prompt
         prompt_data = dict(
-            summary=summary,
-            facts=facts,
+            summary=summary.model_dump(),
+            facts=facts.model_dump(),
         )
         prompt_msg = Message("user", json.dumps(prompt_data))
         yield PromptMessages(system=SYSTEM_PROMPT,
@@ -94,7 +94,6 @@ class JudgeBuilder:
 @dataclass
 class Judge:
     storage: BlobService
-    llm: LLMService
     executor: LLMTransform
 
     def judge(self, facts_blob_name: str, summary_blob_name: str) -> tuple[str, dict]:

@@ -1,5 +1,4 @@
 from typing import List
-
 from schemas.claim.v0 import ClaimsBase, MODULE
 from schemas.registry import register
 

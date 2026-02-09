@@ -1,4 +1,6 @@
-SCHEMA_REGISTRY = {}
+from typing import Any
+
+SCHEMA_REGISTRY : dict[str, dict[str, Any]] = {}
 
 def register(module_name, name):
     def wrapper(cls):
