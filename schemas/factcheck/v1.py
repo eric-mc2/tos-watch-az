@@ -9,5 +9,6 @@ VERSION = "v1"
 
 @register(MODULE, VERSION)
 class FactCheck(FactCheckBase):
+    claim: str
     veracity: bool
     reason: str

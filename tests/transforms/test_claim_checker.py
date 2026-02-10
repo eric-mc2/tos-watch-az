@@ -92,7 +92,7 @@ def sample_diffs():
         ),
     ])
 
-BlobNames = namedtuple("blob_names", ["single_claim_blob", "multi_claims_blob", "diffs_blob"])
+BlobNames = namedtuple("BlobNames", ["single_claim_blob", "multi_claims_blob", "diffs_blob"])
 
 @pytest.fixture
 def blob_names() -> BlobNames:

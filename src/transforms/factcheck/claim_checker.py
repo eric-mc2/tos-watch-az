@@ -29,7 +29,9 @@ INPUT FORMAT:
 
 
 OUTPUT FORMAT:
-{"veracity": bool, "reason": "One sentence describing why claim is true or not."}  
+{"claim": "The verbatim input claim.", 
+"veracity": bool, 
+"reason": "One sentence describing why claim is true or not."}  
 """
 
 @dataclass

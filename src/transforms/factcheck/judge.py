@@ -1,12 +1,12 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, List
 
 from schemas.chunking import ChunkedResponse
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
-from schemas.summary.v0 import MODULE as SUMMARY_MODULE
+from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
 from schemas.summary.v3 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV3
 from schemas.summary.v4 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV4
 from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION
@@ -64,7 +64,7 @@ OUTPUT FORMAT:
 class JudgeBuilder:
     storage: BlobService
 
-    def build_prompt(self, summary_blob_name: str, facts_blob_name: str) -> Iterator[PromptMessages]:
+    def build_prompt(self, facts_blob_name: str, summary_blob_name: str) -> Iterator[PromptMessages]:
         examples: list = [] # self.read_examples()
 
         # Get Summary
@@ -72,25 +72,55 @@ class JudgeBuilder:
         metadata = self.storage.adapter.load_metadata(summary_blob_name)
         schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
         summary = schema.model_validate_json(summary_text)
+        assert isinstance(summary, SummaryBase)
+        summary = migrate(summary, metadata['schema_version'])
         assert isinstance(summary, SummaryV4)
-        summary = migrate(summary, SUMMARY_SCHEMA_VERSION)
 
         # Get Facts
         facts_text = self.storage.load_text_blob(facts_blob_name)
         metadata = self.storage.adapter.load_metadata(facts_blob_name)
         schema = SCHEMA_REGISTRY[FACTCHECK_MODULE][metadata['schema_version']]
         facts = schema.model_validate_json(facts_text)
+        assert isinstance(facts, FactCheck)
 
         # Build Prompt - pass the full summary structure
-        prompt_data = dict(
-            summary=summary.model_dump(),
-            facts=facts.model_dump(),
-        )
-        prompt_msg = Message("user", json.dumps(prompt_data))
+        prompt_msg = Message("user", self._format_prompt(summary, facts))
         yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
                              current=prompt_msg)
 
+
+    @classmethod
+    def _format_prompt(cls, summary: SummaryV4, facts: FactCheck):
+        plaintext_summary = cls._format_summary(summary)
+        plaintext_facts = cls._format_fact(facts)
+        return "\n".join([plaintext_summary,
+                          "Fact-Checking:",
+                          plaintext_facts])
+
+
+    @classmethod
+    def _format_summary(cls, summary: SummaryV4):
+        return "\n".join(["Preliminary analysis:",
+                         "Is the change practically substantive?",
+                         str(summary.practically_substantive.rating),
+                         "Reasoning:",
+                          summary.practically_substantive.reason
+                         ])
+
+    @classmethod
+    def _format_fact(cls, fact: FactCheck) -> str:
+        """Format FactCheck into readable context for the LLM."""
+        return "\n".join([
+                f"Claim: {fact.claim}",
+                f"Veracity: {fact.veracity}",
+                f"Reason: {fact.reason}"])
+
+    @classmethod
+    def _format_facts(cls, facts: List[FactCheck]) -> str:
+        """Format FactCheck into readable context for the LLM."""
+        return "\n".join(f"Case {i}:\n{cls._format_fact(x)}"
+                         for i,x in enumerate(facts, start=1))
 
 @dataclass
 class Judge:
@@ -100,6 +130,6 @@ class Judge:
     def judge(self, facts_blob_name: str, summary_blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Judging {summary_blob_name}")
         prompter = JudgeBuilder(self.storage)
-        messages = prompter.build_prompt(summary_blob_name, facts_blob_name)
+        messages = prompter.build_prompt(facts_blob_name, summary_blob_name)
         return self.executor.execute_prompts(messages, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
 
