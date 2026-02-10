@@ -1,8 +1,9 @@
 import pytest
 import json
 
-from schemas.summary.v3 import Summary as SummaryV3, VERSION
-from schemas.summary.v2 import Summary as SummaryV2, Substantive, VERSION as OLD_VERSION
+from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
+from schemas.summary.v4 import Summary as SummaryV4, VERSION
+from schemas.summary.v2 import Summary as SummaryV2, Substantive
 from schemas.claim.v1 import Claims
 from src.transforms.factcheck.claim_extractor import ClaimExtractorBuilder, ClaimExtractor
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -41,12 +42,11 @@ class TestClaimExtractorBuilder:
         """Test extracting claims from positive (substantive) analysis."""
         # Arrange
         builder = ClaimExtractorBuilder(fake_storage)
-        data = SummaryV3(chunks=[
-            SummaryV2(practically_substantive=Substantive(
+        data = SummaryV4(practically_substantive=Substantive(
                 rating=True,
                 reason="Reason"
             ))
-        ])
+
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
         
@@ -64,12 +64,11 @@ class TestClaimExtractorBuilder:
         """Test extracting claims from negative (non-substantive) analysis."""
         # Arrange
         builder = ClaimExtractorBuilder(fake_storage)
-        data = SummaryV3(chunks=[
-            SummaryV2(practically_substantive=Substantive(
+        data = SummaryV4(practically_substantive=Substantive(
                 rating=False,
                 reason="Irrelevant"
             ))
-        ])
+
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
         
@@ -80,44 +79,22 @@ class TestClaimExtractorBuilder:
         # Should not create prompt for pure negative cases
         assert len(prompts) == 0
 
-    def test_positive_and_negative(self, fake_storage):
-        """Test extracting claims from mixed substantive and non-substantive chunks."""
-        # Arrange
-        builder = ClaimExtractorBuilder(fake_storage)
-        data = SummaryV3(chunks=[
-            SummaryV2(practically_substantive=Substantive(
-                rating=True,
-                reason="Substantive"
-            )),
-            SummaryV2(practically_substantive=Substantive(
-                rating=False,
-                reason="Irrelevant"
-            )),
-        ])
-        data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
-        
-        # Act
-        prompts = list(builder.build_prompt("test.json"))
-        prompt_content = prompts[0].current.content
-
-        # Assert
-        assert len(prompts) == 1
-        # Only positive reasons should be included
-        assert "Substantive" in prompt_content
-        assert "Irrelevant" not in prompt_content
-
     def test_migration(self, fake_storage):
         # Arrange
         builder = ClaimExtractorBuilder(fake_storage)
-        data = SummaryV2(practically_substantive=Substantive(
-                rating=True,
-                reason="Reason"
-            ))
+        data = SummaryV3(chunks=[
+                    SummaryV2(practically_substantive=Substantive(
+                        rating=True,
+                        reason="pos")),
+                    SummaryV2(practically_substantive=Substantive(
+                        rating=False,
+                        reason="neg"
+                    ))
+            ])
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized,
                                         "test.json",
-                                      metadata={"schema_version": OLD_VERSION})
+                                      metadata={"schema_version": VERSIONV3})
 
         # Act
         prompts = list(builder.build_prompt("test.json"))
@@ -125,7 +102,8 @@ class TestClaimExtractorBuilder:
 
         # Assert
         assert len(prompts) == 1
-        assert "Reason" in prompt.current.content
+        assert "pos" in prompt.current.content
+        assert "neg" not in prompt.current.content
 
 class TestClaimExtractor:
     """Unit tests for ClaimExtractor using fake adapters."""
@@ -133,12 +111,11 @@ class TestClaimExtractor:
     def test_extract_claims_basic(self, fake_storage, llm_transform, llm_service):
         """Test basic claim extraction workflow."""
         # Arrange
-        data = SummaryV3(chunks=[
-            SummaryV2(practically_substantive=Substantive(
+        data = SummaryV4(practically_substantive=Substantive(
                 rating=True,
                 reason="Something"
             ))
-        ])
+
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
         
@@ -195,7 +172,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
         
         # Configure fake LLM to return empty claims list
         response = Claims(claims=[])
@@ -221,7 +198,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
@@ -250,7 +227,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])

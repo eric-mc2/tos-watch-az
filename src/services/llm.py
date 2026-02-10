@@ -33,7 +33,7 @@ class LLMService:
         resp = self.adapter.call(system, messages)
         return self.validate_output(resp, validator)
 
-    def validate_output(self, resp: str, validator: type[SummaryBase]) -> str:
+    def validate_output(self, resp: str, validator: type[BaseModel]) -> str:
         """Extract JSON from response, validate against model, and sanitize."""
         result = self.extract_json_from_response(resp)
         if not result['success']:

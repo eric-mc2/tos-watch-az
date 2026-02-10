@@ -1,6 +1,8 @@
-from typing import Any
+from typing import Any, Type
 
-SCHEMA_REGISTRY : dict[str, dict[str, Any]] = {}
+from pydantic import BaseModel
+
+SCHEMA_REGISTRY : dict[str, dict[str, Type[BaseModel]]] = {}
 
 def register(module_name, name):
     def wrapper(cls):

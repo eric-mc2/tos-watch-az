@@ -23,4 +23,4 @@ class Summarizer:
         logger.debug(f"Summarizing {blob_name}")
         prompter = PromptBuilder(self.storage, self.prompt_eng)
         messages = prompter.build_prompt(blob_name)
-        return self.executor.execute_prompts(messages, SCHEMA_VERSION, "summary", PROMPT_VERSION)
+        return self.executor.execute_prompts(messages, SCHEMA_VERSION, PROMPT_VERSION)

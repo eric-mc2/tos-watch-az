@@ -4,8 +4,10 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from pydantic import BaseModel
 import ulid  # type: ignore
 
+from schemas.chunking import ChunkedResponse
 from schemas.registry import SCHEMA_REGISTRY
 from src.adapters.llm.protocol import PromptMessages
 from src.services.blob import BlobService
@@ -22,26 +24,24 @@ class LLMTransform:
     storage: BlobService
     llm: LLMService
 
-    def execute_prompts(
-        self, 
-        prompts: Iterable[PromptMessages], 
-        schema_version: str, 
-        module_name: str,
-        prompt_version: str,
-    ) -> tuple[str, dict]:
+    def execute_prompts(self,
+                        prompts: Iterable[PromptMessages],
+                        schema_version: str,
+                        prompt_version: str) -> tuple[str, dict]:
         """
         Execute a sequence of prompts against the LLM and aggregate responses.
         
         Args:
             prompts: Iterable of PromptMessages to execute
             schema_version: Schema version for metadata
-            module_name: Module name for metadata (e.g., "summary", "claim", "factcheck", "judge")
             prompt_version: Prompt version for metadata tracking
             
         Returns:
             Tuple of (json_string, metadata_dict)
-            - json_string: {"chunks": [response_dicts]}
-            - metadata_dict: {"run_id": str, "schema_version": str, "prompt_version": str (optional)}
+            - json_string: If single response, returns the response JSON directly.
+                          If multiple responses, returns {"chunks": [response_dicts]}
+            - metadata_dict: {"run_id": str, "schema_version": str, "prompt_version": str, 
+                             "is_chunked": bool}
         """
         responses = []
         for message in prompts:
@@ -53,11 +53,20 @@ class LLMTransform:
                 logger.warning(f"Failed to parse response: {parsed['error']}")
                 responses.append({"error": parsed['error'], "raw": txt})
 
-        response = json.dumps(dict(chunks=responses))
+        # Only wrap in chunks array if actually chunked (>1 response)
+        # Use un-typed json.dumps here instead of model_dump_json because we haven't validated yet.
+        if len(responses) == 1:
+            response = json.dumps(responses[0])
+            is_chunked = False
+        else:
+            response = json.dumps(dict(chunks=responses))
+            is_chunked = True
+        
         metadata = dict(
             run_id=ulid.ulid(),
             schema_version=schema_version,
             prompt_version=prompt_version,
+            is_chunked=is_chunked,
         )
         return response, metadata
 
@@ -111,6 +120,12 @@ def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, o
     """
     Factory function to create a generic LLM output parser/validator.
     
+    Handles both chunked and non-chunked formats for backward compatibility:
+    - Detects chunking from metadata['is_chunked'] flag (new format)
+    - Falls back to structure detection ({"chunks": [...]}) for historical data
+    - Validates each chunk individually against the business schema
+    - Stores in the same format it was received (preserves chunking)
+    
     Args:
         storage: BlobService instance for path parsing and blob uploads
         llm: LLMService instance with validate_output method
@@ -127,18 +142,45 @@ def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, o
         
         # Get schema from registry
         schema = SCHEMA_REGISTRY[module_name][metadata['schema_version']]
-        
-        # Validate and clean output
-        cleaned_txt = llm.validate_output(txt, schema)
+        schema_version = metadata['schema_version']
+
+        # New format: detect chunking from metadata or structure
+        is_chunked = metadata.get('is_chunked', False)
+        if not is_chunked:
+            # Try to detect from structure for historical data
+            try:
+                parsed = json.loads(txt)
+                is_chunked = isinstance(parsed, dict) and 'chunks' in parsed and isinstance(parsed.get('chunks'), list)
+            except json.JSONDecodeError:
+                is_chunked = False
+
+        if is_chunked:
+            # New chunked format: use ChunkedResponse wrapper for validation
+            wrapper = ChunkedResponse[BaseModel].model_validate_json(txt)
+            if hasattr(schema, 'merge'):
+                merged = wrapper.merge(schema.merge)
+            else:
+                merged = wrapper.merge()
+            cleaned_txt = llm.validate_output(merged.model_dump_json(), schema) # type: ignore
+        else:
+            # Single item format: validate directly
+            # TODO: Not sure if validate-output is necessary anymore or called ever.
+            # This if/else introduces different standards of validation for chunked/non
+            # because the validation function also sanitizes for XSS
+            cleaned_txt = llm.validate_output(txt, schema)
+
+        # Update metadata with chunking info if not already set
+        if 'is_chunked' not in metadata:
+            metadata['is_chunked'] = is_chunked
         
         # Save versioned output
         out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
         storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
         
         # Save latest output
-        out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
-        storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
+        latest_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
+        storage.upload_json_blob(cleaned_txt, latest_path, metadata=metadata)
         
-        logger.info(f"Successfully validated {module_name} blob: {input_blob.name}")
+        logger.info(f"Successfully validated {module_name} blob: {input_blob.name} (schema={schema_version}, chunked={is_chunked})")
     
     return parser

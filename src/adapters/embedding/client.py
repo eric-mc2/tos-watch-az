@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional
+from typing import Optional, Any
 import numpy as np
 import numpy.typing as npt
 from sentence_transformers import SentenceTransformer # TODO: Cover import in integration test
@@ -10,7 +10,7 @@ from src.utils.log_utils import setup_logger
 logger = setup_logger(__name__, logging.DEBUG)
 
 # Global model cache - persists across function invocations in Azure Functions
-_model: Optional[any] = None
+_model: Optional[Any] = None
 
 
 class SentenceTransformerAdapter:

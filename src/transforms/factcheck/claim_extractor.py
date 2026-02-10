@@ -1,11 +1,13 @@
+# TODO: Validating this class first.
+
 import logging
 from dataclasses import dataclass
 from typing import Iterator
 
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
-from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.summary.v3 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV3
+from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
+from schemas.summary.v4 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV4
 from schemas.claim.v1 import VERSION as CLAIMS_SCHEMA_VERSION
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
@@ -54,15 +56,14 @@ class ClaimExtractorBuilder:
         metadata = self.storage.adapter.load_metadata(blob_name)
         schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
         summary = schema.model_validate_json(summary_text)
+        assert isinstance(summary, SummaryBase)
         summary = migrate(summary, SUMMARY_SCHEMA_VERSION)
-        assert isinstance(summary, SummaryV3)
+        assert isinstance(summary, SummaryV4)
 
-        substantive = [x.practically_substantive for x in summary.chunks if x.practically_substantive.rating]
-
-        if not substantive:
+        if not summary.practically_substantive.rating:
             return # Nothing to process downstream. Ends iterator
 
-        txt = "DOCUMENT ANALYSIS: \n" + '\n'.join([x.reason for x in substantive])
+        txt = f"DOCUMENT ANALYSIS: \n {summary.practically_substantive.reason}"
         prompt = Message("user", txt)
         yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
@@ -78,5 +79,5 @@ class ClaimExtractor:
         logger.debug(f"Extracting claims from {blob_name}")
         prompter = ClaimExtractorBuilder(self.storage)
         messages = prompter.build_prompt(blob_name)
-        return self.executor.execute_prompts(messages, CLAIMS_SCHEMA_VERSION, "claim", PROMPT_VERSION)
+        return self.executor.execute_prompts(messages, CLAIMS_SCHEMA_VERSION, PROMPT_VERSION)
 

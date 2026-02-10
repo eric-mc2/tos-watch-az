@@ -5,7 +5,9 @@ from pydantic import ValidationError
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 from schemas.registry import SCHEMA_REGISTRY
-from schemas.summary.v0 import MODULE
+from schemas.summary.migration import migrate
+from schemas.summary.v0 import MODULE, SummaryBase
+from schemas.summary.v4 import Summary as SummaryV4
 from src.services.blob import BlobService
 from src.stages import Stage
 
@@ -71,13 +73,18 @@ class PromptEng:
             summary_raw = self.storage.load_json_blob(blob)
             try:
                 summary = schema(**summary_raw)
+                assert isinstance(summary, SummaryBase)
+                summary = migrate(summary, meta['schema_version'])
+                assert isinstance(summary, SummaryV4)
                 parse_error = False
+                rating = summary.practically_substantive.rating
             except (ValidationError, TypeError):
                 parse_error = True
+                rating = None
             pred_list.append(meta | dict(
                 blob_path = key,
                 parse_error = parse_error,
-                practically_substantive = summary.practically_substantive.rating if not parse_error else None,
+                practically_substantive = rating
             ))
         pred = pd.DataFrame.from_records(pred_list)  # type: ignore
         pred['practically_substantive'] = pred['practically_substantive'].map({True:1.0,False:0.0})

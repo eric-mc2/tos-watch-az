@@ -1,8 +1,7 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
-import faiss
-import numpy as np
+from typing import Optional, Any
+import faiss  # type: ignore
 
 from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
@@ -21,7 +20,7 @@ class Indexer:
     storage: BlobService
     embedder: EmbeddingService
     _index: Optional[faiss.Index] = None
-    _metadata: dict[int, dict[str, str]] = field(default_factory=dict)
+    _metadata: dict[int, dict[str, Any]] = field(default_factory=dict)
     _dimension: Optional[int] = None
     k: int = 5  # Number of nearest neighbors to return
 

@@ -97,10 +97,5 @@ class ClaimChecker:
         logger.debug(f"Checking claims from {blob_name}")
         prompter = ClaimCheckerBuilder(self.storage, self.embedder)
         messages = prompter.build_prompt(blob_name, other_blob_name)
-        return self.executor.execute_prompts(
-            messages, 
-            FACTCHECK_SCHEMA_VERSION, 
-            "factcheck", 
-            PROMPT_VERSION
-        )
+        return self.executor.execute_prompts(messages, FACTCHECK_SCHEMA_VERSION, PROMPT_VERSION)
 

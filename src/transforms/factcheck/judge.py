@@ -3,10 +3,12 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
+from schemas.chunking import ChunkedResponse
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.summary.v3 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV3
+from schemas.summary.v4 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV4
 from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION
 from schemas.factcheck.v1 import FactCheck
 from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
@@ -70,17 +72,16 @@ class JudgeBuilder:
         metadata = self.storage.adapter.load_metadata(summary_blob_name)
         schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
         summary = schema.model_validate_json(summary_text)
+        assert isinstance(summary, SummaryV4)
         summary = migrate(summary, SUMMARY_SCHEMA_VERSION)
-        assert isinstance(summary, SummaryV3)
 
         # Get Facts
         facts_text = self.storage.load_text_blob(facts_blob_name)
         metadata = self.storage.adapter.load_metadata(facts_blob_name)
         schema = SCHEMA_REGISTRY[FACTCHECK_MODULE][metadata['schema_version']]
         facts = schema.model_validate_json(facts_text)
-        assert isinstance(facts, FactCheck)
 
-        # Build Prompt
+        # Build Prompt - pass the full summary structure
         prompt_data = dict(
             summary=summary.model_dump(),
             facts=facts.model_dump(),
@@ -100,5 +101,5 @@ class Judge:
         logger.debug(f"Judging {summary_blob_name}")
         prompter = JudgeBuilder(self.storage)
         messages = prompter.build_prompt(summary_blob_name, facts_blob_name)
-        return self.executor.execute_prompts(messages, JUDGE_SCHEMA_VERSION, "judge", PROMPT_VERSION)
+        return self.executor.execute_prompts(messages, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
 
