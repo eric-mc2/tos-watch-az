@@ -3,6 +3,7 @@ import pytest
 import json
 
 from schemas.claim.v1 import Claims as ClaimsV1, VERSION as CLAIM_VERSION
+from schemas.factcheck.v1 import FactCheck
 from src.transforms.factcheck.claim_checker import ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -107,17 +108,12 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert
-        result = json.loads(result_json)
-        assert "chunks" in result
-        assert len(result["chunks"]) == 1
+        # Since we send one prompt, we get un-chunked response
+        result = FactCheck.model_validate_json(result_json)
         
         # Smoke test: LLM should recognize this is true
-        # (not testing LLM accuracy deeply, just that it functions)
-        fact_check = result["chunks"][0]
-        print(f"Fact check result: {fact_check}")
-        assert "veracity" in fact_check
-        assert "reason" in fact_check
-    
+        assert result.veracity
+
     def test_check_obvious_false_claim(self, fake_storage, llm_service, llm_transform,
                                         embedding_service):
         """Test fact-checking an obviously false claim."""
@@ -163,11 +159,8 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert
-        result = json.loads(result_json)
-        fact_check = result["chunks"][0]
-        print(f"Fact check result: {fact_check}")
-        assert "veracity" in fact_check
-        assert "reason" in fact_check
+        result = FactCheck.model_validate_json(result_json)
+        assert not result.veracity
     
     def test_rag_retrieves_relevant_context(self, fake_storage, llm_service, llm_transform,
                                              embedding_service):
@@ -224,12 +217,10 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert - just verify it completes successfully
-        # RAG should help LLM find the relevant biometric data section
-        result = json.loads(result_json)
-        assert len(result["chunks"]) == 1
-        print(f"RAG-based fact check: {result['chunks'][0]}")
+        result = FactCheck.model_validate_json(result_json)
+        assert "biometric" in result.reason or "facial" in result.reason or "fingerprint" in result.reason
     
-    def test_multiple_claims_processing(self, fake_storage, llm_service, llm_transform,
+    def test_multiple_positive_claims(self, fake_storage, llm_service, llm_transform,
                                          embedding_service):
         """Test processing multiple claims in one batch."""
         # Arrange
@@ -281,9 +272,59 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert
-        result = json.loads(result_json)
-        assert len(result["chunks"]) == 3  # One fact-check per claim
-        for fact_check in result["chunks"]:
-            assert "veracity" in fact_check
-            assert "reason" in fact_check
-            print(f"Claim verified: {fact_check}")
+        result_list = json.loads(result_json)['chunks']
+        results = [FactCheck.model_validate(x) for x in result_list]
+        assert all(x.veracity for x in results)
+        assert len(results) == 3
+
+    def test_positive_negative_claims(self, fake_storage, llm_service, llm_transform,
+                                         embedding_service):
+        """Test processing multiple claims in one batch."""
+        # Arrange
+        claims = ClaimsV1(claims=[
+            "Age restriction increased",
+            "New payment options added",
+        ])
+
+        diffs = DiffDoc(diffs=[
+            DiffSection(
+                index=0,
+                before="Minimum age: 21",
+                after="Minimum age: 13"
+            ),
+            DiffSection(
+                index=1,
+                before="Payment: Credit card only",
+                after="Payment: Credit card, PayPal, cryptocurrency"
+            ),
+        ])
+
+        claims_blob = "multi_claims.json"
+        diffs_blob = "multi_diffs.json"
+
+        fake_storage.upload_text_blob(
+            claims.model_dump_json(),
+            claims_blob,
+            metadata={"schema_version": CLAIM_VERSION}
+        )
+        fake_storage.upload_text_blob(
+            diffs.model_dump_json(),
+            diffs_blob,
+            metadata={}
+        )
+
+        checker = ClaimChecker(
+            storage=fake_storage,
+            executor=llm_transform,
+            embedder=embedding_service
+        )
+
+        # Act
+        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+
+        # Assert
+        result_list = json.loads(result_json)['chunks']
+        results = [FactCheck.model_validate(x) for x in result_list]
+        assert len(results) == 2
+        assert any(x.veracity for x in results)
+        assert not all(x.veracity for x in results)

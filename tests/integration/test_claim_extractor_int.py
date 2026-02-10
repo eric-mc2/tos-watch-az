@@ -46,8 +46,7 @@ def llm_service(llm):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-# TODO: Uncomment guard
-# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 class TestClaimExtractor:
     """Integration tests using real LLM adapter with fake storage."""
 
@@ -69,7 +68,7 @@ class TestClaimExtractor:
         assert len(result.claims) > 0
         assert any("15" in c for c in result.claims) or any("fifteen" in c for c in result.claims)
 
-    def test_extract_from_multiple_substantive_changes(self, fake_storage, llm_transform):
+    def test_multiple_positive(self, fake_storage, llm_transform):
         """Test extracting claims from multiple substantive changes."""
         # Arrange
         data = SummaryV3(chunks=[
@@ -93,7 +92,7 @@ class TestClaimExtractor:
         result = Claims.model_validate_json(response)
         assert len(result.claims) >= 2
 
-    def test_extract_mixed_substantive_nonsubstantive(self, fake_storage, llm_transform):
+    def test_positive_negative(self, fake_storage, llm_transform):
         """Test extracting claims when some changes are substantive and others aren't."""
         # Arrange
         data = SummaryV3(chunks=[
@@ -118,7 +117,7 @@ class TestClaimExtractor:
         assert len(result.claims) >= 1
         assert not (any("address" in c for c in result.claims) or any("formatting" in c for c in result.claims))
 
-    def test_extract_from_nonsubstantive_only(self, fake_storage, llm_transform):
+    def test_only_negative(self, fake_storage, llm_transform):
         """Test extracting claims when all changes are non-substantive."""
         # Arrange
         data = SummaryV3(chunks=[

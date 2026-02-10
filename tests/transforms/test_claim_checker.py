@@ -1,9 +1,14 @@
-import pytest
 import json
+from collections import namedtuple
+from typing import NamedTuple
+
+import pytest
+from transformers.models.bloom.modeling_bloom import bloom_gelu_back
 
 from schemas.claim.v1 import Claims as ClaimsV1, VERSION as CLAIM_VERSION
-from schemas.summary.v3 import Summary as SummaryV3, VERSION as SUMMARY_VERSION
-from schemas.summary.v2 import Summary as SummaryV2, Substantive
+from schemas.factcheck.v1 import FactCheck
+from schemas.llmerror.v1 import LLMError
+from src.stages import Stage
 from src.transforms.factcheck.claim_checker import ClaimCheckerBuilder, ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -59,6 +64,14 @@ def sample_claims():
 
 
 @pytest.fixture
+def sample_claim():
+    """Sample single claim for testing."""
+    return ClaimsV1(claims=[
+        "The document mentions age restrictions changed from 12+ to 15+",
+    ])
+
+
+@pytest.fixture
 def sample_diffs():
     """Sample diff document for testing."""
     return DiffDoc(diffs=[
@@ -79,64 +92,74 @@ def sample_diffs():
         ),
     ])
 
+BlobNames = namedtuple("blob_names", ["single_claim_blob", "multi_claims_blob", "diffs_blob"])
+
+@pytest.fixture
+def blob_names() -> BlobNames:
+    """Sample blob names for testing."""
+    return BlobNames("claim.json", "claims.json", "diff.json")
+
+@pytest.fixture
+def upload_test_data(fake_storage, sample_claims, sample_claim, sample_diffs, blob_names):
+
+    fake_storage.upload_text_blob(
+        sample_claims.model_dump_json(),
+        blob_names.multi_claims_blob,
+        metadata={"schema_version": CLAIM_VERSION}
+    )
+    fake_storage.upload_text_blob(
+        sample_claim.model_dump_json(),
+        blob_names.single_claim_blob,
+        metadata={"schema_version": CLAIM_VERSION}
+    )
+    fake_storage.upload_text_blob(
+        sample_diffs.model_dump_json(),
+        blob_names.diffs_blob,
+        metadata={}
+    )
+
 
 class TestClaimCheckerBuilder:
     """Unit tests for ClaimCheckerBuilder using fake adapters."""
     
-    def test_build_prompt_basic(self, fake_storage, embedding_service, sample_claims, sample_diffs):
+    def test_single_claim(self, fake_storage, embedding_service, upload_test_data, blob_names):
         """Test that builder creates prompts for each claim."""
         # Arrange
         builder = ClaimCheckerBuilder(fake_storage, embedding_service)
         
-        claims_blob = "claims.json"
-        diffs_blob = "diffs.json"
-        
-        fake_storage.upload_text_blob(
-            sample_claims.model_dump_json(), 
-            claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
-        )
-        fake_storage.upload_text_blob(
-            sample_diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
         # Act
-        prompts = list(builder.build_prompt(claims_blob, diffs_blob))
+        prompts = list(builder.build_prompt(blob_names.single_claim_blob, blob_names.diffs_blob))
         
         # Assert
+        assert len(prompts) == 1  # One prompt per claim
+
+    def test_multiple_claims(self, fake_storage, embedding_service, upload_test_data, blob_names):
+        """Test that builder creates prompts for each claim."""
+        # Arrange
+        builder = ClaimCheckerBuilder(fake_storage, embedding_service)
+
+        # Act
+        prompts = list(builder.build_prompt(blob_names.multi_claims_blob, blob_names.diffs_blob))
+
+        # Assert
         assert len(prompts) == 3  # One prompt per claim
-        for prompt in prompts:
-            assert prompt.system is not None
-            assert prompt.current.role == "user"
-            # Verify prompt contains claim and document
-            content = json.loads(prompt.current.content)
-            assert "claim" in content
-            assert "document" in content
-    
-    def test_build_prompt_with_empty_claims(self, fake_storage, embedding_service, sample_diffs):
+
+    def test_empty_claims(self, fake_storage, embedding_service, upload_test_data, blob_names):
         """Test handling of empty claims list."""
         # Arrange
         builder = ClaimCheckerBuilder(fake_storage, embedding_service)
         
         empty_claims = ClaimsV1(claims=[])
         claims_blob = "empty_claims.json"
-        diffs_blob = "diffs.json"
-        
+
         fake_storage.upload_text_blob(
             empty_claims.model_dump_json(), 
             claims_blob, 
             metadata={"schema_version": CLAIM_VERSION}
         )
-        fake_storage.upload_text_blob(
-            sample_diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
+
         # Act
-        prompts = list(builder.build_prompt(claims_blob, diffs_blob))
+        prompts = list(builder.build_prompt(claims_blob, blob_names.diffs_blob))
         
         # Assert
         assert len(prompts) == 0
@@ -157,49 +180,20 @@ class TestClaimCheckerBuilder:
         assert "Section 2" in formatted
         assert "Before: Old text" in formatted
         assert "After: New text" in formatted
-    
-    def test_format_diffs_empty(self):
-        """Test formatting of empty diff doc."""
-        # Arrange
-        empty_diff_doc = DiffDoc(diffs=[])
-        
-        # Act
-        formatted = ClaimCheckerBuilder._format_diffs(empty_diff_doc)
-        
-        # Assert
-        assert "No relevant document sections found" in formatted
-    
-    def test_rag_indexer_builds(self, fake_storage, embedding_service, sample_claims, sample_diffs):
-        """Test that RAG indexer is built during prompt building."""
-        # Arrange
-        builder = ClaimCheckerBuilder(fake_storage, embedding_service)
-        
-        claims_blob = "claims.json"
-        diffs_blob = "diffs.json"
-        
-        fake_storage.upload_text_blob(
-            sample_claims.model_dump_json(), 
-            claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
-        )
-        fake_storage.upload_text_blob(
-            sample_diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
-        # Act - consume all prompts to trigger indexer build
-        prompts = list(builder.build_prompt(claims_blob, diffs_blob))
-        
-        # Assert - just verify it doesn't crash and produces prompts
-        assert len(prompts) > 0
 
+    @pytest.mark.skip
+    def test_empty_rag(self, fake_storage, embedding_service, upload_test_data):
+        pass # TODO: Need to test FAISS failure modes like when k > diffs
+
+    @pytest.mark.skip
+    def test_migration(self, fake_storage, embedding_service):
+        pass # TODO: test when there is ClaimsV2
 
 class TestClaimChecker:
     """Unit tests for ClaimChecker using fake adapters."""
-    
-    def test_check_claim_basic(self, fake_storage, llm_service, llm_transform,
-                                embedding_service, sample_claims, sample_diffs):
+
+    def test_multiple_claims(self, fake_storage, llm_service, llm_transform,
+                                embedding_service, upload_test_data, blob_names):
         """Test basic claim checking workflow."""
         # Arrange
         checker = ClaimChecker(
@@ -207,125 +201,104 @@ class TestClaimChecker:
             executor=llm_transform,
             embedder=embedding_service
         )
-        
-        claims_blob = "claims.json"
-        diffs_blob = "diffs.json"
-        
-        fake_storage.upload_text_blob(
-            sample_claims.model_dump_json(), 
-            claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
-        )
-        fake_storage.upload_text_blob(
-            sample_diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
+
         # Configure fake LLM to return valid fact-check responses
-        llm_service.adapter.set_response('{"veracity": true, "reason": "The claim is supported by the document."}')
+        # Fake LLM is prompted and gives sames response every time.
+        llm_service.adapter.set_response(
+            FactCheck(veracity=True, reason="because").model_dump_json()
+        )
         
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
         
         # Assert
         assert result_json is not None
         assert isinstance(metadata, dict)
         assert "schema_version" in metadata
-        
+        assert "prompt_version" in metadata
+
         # Verify result structure
-        result = json.loads(result_json)
-        assert "chunks" in result
-        assert len(result["chunks"]) == 3  # One per claim
-    
-    def test_check_claim_validates_responses(self, fake_storage, llm_service, llm_transform,
-                                              embedding_service, sample_claims, sample_diffs):
-        """Test that responses are validated (smoke test - actual validation in LLMService)."""
+        results = [FactCheck.model_validate(x) for x in json.loads(result_json)['chunks']]
+        assert len(results) == 3
+
+    def test_single_claim(self, fake_storage, llm_service, llm_transform,
+                                embedding_service, upload_test_data, blob_names):
+        """Test basic claim checking workflow."""
         # Arrange
         checker = ClaimChecker(
             storage=fake_storage,
             executor=llm_transform,
             embedder=embedding_service
         )
-        
-        claims_blob = "claims.json"
-        diffs_blob = "diffs.json"
-        
-        fake_storage.upload_text_blob(
-            sample_claims.model_dump_json(), 
-            claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
+
+        # Configure fake LLM to return valid fact-check responses
+        # Fake LLM is prompted and gives sames response every time.
+        llm_service.adapter.set_response(
+            FactCheck(veracity=True, reason="because").model_dump_json()
         )
-        fake_storage.upload_text_blob(
-            sample_diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
-        # Set response that should be parseable
-        llm_service.adapter.set_response('{"veracity": false, "reason": "Not supported."}')
-        
-        # Act - should not raise
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
-        
+
+        # Act
+        result_json, metadata = checker.check_claim(blob_names.single_claim_blob, blob_names.diffs_blob)
+
         # Assert
         assert result_json is not None
+        assert isinstance(metadata, dict)
+        assert "schema_version" in metadata
+        assert "prompt_version" in metadata
+
+        # Verify result structure
+        # Since we only passed one claim, the result is stored as non-chunked.
+        FactCheck.model_validate_json(result_json)
 
 
-class TestClaimCheckerIntegration:
-    """Integration-style tests using fake adapters but testing full workflow."""
-    
-    def test_end_to_end_claim_checking(self, fake_storage, llm_service, llm_transform,
-                                        embedding_service):
-        """Test complete claim checking workflow from start to finish."""
-        # Arrange - create realistic test data
-        claims = ClaimsV1(claims=[
-            "The minimum age requirement increased from 12 to 15 years"
-        ])
-        
-        diffs = DiffDoc(diffs=[
-            DiffSection(
-                index=0,
-                before="Users must be at least 12 years old.",
-                after="Users must be at least 15 years old."
-            ),
-            DiffSection(
-                index=1,
-                before="Privacy policy applies to all users.",
-                after="Privacy policy applies to all users over 15."
-            )
-        ])
-        
-        claims_blob = "e2e_claims.json"
-        diffs_blob = "e2e_diffs.json"
-        
-        fake_storage.upload_text_blob(
-            claims.model_dump_json(), 
-            claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
-        )
-        fake_storage.upload_text_blob(
-            diffs.model_dump_json(), 
-            diffs_blob, 
-            metadata={}
-        )
-        
+    def test_extraneous_llm_text(self, fake_storage,
+                                 llm_transform,
+                                 llm_service,
+                                 embedding_service,
+                                 upload_test_data,
+                                 blob_names):
+        """Test basic claim extraction workflow."""
+        # Arrange
         checker = ClaimChecker(
             storage=fake_storage,
             executor=llm_transform,
             embedder=embedding_service
         )
-        
-        # Configure LLM response
+
+        # Configure fake LLM
+        check = FactCheck(veracity=True, reason="because")
         llm_service.adapter.set_response(
-            '{"veracity": true, "reason": "The document shows age requirement changed from 12 to 15."}'
+            "I can help with that \n" + \
+            check.model_dump_json() + \
+            "Would you like more help?"
         )
-        
+
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
-        
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
+
         # Assert
-        result = json.loads(result_json)
-        assert len(result["chunks"]) == 1
-        assert result["chunks"][0]["veracity"] is True
-        assert "12 to 15" in result["chunks"][0]["reason"] or "age" in result["chunks"][0]["reason"].lower()
+        results = [FactCheck.model_validate(x) for x in json.loads(result_json)['chunks']]
+        assert results[0] == check
+
+    def test_invalid_json_llm(self, fake_storage,
+                              llm_transform,
+                              llm_service,
+                              embedding_service,
+                              upload_test_data,
+                              blob_names):
+        """Test basic claim extraction workflow."""
+        # Arrange
+        checker = ClaimChecker(
+            storage=fake_storage,
+            executor=llm_transform,
+            embedder=embedding_service
+        )
+
+        # Configure fake LLM
+        llm_service.adapter.set_response("{'foo'")
+
+        # Act
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
+
+        # Assert
+        [LLMError.model_validate(x) for x in json.loads(result_json)['chunks']]

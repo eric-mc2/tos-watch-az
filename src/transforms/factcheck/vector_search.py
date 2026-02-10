@@ -31,7 +31,7 @@ class Indexer:
         Args:
             blob_name: Name of blob containing DiffDoc JSON
         """
-        logger.info(f"Building FAISS index from {blob_name}")
+        logger.debug(f"Building FAISS index from {blob_name}")
         
         # Load and parse diffs
         diffs_txt = self.storage.load_text_blob(blob_name)
@@ -85,7 +85,7 @@ class Indexer:
         for idx, metadata in enumerate(metadata_entries):
             self._metadata[idx] = metadata
         
-        logger.info(f"FAISS index built with {len(self._metadata)} entries")
+        logger.debug(f"FAISS index built with {len(self._metadata)} entries")
 
     def search(self, query: str, k: Optional[int] = None) -> DiffDoc:
         """
@@ -117,7 +117,7 @@ class Indexer:
         
         # Search FAISS index
         distances, indices = self._index.search(query_vec, k)
-        
+
         # Collect unique diff indices with their texts
         diff_map: dict[int, dict[str, str]] = {}
         
