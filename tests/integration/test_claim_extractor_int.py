@@ -2,6 +2,7 @@ import os
 import pytest
 import json
 
+from schemas.llmerror.v1 import LLMError
 from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as VERSIONV4
 from schemas.summary.v2 import Summary as SummaryV2, Substantive, VERSION as VERSIONV2
@@ -134,5 +135,4 @@ class TestClaimExtractor:
         response, metadata = extractor.extract_claims("nonsubstantive_test.json")
 
         # Assert
-        result = Claims.model_validate_json(response)
-        assert len(result.claims) == 0
+        LLMError.model_validate_json(response)

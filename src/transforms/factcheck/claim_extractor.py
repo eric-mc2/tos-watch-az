@@ -1,9 +1,8 @@
-# TODO: Validating this class first.
-
 import logging
 from dataclasses import dataclass
 from typing import Iterator
 
+from schemas.llmerror.v1 import LLMError
 from schemas.registry import SCHEMA_REGISTRY
 from schemas.summary.migration import migrate
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
@@ -57,7 +56,7 @@ class ClaimExtractorBuilder:
         schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
         summary = schema.model_validate_json(summary_text)
         assert isinstance(summary, SummaryBase)
-        summary = migrate(summary, SUMMARY_SCHEMA_VERSION)
+        summary = migrate(summary, metadata['schema_version'])
         assert isinstance(summary, SummaryV4)
 
         if not summary.practically_substantive.rating:
@@ -78,6 +77,9 @@ class ClaimExtractor:
     def extract_claims(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Extracting claims from {blob_name}")
         prompter = ClaimExtractorBuilder(self.storage)
-        messages = prompter.build_prompt(blob_name)
+        messages = list(prompter.build_prompt(blob_name))
+        if not messages:
+            result = LLMError(error="No practical significance in original",raw="")
+            return result.model_dump_json(), dict(prompt_version=PROMPT_VERSION)
         return self.executor.execute_prompts(messages, CLAIMS_SCHEMA_VERSION, PROMPT_VERSION)
 

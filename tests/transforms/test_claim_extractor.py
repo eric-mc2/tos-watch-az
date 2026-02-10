@@ -1,6 +1,7 @@
 import pytest
 import json
 
+from schemas.llmerror.v1 import LLMError
 from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
 from schemas.summary.v4 import Summary as SummaryV4, VERSION
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
@@ -147,7 +148,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
         
         # Configure fake LLM to return multiple claims
         response = Claims(claims=["claim 1", "claim 2"])
@@ -239,6 +240,4 @@ class TestClaimExtractor:
         result_json, metadata = extractor.extract_claims("test.json")
 
         # Assert
-        result = json.loads(result_json)
-        assert "error" in result
-        assert "raw" in result
+        LLMError.model_validate_json(result_json)

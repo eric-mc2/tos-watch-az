@@ -8,6 +8,3 @@ VERSION = "v1"
 @register(MODULE, VERSION)
 class FactCheck(FactCheckBase):
     claims: List[str]
-
-def hello():
-    return __name__

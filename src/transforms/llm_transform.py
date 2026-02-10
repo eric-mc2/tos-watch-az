@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import ulid  # type: ignore
 
 from schemas.chunking import ChunkedResponse
+from schemas.llmerror.v1 import LLMError
 from schemas.registry import SCHEMA_REGISTRY
 from src.adapters.llm.protocol import PromptMessages
 from src.services.blob import BlobService
@@ -47,11 +48,11 @@ class LLMTransform:
         for message in prompts:
             txt = self.llm.call_unsafe(message.system, message.history + [message.current])
             parsed = self.llm.extract_json_from_response(txt)
-            if parsed['success']:
-                responses.append(parsed['data'])
+            if parsed.success:
+                responses.append(parsed.data)
             else:
-                logger.warning(f"Failed to parse response: {parsed['error']}")
-                responses.append({"error": parsed['error'], "raw": txt})
+                logger.warning(f"Failed to parse response: {parsed.error}")
+                responses.append(LLMError(error=parsed.error, raw=txt).model_dump())
 
         # Only wrap in chunks array if actually chunked (>1 response)
         # Use un-typed json.dumps here instead of model_dump_json because we haven't validated yet.
