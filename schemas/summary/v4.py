@@ -1,4 +1,4 @@
-from typing import Self
+from typing import Self, cast
 
 from schemas.summary.v0 import MODULE
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
@@ -13,6 +13,8 @@ class Summary(SummaryV2):
 
     @classmethod
     def merge(cls, a: Self, b: Self) -> Self:
+        # TODO: These are being input as BaseClass (the parent class) not Summary.
+        a, b = cast(Self, a), cast(Self, b)
         aa, bb = a.practically_substantive, b.practically_substantive
         rating = aa.rating or bb.rating
         positive = (aa.reason if aa.rating else "") + "\n" + (bb.reason if bb.rating else "")

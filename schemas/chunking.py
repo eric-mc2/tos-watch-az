@@ -6,7 +6,7 @@ LLM token limits, not business requirements, so it should be transparent
 to business schemas.
 """
 
-from typing import TypeVar, Generic, List, Callable, Optional
+from typing import Type, TypeVar, Generic, List, Callable, Optional, cast
 from pydantic import BaseModel, Field
 from functools import reduce
 
@@ -60,7 +60,8 @@ class ChunkedResponse(BaseModel, Generic[T]):
             )
         return self.chunks[0]
     
-    def merge(self, merge_fn: Optional[Callable[[T, T], T]] = None) -> T:
+    # TODO: THIS BREAKS BECAUSE IT CANT DYNAMICALY TYPE THE INPUTS
+    def merge(self, schema: Type[BaseModel], merge_fn: Optional[Callable[[T, T], T]] = None) -> T:
         """Merge chunks back to single item.
         
         Args:
@@ -83,4 +84,7 @@ class ChunkedResponse(BaseModel, Generic[T]):
                 f"Provide a function to merge chunks or access them directly."
             )
         
-        return reduce(merge_fn, self.chunks)
+        # TODO: Trying to pass the actual schema and use it to cast value inside this func.
+        #       Otherwise I can try casting inside the merge func, which knows its proper type statically.
+        _chunks = [schema.model_validate(x) for x in self.chunks]
+        return reduce(merge_fn, _chunks)

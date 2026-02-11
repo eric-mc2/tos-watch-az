@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 
-from schemas.summary.v3 import VERSION as SCHEMA_VERSION
+from schemas.summary.v4 import VERSION as SCHEMA_VERSION
 from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService

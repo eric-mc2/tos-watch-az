@@ -54,6 +54,7 @@ class ClaimExtractorBuilder:
         summary_text = self.storage.load_text_blob(blob_name)
         metadata = self.storage.adapter.load_metadata(blob_name)
         schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
+        # TODO: Doesn't handle chunked!
         summary = schema.model_validate_json(summary_text)
         assert isinstance(summary, SummaryBase)
         summary = migrate(summary, metadata['schema_version'])

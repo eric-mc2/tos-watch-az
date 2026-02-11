@@ -157,9 +157,10 @@ def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, o
 
         if is_chunked:
             # New chunked format: use ChunkedResponse wrapper for validation
+            # TODO: THIS BREAKS BECAUSE IT CLEARS THE TYPE INFO!
             wrapper = ChunkedResponse[BaseModel].model_validate_json(txt)
             if hasattr(schema, 'merge'):
-                merged = wrapper.merge(schema.merge)
+                merged = wrapper.merge(schema, schema.merge)
             else:
                 merged = wrapper.merge()
             cleaned_txt = llm.validate_output(merged.model_dump_json(), schema) # type: ignore
