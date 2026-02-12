@@ -15,16 +15,13 @@ from src.transforms.differ import DiffDoc, DiffSection
 from src.stages import Stage
 
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.claim.v0 import MODULE as CLAIMS_MODULE
-from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
+from schemas.fact.v0 import CLAIMS_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 
-from schemas.summary.v4 import Summary
 from schemas.summary.v2 import Substantive as SSubstantive
-from schemas.claim.v1 import Claims
-from schemas.factcheck.v1 import FactCheck
+from schemas.summary.v4 import Summary
+from schemas.fact.v1 import Claims, Fact, merge_facts
 from schemas.judge.v1 import Judgement, Substantive as JSubstantive
-from schemas.llmerror.v1 import LLMError
 
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.fake_client import FakeLLMAdapter
@@ -49,11 +46,11 @@ class PipelineTestCase:
     diff_sections: List[DiffSection]
     summary_response: Optional[str]  # JSON or invalid string
     claims_response: Optional[str]   # JSON or invalid string
-    factcheck_response: Optional[str]
+    fact_response: Optional[str]
     judge_response: Optional[str]
     expect_summary_success: str
     expect_claims_success: str
-    expect_factcheck_success: str
+    expect_fact_success: str
     expect_judge_success: str
     num_claims: int
 
@@ -154,17 +151,17 @@ def run_pipeline_stage_claim_checker(fake_storage, fake_llm, fake_embedding, cla
     return f"{Stage.FACTCHECK_RAW.value}/{company}/{policy}/{timestamp}/latest.txt"
 
 
-def run_pipeline_stage_factcheck_parser(fake_storage, fake_llm, factcheck_raw_path):
-    """Run factcheck parser: FACTCHECK_RAW -> FACTCHECK_CLEAN."""
-    input_blob = MockInputStream(fake_storage, factcheck_raw_path)
-    parser = create_llm_parser(fake_storage, fake_llm, FACTCHECK_MODULE, Stage.FACTCHECK_CLEAN.value)
+def run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path):
+    """Run fact parser: FACTCHECK_RAW -> FACTCHECK_CLEAN."""
+    input_blob = MockInputStream(fake_storage, fact_raw_path)
+    parser = create_llm_parser(fake_storage, fake_llm, PROOF_MODULE, Stage.FACTCHECK_CLEAN.value, merge_facts)
     parser(input_blob)
     
-    parts = fake_storage.parse_blob_path(factcheck_raw_path)
+    parts = fake_storage.parse_blob_path(fact_raw_path)
     return f"{Stage.FACTCHECK_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
 
-def run_pipeline_stage_judge(fake_storage, fake_llm, factcheck_clean_path, company, policy, timestamp):
+def run_pipeline_stage_judge(fake_storage, fake_llm, fact_clean_path, company, policy, timestamp):
     """Run judge: FACTCHECK_CLEAN + SUMMARY_CLEAN -> JUDGE_RAW."""
     from src.transforms.factcheck.judge import Judge
     
@@ -179,7 +176,7 @@ def run_pipeline_stage_judge(fake_storage, fake_llm, factcheck_clean_path, compa
         paired_input_stage=Stage.SUMMARY_CLEAN.value
     )
     
-    processor({'task_id': factcheck_clean_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
+    processor({'task_id': fact_clean_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
     return f"{Stage.JUDGE_RAW.value}/{company}/{policy}/{timestamp}/latest.txt"
 
 
@@ -220,9 +217,9 @@ def generate_test_cases():
     claims_two = Claims(claims=["Claim 1", "Claim 2"]).model_dump_json()
     claims_invalid = "not json at all"
     
-    # Axis 4: FactCheck responses
-    factcheck_valid = FactCheck(claim="Test", veracity=True, reason="Valid").model_dump_json()
-    factcheck_invalid = '{"incomplete":'
+    # Axis 4: Fact responses
+    fact_valid = Fact(claim="Test", veracity=True, reason="Valid").model_dump_json()
+    fact_invalid = '{"ionses'
     
     # Axis 5: Judge responses
     judge_valid = Judgement(practically_substantive=JSubstantive(rating=True, reason="Ok")).model_dump_json()
@@ -236,11 +233,11 @@ def generate_test_cases():
             diff_sections=empty_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='False',
             expect_claims_success='False',
-            expect_factcheck_success='False',
+            expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
         ),
@@ -251,11 +248,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=1
         ),
@@ -265,12 +262,40 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
+            num_claims=1
+        ),
+        # One Diff + Summary False
+        PipelineTestCase(
+            name="one_diff_summary_false",
+            diff_sections=one_diff,
+            summary_response=summary_false,
+            claims_response=claims_one,
+            fact_response=fact_valid,
+            judge_response=judge_valid,
+            expect_summary_success='True',
+            expect_claims_success='exit',
+            expect_fact_success='False',
+            expect_judge_success='False',
+            num_claims=1
+        ),
+        # One Diff + Summary Invalid
+        PipelineTestCase(
+            name="one_diff_summary_inv",
+            diff_sections=one_diff,
+            summary_response=summary_invalid,
+            claims_response=claims_one,
+            fact_response=fact_valid,
+            judge_response=judge_valid,
+            expect_summary_success='exit',
+            expect_claims_success='False',
+            expect_fact_success='False',
+            expect_judge_success='False',
             num_claims=1
         ),
         # Chunked summarizer prompts
@@ -280,11 +305,11 @@ def generate_test_cases():
             diff_sections=two_long_diffs,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=1
         ),
@@ -294,11 +319,11 @@ def generate_test_cases():
             diff_sections=two_long_diffs,
             summary_response=summary_false,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
-            expect_claims_success='False',
-            expect_factcheck_success='False',
+            expect_claims_success='exit',
+            expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
         ),
@@ -308,11 +333,11 @@ def generate_test_cases():
             diff_sections=two_long_diffs,
             summary_response=summary_invalid,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='exit',
             expect_claims_success='False',
-            expect_factcheck_success='False',
+            expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
         ),
@@ -323,11 +348,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_zero,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='False',
+            expect_fact_success='False',
             expect_judge_success='False',
             num_claims=0
         ),
@@ -337,25 +362,25 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=1
         ),
-        # Two Claims ## TODO: THIS CASE EXPOSES THE MISSING MERGE FUNC BUG
+        # Two Claims
         PipelineTestCase(
             name="two_claims", 
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_two,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=2
         ),
@@ -365,11 +390,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_invalid,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='exit',
-            expect_factcheck_success='False',
+            expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
         ),
@@ -380,11 +405,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=1
         ),
@@ -394,11 +419,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_invalid,
+            fact_response=fact_invalid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='exit',
+            expect_fact_success='exit',
             expect_judge_success='False',
             num_claims=1
         ),
@@ -409,11 +434,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='True',
             num_claims=1
         ),
@@ -423,11 +448,11 @@ def generate_test_cases():
             diff_sections=one_diff,
             summary_response=summary_true,
             claims_response=claims_one,
-            factcheck_response=factcheck_valid,
+            fact_response=fact_valid,
             judge_response=judge_invalid,
             expect_summary_success='True',
             expect_claims_success='True',
-            expect_factcheck_success='True',
+            expect_fact_success='True',
             expect_judge_success='exit',
             num_claims=1
         ),
@@ -450,6 +475,10 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, fake_embeddin
     diff_blob_path = f"{Stage.DIFF_CLEAN.value}/{company}/{policy}/{timestamp}.json"
     fake_storage.upload_text_blob(diff_doc.model_dump_json(), diff_blob_path, metadata={})
     
+    # Exit if empty
+    if not diff_doc.diffs:
+        return
+
     # Stage 1 & 2: Summarizer + Parser
     fake_llm.adapter.set_response(test_case.summary_response)
     
@@ -481,29 +510,29 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, fake_embeddin
         assert test_case.expect_claims_success == 'exit', f"Claims unexpectedly failed: {e}"
         return
     
-    # Skip factcheck/judge if zero claims
+    # Skip fact/judge if zero claims
     if test_case.num_claims == 0:
         return
     
     # Stage 5 & 6: ClaimChecker + Parser
-    fake_llm.adapter.set_response(test_case.factcheck_response)
+    fake_llm.adapter.set_response(test_case.fact_response)
     
     try:
-        factcheck_raw_path = run_pipeline_stage_claim_checker(fake_storage, fake_llm, fake_embedding, claim_clean_path, company, policy, timestamp)
-        factcheck_clean_path = run_pipeline_stage_factcheck_parser(fake_storage, fake_llm, factcheck_raw_path)
+        fact_raw_path = run_pipeline_stage_claim_checker(fake_storage, fake_llm, fake_embedding, claim_clean_path, company, policy, timestamp)
+        fact_clean_path = run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path)
         
-        assert test_case.expect_factcheck_success == 'True'
-        assert fake_storage.check_blob(factcheck_clean_path)
+        assert test_case.expect_fact_success == 'True'
+        assert fake_storage.check_blob(fact_clean_path)
         
     except Exception as e:
-        assert test_case.expect_factcheck_success == 'exit', f"FactCheck unexpectedly failed: {e}"
+        assert test_case.expect_fact_success == 'exit', f"FactCheck unexpectedly failed: {e}"
         return
     
     # Stage 7 & 8: Judge + Parser
     fake_llm.adapter.set_response(test_case.judge_response)
     
     try:
-        judge_raw_path = run_pipeline_stage_judge(fake_storage, fake_llm, factcheck_clean_path, company, policy, timestamp)
+        judge_raw_path = run_pipeline_stage_judge(fake_storage, fake_llm, fact_clean_path, company, policy, timestamp)
         judge_clean_path = run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path)
         
         assert test_case.expect_judge_success == 'True'

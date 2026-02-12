@@ -1,14 +1,10 @@
 import json
 from collections import namedtuple
-from typing import NamedTuple
-
 import pytest
-from transformers.models.bloom.modeling_bloom import bloom_gelu_back
 
-from schemas.claim.v1 import Claims as ClaimsV1, VERSION as CLAIM_VERSION
-from schemas.factcheck.v1 import FactCheck
+from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact
+from schemas.fact.v1 import Fact
 from schemas.llmerror.v1 import LLMError
-from src.stages import Stage
 from src.transforms.factcheck.claim_checker import ClaimCheckerBuilder, ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -205,7 +201,7 @@ class TestClaimChecker:
         # Configure fake LLM to return valid fact-check responses
         # Fake LLM is prompted and gives sames response every time.
         llm_service.adapter.set_response(
-            FactCheck(veracity=True, reason="because").model_dump_json()
+            Fact(claim="something", veracity=True, reason="because").model_dump_json()
         )
         
         # Act
@@ -218,7 +214,7 @@ class TestClaimChecker:
         assert "prompt_version" in metadata
 
         # Verify result structure
-        results = [FactCheck.model_validate(x) for x in json.loads(result_json)['chunks']]
+        results = [Fact.model_validate(x) for x in json.loads(result_json)['chunks']]
         assert len(results) == 3
 
     def test_single_claim(self, fake_storage, llm_service, llm_transform,
@@ -234,7 +230,7 @@ class TestClaimChecker:
         # Configure fake LLM to return valid fact-check responses
         # Fake LLM is prompted and gives sames response every time.
         llm_service.adapter.set_response(
-            FactCheck(veracity=True, reason="because").model_dump_json()
+            Fact(claim="something", veracity=True, reason="because").model_dump_json()
         )
 
         # Act
@@ -248,7 +244,7 @@ class TestClaimChecker:
 
         # Verify result structure
         # Since we only passed one claim, the result is stored as non-chunked.
-        FactCheck.model_validate_json(result_json)
+        Fact.model_validate_json(result_json)
 
 
     def test_extraneous_llm_text(self, fake_storage,
@@ -266,7 +262,7 @@ class TestClaimChecker:
         )
 
         # Configure fake LLM
-        check = FactCheck(veracity=True, reason="because")
+        check = Fact(claim="something", veracity=True, reason="because")
         llm_service.adapter.set_response(
             "I can help with that \n" + \
             check.model_dump_json() + \
@@ -277,7 +273,7 @@ class TestClaimChecker:
         result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
 
         # Assert
-        results = [FactCheck.model_validate(x) for x in json.loads(result_json)['chunks']]
+        results = [Fact.model_validate(x) for x in json.loads(result_json)['chunks']]
         assert results[0] == check
 
     def test_invalid_json_llm(self, fake_storage,

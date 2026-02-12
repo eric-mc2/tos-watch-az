@@ -88,36 +88,36 @@ class JudgeBuilder:
 
 
     @classmethod
-    def _format_prompt(cls, summary: SummaryV4, facts: FactCheck):
+    def _format_prompt(cls, summary: SummaryV4, facts: Proof):
         plaintext_summary = cls._format_summary(summary)
-        plaintext_facts = cls._format_fact(facts)
-        return "\n".join([plaintext_summary,
-                          "Fact-Checking:",
-                          plaintext_facts])
+        plaintext_facts = cls._format_proof(facts)
+        formatted = [plaintext_summary,
+                      "Fact-Checking:",
+                      plaintext_facts]
+        return "\n".join(formatted)
 
 
     @classmethod
     def _format_summary(cls, summary: SummaryV4):
-        return "\n".join(["Preliminary analysis:",
-                         "Is the change practically substantive?",
-                         str(summary.practically_substantive.rating),
-                         "Reasoning:",
-                          summary.practically_substantive.reason
-                         ])
+        formatted = ["Preliminary analysis:",
+                     "Is the change practically substantive?",
+                     str(summary.practically_substantive.rating),
+                     "Reasoning:",
+                      summary.practically_substantive.reason]
+        return "\n".join(formatted)
 
     @classmethod
-    def _format_fact(cls, fact: FactCheck) -> str:
-        """Format FactCheck into readable context for the LLM."""
-        return "\n".join([
-                f"Claim: {fact.claim}",
-                f"Veracity: {fact.veracity}",
-                f"Reason: {fact.reason}"])
+    def _format_fact(cls, fact: Fact) -> str:
+        formatted = [f"Claim: {fact.claim}",
+                    f"Veracity: {fact.veracity}",
+                    f"Reason: {fact.reason}"]
+        return "\n".join(formatted)
 
     @classmethod
-    def _format_facts(cls, facts: List[FactCheck]) -> str:
-        """Format FactCheck into readable context for the LLM."""
-        return "\n".join(f"Case {i}:\n{cls._format_fact(x)}"
-                         for i,x in enumerate(facts, start=1))
+    def _format_proof(cls, facts: Proof) -> str:
+        formatted = [f"Case {i}:\n{cls._format_fact(x)}"
+                    for i,x in enumerate(facts.facts, start=1)]
+        return "\n".join(formatted)
 
 @dataclass
 class Judge:

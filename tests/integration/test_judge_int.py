@@ -5,7 +5,7 @@ import json
 from schemas.judge.v1 import Judgement
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as SUMMARY_VERSION
 from schemas.summary.v2 import Substantive
-from schemas.factcheck.v1 import FactCheck, VERSION as FACTCHECK_VERSION
+from schemas.fact.v1 import Fact, FACT_VERSION as FACTCHECK_VERSION, Proof
 from src.transforms.factcheck.judge import Judge
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.client import ClaudeAdapter
@@ -44,13 +44,12 @@ def llm_service(llm_adapter):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-
-# TODO: uncomment guard
+# TODO: Uncomment
 # @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
 class TestJudgeIntegration:
     """Integration tests using real LLM adapter with fake storage."""
     
-    def test_judge_all_sustained(self, fake_storage, llm_service, llm_transform):
+    def test_judge_all_sustained(self, fake_storage, llm_transform):
         """Test judging obviously substantive changes."""
         # Arrange - clear substantive change
         summary = SummaryV4(practically_substantive=Substantive(
@@ -59,14 +58,14 @@ class TestJudgeIntegration:
                 )
             )
         
-        factcheck = dict(chunks=[
-            FactCheck(claim="Government-issued ID is now required for account creation",
+        factcheck = Proof(facts=[
+            Fact(claim="Government-issued ID is now required for account creation",
                       veracity=True,
                       reason="Document lists the types of compliant IDs").model_dump(),
-            FactCheck(claim="Mandatory arbitration clause has been added to terms",
+            Fact(claim="Mandatory arbitration clause has been added to terms",
                       veracity=True,
                       reason="Document describes the terms of arbitration").model_dump(),
-            FactCheck(claim="Users waive their right to file lawsuits against the company",
+            Fact(claim="Users waive their right to file lawsuits against the company",
                       veracity=True,
                       reason="Section on right to sue has been removed").model_dump()
         ])
@@ -80,7 +79,7 @@ class TestJudgeIntegration:
             metadata={"schema_version": SUMMARY_VERSION}
         )
         fake_storage.upload_text_blob(
-            json.dumps(factcheck),
+            factcheck.model_dump_json(),
             facts_blob, 
             metadata={"schema_version": FACTCHECK_VERSION}
         )
@@ -97,18 +96,24 @@ class TestJudgeIntegration:
         result = Judgement.model_validate_json(result_json)
         assert result.practically_substantive.rating
 
-    def test_judge_obviously_nonsubstantive(self, fake_storage, llm_service, llm_transform):
+    def test_judge_obviously_nonsubstantive(self, fake_storage, llm_transform):
         # Arrange
         summary = SummaryV4(practically_substantive=Substantive(
             rating=True,
             reason="Service now requires government-issued ID for all users, mandatory arbitration added, and users lose right to sue."
         ))
 
-        factcheck = FactCheck(
-            claim="Government-issued ID is now required for account creation",
-            veracity=False,
-            reason="Document does not make any mention of identification requirements.")
-        
+        factcheck = Proof(facts=[
+            Fact(claim="Government-issued ID is now required for account creation",
+                      veracity=False,
+                      reason="Actually the valid identification section stays identical between versions.").model_dump(),
+            Fact(claim="Mandatory arbitration clause has been added to terms",
+                      veracity=False,
+                      reason="I do not see any arbitration clause here.").model_dump(),
+            Fact(claim="Users waive their right to file lawsuits against the company",
+                      veracity=False,
+                      reason="On further inspection, document describes the right but does not revoke it.").model_dump()
+        ])
         summary_blob = "nonsubstantive_summary.json"
         facts_blob = "nonsubstantive_facts.json"
         
@@ -135,7 +140,7 @@ class TestJudgeIntegration:
         result = Judgement.model_validate_json(result_json)
         assert not result.practically_substantive.rating
     
-    def test_judge_with_conflicting_evidence(self, fake_storage, llm_service, llm_transform):
+    def test_judge_with_conflicting_evidence(self, fake_storage, llm_transform):
         """Test judging when initial analysis and facts might conflict."""
         # Arrange - summary says substantive, but facts are weak
         summary = SummaryV4(practically_substantive=Substantive(
@@ -145,14 +150,14 @@ class TestJudgeIntegration:
             )
         
         # But fact check shows claims are about minor things
-        factcheck = dict(chunks=[
-            FactCheck(claim="Privacy policy was reformatted",
+        factcheck = Proof(facts=[
+            Fact(claim="Privacy policy was reformatted",
                       veracity=True,
                       reason="Document sections are reordered").model_dump(),
-            FactCheck(claim="Paragraphs were renumbered",
+            Fact(claim="Paragraphs were renumbered",
                       veracity=True,
                       reason="Before and after numbering is different with no major content changes").model_dump(),
-            FactCheck(claim="Data sharing policy was significantly expanded.",
+            Fact(claim="Data sharing policy was significantly expanded.",
                       veracity=False,
                       reason="Data sharing terms are identical between versions").model_dump(),
         ])
@@ -166,7 +171,7 @@ class TestJudgeIntegration:
             metadata={"schema_version": SUMMARY_VERSION}
         )
         fake_storage.upload_text_blob(
-            json.dumps(factcheck),
+            factcheck.model_dump_json(),
             facts_blob, 
             metadata={"schema_version": FACTCHECK_VERSION}
         )
@@ -180,11 +185,7 @@ class TestJudgeIntegration:
         result_json, metadata = judge.judge(facts_blob, summary_blob)
         
         # Assert - judge should reconcile the conflict
-        result = json.loads(result_json)
-        judgment = result["chunks"][0]["practically_substantive"]
-        print(f"Judgment with conflicting evidence: {judgment}")
-        # Just verify it completes and provides reasoning
-        assert "rating" in judgment
-        assert "reason" in judgment
-        assert len(judgment["reason"]) > 10  # Should have substantive reasoning
+        result = Judgement.model_validate_json(result_json)
+        # I don't care about the answer. But give a reason
+        assert len(result.practically_substantive.reason) > 10
 

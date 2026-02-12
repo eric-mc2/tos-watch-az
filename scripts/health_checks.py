@@ -8,12 +8,14 @@ import argparse
 from collections import Counter
 from azure import durable_functions as df  # type: ignore
 
+from src.adapters.embedding.client import SentenceTransformerAdapter
 from src.adapters.http.client import RequestsAdapter
 from src.adapters.llm.client import ClaudeAdapter
 from src.adapters.storage.client import AzureStorageAdapter
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
 from src.services.blob import BlobService
+from src.services.embedding import EmbeddingService
 from src.services.llm import LLMService
 from src.utils.app_utils import load_env_vars
 from src.utils.log_utils import setup_logger
@@ -38,7 +40,8 @@ def validate_files(env, *args, **kwargs) -> dict:
     storage = BlobService(AzureStorageAdapter(conn_key))
     http = RequestsAdapter()
     llm = LLMService(ClaudeAdapter())
-    container = ServiceContainer.create_container(storage, http, llm)
+    embeddings = EmbeddingService(SentenceTransformerAdapter())
+    container = ServiceContainer.create_container(storage, http, llm, embeddings)
     try:
         blobs = set(container.storage.adapter.list_blobs())
     except RuntimeError as e:

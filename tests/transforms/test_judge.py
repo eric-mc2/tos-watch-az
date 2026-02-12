@@ -3,9 +3,9 @@ from collections import namedtuple
 import pytest
 
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as SUMMARY_VERSION
-from schemas.summary.v3 import Summary as SummaryV3, VERSION as SUMMARY_VERSIONV3
+from schemas.summary.v3 import Summary as SummaryV3, VERSION as SUMMARY_VERSION_V3
 from schemas.summary.v2 import Summary as SummaryV2, Substantive as SummarySubstantive
-from schemas.factcheck.v1 import FactCheck, VERSION as FACTCHECK_VERSION
+from schemas.fact.v1 import Fact, Proof, FACT_VERSION
 from schemas.judge.v1 import Judgement, Substantive as JudgementSubstantive
 from src.transforms.factcheck.judge import JudgeBuilder, Judge
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -48,9 +48,10 @@ def sample_summary():
         ))
 
 @pytest.fixture
-def sample_factcheck():
+def sample_proof():
     """Sample fact check for testing."""
-    return FactCheck(claim="something", veracity=True, reason="because")
+    return Proof(facts=[Fact(claim="something", veracity=True, reason="because"),
+                        Fact(claim="other", veracity=False, reason="because")])
 
 
 BlobNames = namedtuple("BlobNames", ["summary_blob", "fact_blob"])
@@ -62,7 +63,7 @@ def blob_names() -> BlobNames:
 
 
 @pytest.fixture
-def upload_test_data(fake_storage, sample_summary, sample_factcheck, blob_names):
+def upload_test_data(fake_storage, sample_summary, sample_proof, blob_names):
 
     fake_storage.upload_text_blob(
         sample_summary.model_dump_json(),
@@ -70,9 +71,9 @@ def upload_test_data(fake_storage, sample_summary, sample_factcheck, blob_names)
         metadata={"schema_version": SUMMARY_VERSION}
     )
     fake_storage.upload_text_blob(
-        sample_factcheck.model_dump_json(),
+        sample_proof.model_dump_json(),
         blob_names.fact_blob,
-        metadata={"schema_version": FACTCHECK_VERSION}
+        metadata={"schema_version": FACT_VERSION}
     )
 
 
@@ -105,7 +106,7 @@ class TestJudgeBuilder:
         # Assert
         assert sample_summary.practically_substantive.reason in prompt_content
 
-    def test_build_prompt_loads_factcheck(self, fake_storage, sample_summary, sample_factcheck, upload_test_data, blob_names):
+    def test_build_prompt_loads_proof(self, fake_storage, sample_summary, sample_proof, upload_test_data, blob_names):
         """Test that fact checks are properly loaded and included."""
         # Arrange
         builder = JudgeBuilder(fake_storage)
@@ -115,9 +116,9 @@ class TestJudgeBuilder:
         prompt_content = prompts[0].current.content
         
         # Assert
-        assert sample_factcheck.reason in prompt_content
+        assert all(x.reason in prompt_content for x in sample_proof.facts)
 
-    def test_summary_migration(self, fake_storage, sample_summary, sample_factcheck, upload_test_data, blob_names):
+    def test_summary_migration(self, fake_storage, sample_summary, sample_proof, upload_test_data, blob_names):
         # Arrange
         builder = JudgeBuilder(fake_storage)
         data = SummaryV3(chunks=[
@@ -132,7 +133,7 @@ class TestJudgeBuilder:
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized,
                                       "old_summary.json",
-                                      metadata={"schema_version": SUMMARY_VERSIONV3})
+                                      metadata={"schema_version": SUMMARY_VERSION_V3})
 
         # Act
         prompts = list(builder.build_prompt(blob_names.fact_blob, "old_summary.json"))

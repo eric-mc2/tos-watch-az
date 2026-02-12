@@ -7,8 +7,7 @@ from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
-from schemas.claim.v0 import MODULE as CLAIMS_MODULE
+from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, FACT_MODULE as FACTCHECK_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 from src.transforms.seeds import STATIC_URLS
 from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser
@@ -255,7 +254,10 @@ def summarizer_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
-    parser = create_llm_parser(container.storage, container.summarizer_transform.llm, SUMMARY_MODULE, Stage.SUMMARY_CLEAN.value)
+    parser = create_llm_parser(container.storage, 
+                               container.summarizer_transform.llm, 
+                               SUMMARY_MODULE, 
+                               Stage.SUMMARY_CLEAN.value)
     return parser(input_blob)
 
 

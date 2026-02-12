@@ -5,7 +5,7 @@ from schemas.llmerror.v1 import LLMError
 from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
 from schemas.summary.v4 import Summary as SummaryV4, VERSION
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
-from schemas.claim.v1 import Claims
+from schemas.fact.v1 import Claims
 from src.transforms.factcheck.claim_extractor import ClaimExtractorBuilder, ClaimExtractor
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.fake_client import FakeLLMAdapter

@@ -2,8 +2,7 @@ import os
 import pytest
 import json
 
-from schemas.claim.v1 import Claims as ClaimsV1, VERSION as CLAIM_VERSION
-from schemas.factcheck.v1 import FactCheck
+from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact
 from src.transforms.factcheck.claim_checker import ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -58,12 +57,12 @@ def embedding_service(embedding_adapter):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-
-@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
+# TODO: Uncomment
+# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
 class TestClaimCheckerIntegration:
     """Integration tests using real LLM and embedding adapters with fake storage."""
     
-    def test_check_obvious_true_claim(self, fake_storage, llm_service, llm_transform, 
+    def test_check_obvious_true_claim(self, fake_storage, llm_transform, 
                                        embedding_service):
         """Test fact-checking an obviously true claim."""
         # Arrange - create data where claim is clearly supported
@@ -109,12 +108,12 @@ class TestClaimCheckerIntegration:
         
         # Assert
         # Since we send one prompt, we get un-chunked response
-        result = FactCheck.model_validate_json(result_json)
+        result = Fact.model_validate_json(result_json)
         
         # Smoke test: LLM should recognize this is true
         assert result.veracity
 
-    def test_check_obvious_false_claim(self, fake_storage, llm_service, llm_transform,
+    def test_check_obvious_false_claim(self, fake_storage, llm_transform,
                                         embedding_service):
         """Test fact-checking an obviously false claim."""
         # Arrange - create data where claim is clearly NOT supported
@@ -159,10 +158,10 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert
-        result = FactCheck.model_validate_json(result_json)
+        result = Fact.model_validate_json(result_json)
         assert not result.veracity
     
-    def test_rag_retrieves_relevant_context(self, fake_storage, llm_service, llm_transform,
+    def test_rag_retrieves_relevant_context(self, fake_storage, llm_transform,
                                              embedding_service):
         """Test that RAG retrieves semantically relevant diffs."""
         # Arrange - multiple diffs, only some relevant
@@ -217,10 +216,10 @@ class TestClaimCheckerIntegration:
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
         
         # Assert - just verify it completes successfully
-        result = FactCheck.model_validate_json(result_json)
+        result = Fact.model_validate_json(result_json)
         assert "biometric" in result.reason or "facial" in result.reason or "fingerprint" in result.reason
     
-    def test_multiple_positive_claims(self, fake_storage, llm_service, llm_transform,
+    def test_multiple_positive_claims(self, fake_storage, llm_transform,
                                          embedding_service):
         """Test processing multiple claims in one batch."""
         # Arrange
@@ -273,11 +272,11 @@ class TestClaimCheckerIntegration:
         
         # Assert
         result_list = json.loads(result_json)['chunks']
-        results = [FactCheck.model_validate(x) for x in result_list]
+        results = [Fact.model_validate(x) for x in result_list]
         assert all(x.veracity for x in results)
         assert len(results) == 3
 
-    def test_positive_negative_claims(self, fake_storage, llm_service, llm_transform,
+    def test_positive_negative_claims(self, fake_storage, llm_transform,
                                          embedding_service):
         """Test processing multiple claims in one batch."""
         # Arrange
@@ -324,7 +323,7 @@ class TestClaimCheckerIntegration:
 
         # Assert
         result_list = json.loads(result_json)['chunks']
-        results = [FactCheck.model_validate(x) for x in result_list]
+        results = [Fact.model_validate(x) for x in result_list]
         assert len(results) == 2
         assert any(x.veracity for x in results)
         assert not all(x.veracity for x in results)

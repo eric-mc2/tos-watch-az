@@ -6,7 +6,7 @@ from schemas.llmerror.v1 import LLMError
 from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as VERSIONV4
 from schemas.summary.v2 import Summary as SummaryV2, Substantive, VERSION as VERSIONV2
-from schemas.claim.v1 import Claims
+from schemas.fact.v1 import Claims
 from src.adapters.llm.client import ClaudeAdapter
 from src.services.llm import LLMService
 from src.transforms.factcheck.claim_extractor import ClaimExtractorBuilder, ClaimExtractor
