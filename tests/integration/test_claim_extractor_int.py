@@ -46,8 +46,7 @@ def llm_service(llm):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-# TODO: Uncomment
-# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 class TestClaimExtractor:
     """Integration tests using real LLM adapter with fake storage."""
 
@@ -135,4 +134,4 @@ class TestClaimExtractor:
         response, metadata = extractor.extract_claims("nonsubstantive_test.json")
 
         # Assert
-        LLMError.model_validate_json(response)
+        assert response == "" # TODO: Might want to signal NO CLAIMS a little more explicitly?

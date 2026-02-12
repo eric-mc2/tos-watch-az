@@ -57,8 +57,7 @@ def embedding_service(embedding_adapter):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-# TODO: Uncomment
-# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
 class TestClaimCheckerIntegration:
     """Integration tests using real LLM and embedding adapters with fake storage."""
     

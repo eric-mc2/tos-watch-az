@@ -177,13 +177,6 @@ class TestClaimCheckerBuilder:
         assert "Before: Old text" in formatted
         assert "After: New text" in formatted
 
-    @pytest.mark.skip
-    def test_empty_rag(self, fake_storage, embedding_service, upload_test_data):
-        pass # TODO: Need to test FAISS failure modes like when k > diffs
-
-    @pytest.mark.skip
-    def test_migration(self, fake_storage, embedding_service):
-        pass # TODO: test when there is ClaimsV2
 
 class TestClaimChecker:
     """Unit tests for ClaimChecker using fake adapters."""

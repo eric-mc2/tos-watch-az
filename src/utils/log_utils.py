@@ -6,7 +6,7 @@ from datetime import datetime
 current_time = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
 LOG_PATH = os.path.join('logs', f"app-{current_time}.log")
 
-def setup_logger(name, loglvl = logging.INFO):
+def setup_logger(name, loglvl = logging.INFO) -> logging.Logger:
     log_fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     logging.basicConfig(level=loglvl, format=log_fmt)
     logger = logging.getLogger(name)

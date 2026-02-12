@@ -44,8 +44,7 @@ def llm_service(llm_adapter):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-# TODO: Uncomment
-# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
 class TestJudgeIntegration:
     """Integration tests using real LLM adapter with fake storage."""
     

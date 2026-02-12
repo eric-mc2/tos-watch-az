@@ -74,14 +74,18 @@ def fake_embedding():
     return EmbeddingService(adapter)
 
 
-def run_pipeline_stage_summarizer(fake_storage, fake_llm, diff_blob_path, company, policy, timestamp):
+@pytest.fixture
+def llm_transform(fake_storage, fake_llm):
+    return LLMTransform(fake_storage, fake_llm)
+
+
+def run_pipeline_stage_summarizer(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp):
     """Run summarizer stage: DIFF_CLEAN -> SUMMARY_RAW."""
     from src.transforms.summary.summarizer import Summarizer
     from src.transforms.prompt_eng import PromptEng
     
-    llm_transform = LLMTransform(fake_storage, fake_llm)
     prompt_eng = PromptEng(fake_storage)
-    summarizer = Summarizer(fake_storage, fake_llm, prompt_eng, llm_transform)
+    summarizer = Summarizer(fake_storage, prompt_eng, llm_transform)
     
     processor = create_llm_activity_processor(
         fake_storage,
@@ -104,11 +108,10 @@ def run_pipeline_stage_summary_parser(fake_storage, fake_llm, summary_raw_path):
     return f"{Stage.SUMMARY_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
 
-def run_pipeline_stage_claim_extractor(fake_storage, fake_llm, summary_clean_path, company, policy, timestamp):
+def run_pipeline_stage_claim_extractor(fake_storage, llm_transform, summary_clean_path, company, policy, timestamp):
     """Run claim extractor: SUMMARY_CLEAN -> CLAIM_RAW."""
     from src.transforms.factcheck.claim_extractor import ClaimExtractor
     
-    llm_transform = LLMTransform(fake_storage, fake_llm)
     claim_extractor = ClaimExtractor(storage=fake_storage, executor=llm_transform)
     
     processor = create_llm_activity_processor(
@@ -132,11 +135,10 @@ def run_pipeline_stage_claims_parser(fake_storage, fake_llm, claim_raw_path):
     return f"{Stage.CLAIM_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
 
-def run_pipeline_stage_claim_checker(fake_storage, fake_llm, fake_embedding, claim_clean_path, company, policy, timestamp):
+def run_pipeline_stage_claim_checker(fake_storage, llm_transform, fake_embedding, claim_clean_path, company, policy, timestamp):
     """Run claim checker: CLAIM_CLEAN + DIFF_CLEAN -> FACTCHECK_RAW."""
     from src.transforms.factcheck.claim_checker import ClaimChecker
     
-    llm_transform = LLMTransform(fake_storage, fake_llm)
     claim_checker = ClaimChecker(storage=fake_storage, executor=llm_transform, embedder=fake_embedding)
     
     processor = create_llm_activity_processor(
@@ -161,11 +163,10 @@ def run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path):
     return f"{Stage.FACTCHECK_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
 
-def run_pipeline_stage_judge(fake_storage, fake_llm, fact_clean_path, company, policy, timestamp):
+def run_pipeline_stage_judge(fake_storage, llm_transform, fact_clean_path, company, policy, timestamp):
     """Run judge: FACTCHECK_CLEAN + SUMMARY_CLEAN -> JUDGE_RAW."""
     from src.transforms.factcheck.judge import Judge
     
-    llm_transform = LLMTransform(fake_storage, fake_llm)
     judge = Judge(storage=fake_storage, executor=llm_transform)
     
     processor = create_llm_activity_processor(
@@ -279,7 +280,7 @@ def generate_test_cases():
             fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
-            expect_claims_success='exit',
+            expect_claims_success='skip',
             expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
@@ -322,7 +323,7 @@ def generate_test_cases():
             fact_response=fact_valid,
             judge_response=judge_valid,
             expect_summary_success='True',
-            expect_claims_success='exit',
+            expect_claims_success='skip',
             expect_fact_success='False',
             expect_judge_success='False',
             num_claims=1
@@ -462,7 +463,7 @@ def generate_test_cases():
 
 
 @pytest.mark.parametrize("test_case", generate_test_cases(), ids=lambda tc: tc.name)
-def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, fake_embedding, test_case):
+def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform, fake_embedding, test_case):
     """
     Parameterized end-to-end pipeline test covering all input combinations.
     """
@@ -472,43 +473,51 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, fake_embeddin
     
     # Setup: Create DIFF_CLEAN blob
     diff_doc = DiffDoc(diffs=test_case.diff_sections)
-    diff_blob_path = f"{Stage.DIFF_CLEAN.value}/{company}/{policy}/{timestamp}.json"
-    fake_storage.upload_text_blob(diff_doc.model_dump_json(), diff_blob_path, metadata={})
     
     # Exit if empty
     if not diff_doc.diffs:
         return
-
+    
+    diff_blob_path = f"{Stage.DIFF_CLEAN.value}/{company}/{policy}/{timestamp}.json"
+    fake_storage.upload_text_blob(diff_doc.model_dump_json(), diff_blob_path, metadata={})
+    
     # Stage 1 & 2: Summarizer + Parser
     fake_llm.adapter.set_response(test_case.summary_response)
     
-    try:
-        summary_raw_path = run_pipeline_stage_summarizer(fake_storage, fake_llm, diff_blob_path, company, policy, timestamp)
-        summary_clean_path = run_pipeline_stage_summary_parser(fake_storage, fake_llm, summary_raw_path)
-        
-        assert test_case.expect_summary_success == 'True'
-        assert fake_storage.check_blob(summary_clean_path)
-        
-    except Exception as e:
-        assert test_case.expect_summary_success == 'exit', f"Summary unexpectedly failed: {e}"
-        return  # Stop pipeline early
+    summary_raw_path = run_pipeline_stage_summarizer(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp)
+    summary_clean_path = run_pipeline_stage_summary_parser(fake_storage, fake_llm, summary_raw_path)
     
+    if test_case.expect_summary_success == 'True':
+        assert fake_storage.check_blob(summary_clean_path)
+    elif test_case.expect_summary_success == 'False':
+        assert not fake_storage.check_blob(summary_clean_path)
+        assert False, "Summary unexpectedly succeeded"
+    elif test_case.expect_summary_success == 'exit':
+        assert not fake_storage.check_blob(summary_clean_path)
+        return
+            
     # Stage 3 & 4: ClaimExtractor + Parser
     fake_llm.adapter.set_response(test_case.claims_response)
     
-    try:
-        claim_raw_path = run_pipeline_stage_claim_extractor(fake_storage, fake_llm, summary_clean_path, company, policy, timestamp)
-        claim_clean_path = run_pipeline_stage_claims_parser(fake_storage, fake_llm, claim_raw_path)
-        
-        assert test_case.expect_claims_success == 'True'
-        assert fake_storage.check_blob(claim_clean_path)
-        
-        claims = Claims.model_validate_json(fake_storage.load_text_blob(claim_clean_path))
-        assert len(claims.claims) == test_case.num_claims
-        
-    except Exception as e:
-        assert test_case.expect_claims_success == 'exit', f"Claims unexpectedly failed: {e}"
+    claim_raw_path = run_pipeline_stage_claim_extractor(fake_storage, llm_transform, summary_clean_path, company, policy, timestamp)
+
+    if test_case.expect_claims_success == 'skip':
+        assert not fake_storage.check_blob(claim_raw_path)
         return
+
+    claim_clean_path = run_pipeline_stage_claims_parser(fake_storage, fake_llm, claim_raw_path)
+    
+    if test_case.expect_claims_success == 'True':
+        assert fake_storage.check_blob(claim_clean_path)
+    elif test_case.expect_claims_success == 'False':
+        assert not fake_storage.check_blob(claim_clean_path)
+        assert False, "Claim Extractor unexpectedly succeeded"
+    elif test_case.expect_claims_success == 'exit':
+        assert not fake_storage.check_blob(claim_clean_path)
+        return
+        
+    claims = Claims.model_validate_json(fake_storage.load_text_blob(claim_clean_path))
+    assert len(claims.claims) == test_case.num_claims
     
     # Skip fact/judge if zero claims
     if test_case.num_claims == 0:
@@ -517,29 +526,43 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, fake_embeddin
     # Stage 5 & 6: ClaimChecker + Parser
     fake_llm.adapter.set_response(test_case.fact_response)
     
-    try:
-        fact_raw_path = run_pipeline_stage_claim_checker(fake_storage, fake_llm, fake_embedding, claim_clean_path, company, policy, timestamp)
-        fact_clean_path = run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path)
-        
-        assert test_case.expect_fact_success == 'True'
-        assert fake_storage.check_blob(fact_clean_path)
-        
-    except Exception as e:
-        assert test_case.expect_fact_success == 'exit', f"FactCheck unexpectedly failed: {e}"
+    fact_raw_path = run_pipeline_stage_claim_checker(fake_storage, llm_transform, fake_embedding, claim_clean_path, company, policy, timestamp)
+    
+    if test_case.expect_fact_success == 'skip':
+        assert not fake_storage.check_blob(fact_raw_path)
         return
     
+    fact_clean_path = run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path)
+    
+    if test_case.expect_fact_success == 'True':
+        assert fake_storage.check_blob(fact_clean_path)
+    elif test_case.expect_fact_success == 'False':
+        assert not fake_storage.check_blob(fact_clean_path)
+        assert False, "Claim checker unexpectedly succeeded"
+    elif test_case.expect_fact_success == 'exit':
+        assert not fake_storage.check_blob(fact_clean_path)
+        return
+            
     # Stage 7 & 8: Judge + Parser
     fake_llm.adapter.set_response(test_case.judge_response)
     
-    try:
-        judge_raw_path = run_pipeline_stage_judge(fake_storage, fake_llm, fact_clean_path, company, policy, timestamp)
-        judge_clean_path = run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path)
-        
-        assert test_case.expect_judge_success == 'True'
+    judge_raw_path = run_pipeline_stage_judge(fake_storage, llm_transform, fact_clean_path, company, policy, timestamp)
+
+    if test_case.expect_judge_success == 'skip':
+        assert not fake_storage.check_blob(judge_raw_path)
+        return
+    
+    judge_clean_path = run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path)
+    
+    if test_case.expect_judge_success == 'True':
         assert fake_storage.check_blob(judge_clean_path)
-        
-        judgement = Judgement.model_validate_json(fake_storage.load_text_blob(judge_clean_path))
-        assert judgement.practically_substantive is not None
-        
-    except Exception as e:
-        assert test_case.expect_judge_success == 'exit', f"Judge unexpectedly failed: {e}"
+    elif test_case.expect_judge_success == 'False':
+        assert not fake_storage.check_blob(judge_clean_path)
+        assert False, "Judge unexpectedly succeeded"
+    elif test_case.expect_judge_success == 'exit':
+        assert not fake_storage.check_blob(judge_clean_path)
+        return
+    
+    judgement = Judgement.model_validate_json(fake_storage.load_text_blob(judge_clean_path))
+    assert judgement.practically_substantive is not None
+    

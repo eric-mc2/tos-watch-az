@@ -3,6 +3,7 @@ import os
 
 from schemas.summary.v3 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
+from src.transforms.llm_transform import LLMTransform
 from src.transforms.prompt_eng import PromptEng
 from src.transforms.summary.summarizer import Summarizer
 from src.services.llm import LLMService
@@ -22,10 +23,14 @@ def storage():
     adapter = FakeStorageAdapter()
     return BlobService(adapter)
 
+@pytest.fixture
+def transform(storage, llm):
+    return LLMTransform(storage, llm)
+
 class TestSummarizerInt:
 
     @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
-    def test_summary(self, llm, storage):
+    def test_summary(self, transform, storage):
         # Arrange
         diff = DiffDoc(diffs=[
             DiffSection(index=0,
@@ -35,7 +40,7 @@ class TestSummarizerInt:
         storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage=storage, llm=llm, prompt_eng=PromptEng(storage))
+        summarizer = Summarizer(storage=storage, transform=transform, prompt_eng=PromptEng(storage))
         txt, meta = summarizer.summarize("test.json")
 
         # Assert

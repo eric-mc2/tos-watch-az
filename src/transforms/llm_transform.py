@@ -8,9 +8,10 @@ from pydantic import BaseModel
 import ulid  # type: ignore
 
 from schemas.chunking import ChunkedResponse
-from schemas.llmerror.v1 import LLMError, MODULE as ERROR_MODULE, VERSION as ERROR_VERSION
-from schemas.registry import SCHEMA_REGISTRY
+from schemas.llmerror.v1 import LLMError
+from schemas.registry import load_schema
 from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
+from schemas.llmerror.v0 import MODULE as ERROR_MODULE
 from src.adapters.llm.protocol import PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
@@ -47,6 +48,7 @@ class LLMTransform:
                              "is_chunked": bool}
         """
         responses = []
+        error_flag = None
         for message in prompts:
             txt = self.llm.call_unsafe(message.system, message.history + [message.current])
             parsed = self.llm.extract_json_from_response(txt)
@@ -54,6 +56,7 @@ class LLMTransform:
                 responses.append(parsed.data)
             else:
                 logger.warning(f"Failed to parse response: {parsed.error}")
+                error_flag = LLMError.VERSION()  # Raise error flag
                 responses.append(LLMError(error=parsed.error, raw=txt).model_dump())
 
         # Only wrap in chunks array if actually chunked (>1 response)
@@ -74,6 +77,7 @@ class LLMTransform:
             schema_version=schema_version,
             prompt_version=prompt_version,
             is_chunked=is_chunked,
+            error_flag=error_flag,
         )
         return response, metadata
 
@@ -110,18 +114,14 @@ def create_llm_activity_processor(storage: BlobService,
         else:
             output, metadata = transform_fn(blob_name)
 
-        if not output:
-            # TODO: By choosing to let empty list of prompts pass through the processor as a no-op,
-            #       this case conflates the LLM actually returning "" vs not sending prompts to it.
-            raise ValueError("No prompts sent to LLM. Nothing to save.")
-        
-        # Save versioned output
-        out_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
-        storage.upload_text_blob(output, out_path, metadata=metadata)
-        
-        # Save latest output
-        latest_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.txt"
-        storage.upload_text_blob(output, latest_path, metadata=metadata)
+        if output:
+            # Save versioned output
+            out_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
+            storage.upload_text_blob(output, out_path, metadata=metadata)
+            
+            # Save latest output
+            latest_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.txt"
+            storage.upload_text_blob(output, latest_path, metadata=metadata)
         
         logger.info(f"Successfully completed {workflow_name} for blob: {blob_name}")
     
@@ -174,6 +174,11 @@ def create_llm_parser[T: BaseModel](storage: BlobService,
             except json.JSONDecodeError:
                 is_chunked = False
 
+        if error_flag is not None:
+            # TODO: technically validating the error is unnecessary if we're just printing the error text.
+            logger.warning("LLM returned structurally invalid output: \n%s", txt)
+            return  # exit early! don't save anything
+
         if is_chunked:
             # Chunked format: ChunkedResponse stores raw dicts, validates at merge-time
             wrapper = ChunkedResponse.model_validate_json(txt)
@@ -185,16 +190,13 @@ def create_llm_parser[T: BaseModel](storage: BlobService,
         else:
             # Single item format: validate directly
             data = schema.model_validate_json(txt)
-            if isinstance(data, LLMError):
-                raise ValueError("LLM returned structurally invalid output.", data.model_dump_json())
 
         cleaned_data = llm.sanitize_response(data.model_dump())
         cleaned_txt = json.dumps(cleaned_data, indent=2)
 
-        # Update metadata with chunking info if not already set
-        if 'is_chunked' not in metadata:
-            metadata['is_chunked'] = is_chunked
-        
+        # Update metadata with chunking info -- we always merge!
+        metadata['is_chunked'] = False
+
         # Save versioned output
         out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
         storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
