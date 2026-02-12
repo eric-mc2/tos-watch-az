@@ -1,9 +1,9 @@
 import functools
 
-from pydantic import BaseModel
-from schemas.summary.v0 import SummaryBase
-from schemas.summary.v1 import (Summary as SummaryV1, Substantive as SubstantiveV1)
-from schemas.summary.v2 import (Summary as SummaryV2, Substantive as SubstantiveV2)
+from schemas.registry import register_migration
+from schemas.summary.v0 import MODULE, SummaryBase
+from schemas.summary.v1 import Summary as SummaryV1
+from schemas.summary.v2 import Summary as SummaryV2, Substantive as SubstantiveV2
 from schemas.summary.v3 import Summary as SummaryV3
 from schemas.summary.v4 import Summary as SummaryV4
 
@@ -30,6 +30,7 @@ def migrate_v3(v3: SummaryV3) -> SummaryV4:
         return SummaryV4(practically_substantive=v2.practically_substantive)
     return functools.reduce(SummaryV4.merge, map(migrate_v2_v4, v3.chunks))
 
+@register_migration(MODULE)
 def migrate(model: SummaryBase, version: str) -> SummaryV4:
     if version == "v1":
         assert isinstance(model, SummaryV1)

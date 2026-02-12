@@ -4,87 +4,104 @@ This module implements the Envelope Pattern for separating chunking logic
 (technical constraint) from business schema logic. Chunking happens due to
 LLM token limits, not business requirements, so it should be transparent
 to business schemas.
+
+Design: Chunks are stored as raw dicts (not validated models) because Python
+generics are erased at runtime. Validation happens at merge-time when the
+actual schema class is known.
 """
 
-from typing import Type, TypeVar, Generic, List, Callable, Optional, cast
+from typing import Any, Callable
 from pydantic import BaseModel, Field
 from functools import reduce
 
-T = TypeVar('T', bound=BaseModel)
 
-
-class ChunkedResponse(BaseModel, Generic[T]):
-    """Generic wrapper for chunked LLM responses.
+class ChunkedResponse(BaseModel):
+    """Wrapper for chunked LLM responses with deferred validation.
     
-    This wrapper allows any Pydantic schema to be stored in chunked format
-    without contaminating the business schema with chunking concerns.
+    Stores chunks as raw dicts and validates them when merge() is called
+    with the actual schema class. This avoids Python's generic type erasure
+    issue where runtime JSON parsing can't know the concrete type parameter.
     
     Example:
         ```python
-        from schemas.summary.v2 import Summary
+        from schemas.summary.v4 import Summary
         from schemas.chunking import ChunkedResponse
         
-        # Wrap multiple chunks
-        chunked = ChunkedResponse[Summary](chunks=[
-            Summary(...),
-            Summary(...),
-        ])
+        # Parse from JSON (chunks stored as raw dicts)
+        chunked = ChunkedResponse.model_validate_json(json_text)
         
-        # Access chunks
-        for chunk in chunked.chunks:
-            print(chunk.practically_substantive)
+        # Merge with schema - validates and merges in one step
+        # Auto-discovers Summary.merge classmethod
+        result: Summary = chunked.merge(Summary)
+        
+        # Or with explicit merge function
+        result = chunked.merge(Summary, merge_fn=custom_merge)
         ```
     """
     
-    chunks: List[T] = Field(..., min_length=1)
+    chunks: list[dict[str, Any]] = Field(..., min_length=1)
     
     @property
     def is_chunked(self) -> bool:
         """Returns True if this response contains multiple chunks."""
         return len(self.chunks) > 1
     
-    @property
-    def single(self) -> T:
-        """Get the single item if there's only one chunk.
+    def single[T: BaseModel](self, schema: type[T]) -> T:
+        """Validate and return the single chunk.
         
+        Args:
+            schema: Pydantic model class to validate against
+            
         Raises:
             ValueError: If there are multiple chunks
         
         Returns:
-            The single chunk item
+            The validated single chunk
         """
         if len(self.chunks) != 1:
             raise ValueError(
                 f"Expected single chunk but got {len(self.chunks)}. "
                 f"Use merge() or access chunks directly."
             )
-        return self.chunks[0]
+        return schema.model_validate(self.chunks[0])
     
-    # TODO: THIS BREAKS BECAUSE IT CANT DYNAMICALY TYPE THE INPUTS
-    def merge(self, schema: Type[BaseModel], merge_fn: Optional[Callable[[T, T], T]] = None) -> T:
-        """Merge chunks back to single item.
+    def merge[T: BaseModel](
+        self, 
+        schema: type[T], 
+        merge_fn: Callable[[T, T], T] | None = None
+    ) -> T:
+        """Validate chunks and merge to single item.
+        
+        Validates each chunk against the schema, then merges them using either:
+        1. The provided merge_fn, or
+        2. The schema's classmethod `merge(cls, a, b)` if it exists
         
         Args:
-            merge_fn: Optional custom merge function that takes a list of chunks
-                     and returns a merged result. If None and there's only one
-                     chunk, returns that chunk. Otherwise raises an error.
+            schema: Pydantic model class to validate chunks against
+            merge_fn: Optional custom merge function (a, b) -> merged.
+                     If None, looks for schema.merge classmethod.
 
         Returns:
             Merged result of type T
             
         Raises:
-            ValueError: If multiple chunks exist but no merge_fn provided
+            ValueError: If multiple chunks exist but no merge strategy available
         """
-        if len(self.chunks) == 1:
-            return self.chunks[0]
+        # Validate all chunks against the actual schema
+        validated: list[T] = [schema.model_validate(c) for c in self.chunks]
         
+        if len(validated) == 1:
+            return validated[0]
+        
+        # Determine merge function
         if merge_fn is None:
-            raise ValueError(
-                f"Multiple chunks ({len(self.chunks)}) require merge_fn. "
-                f"Provide a function to merge chunks or access them directly."
-            )
+            # Auto-discover schema.merge classmethod
+            if hasattr(schema, 'merge') and callable(getattr(schema, 'merge')):
+                merge_fn = getattr(schema, 'merge')
+            else:
+                raise ValueError(
+                    f"Multiple chunks ({len(self.chunks)}) require a merge strategy. "
+                    f"Either provide merge_fn or add a merge(cls, a, b) classmethod to {schema.__name__}."
+                )
         
-        # TODO: Trying to pass the actual schema and use it to cast value inside this func.
-        #       Otherwise I can try casting inside the merge func, which knows its proper type statically.
-        _chunks = [schema.model_validate(x) for x in self.chunks]
-        return reduce(merge_fn, _chunks)
+        return reduce(merge_fn, validated)

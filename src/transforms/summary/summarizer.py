@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 
-from schemas.summary.v4 import VERSION as SCHEMA_VERSION
+from schemas.summary.v4 import VERSION as SCHEMA_VERSION, MODULE
 from src.transforms.prompt_eng import PromptEng
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
@@ -23,4 +23,4 @@ class Summarizer:
         logger.debug(f"Summarizing {blob_name}")
         prompter = PromptBuilder(self.storage, self.prompt_eng)
         messages = prompter.build_prompt(blob_name)
-        return self.executor.execute_prompts(messages, SCHEMA_VERSION, PROMPT_VERSION)
+        return self.executor.execute_prompts(messages, MODULE, SCHEMA_VERSION, PROMPT_VERSION)

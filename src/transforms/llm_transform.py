@@ -2,14 +2,15 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Optional
 
 from pydantic import BaseModel
 import ulid  # type: ignore
 
 from schemas.chunking import ChunkedResponse
-from schemas.llmerror.v1 import LLMError
+from schemas.llmerror.v1 import LLMError, MODULE as ERROR_MODULE, VERSION as ERROR_VERSION
 from schemas.registry import SCHEMA_REGISTRY
+from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
 from src.adapters.llm.protocol import PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
@@ -27,6 +28,7 @@ class LLMTransform:
 
     def execute_prompts(self,
                         prompts: Iterable[PromptMessages],
+                        module_name: str,
                         schema_version: str,
                         prompt_version: str) -> tuple[str, dict]:
         """
@@ -65,6 +67,7 @@ class LLMTransform:
         
         metadata = dict(
             run_id=ulid.ulid(),
+            module_name=module_name,
             schema_version=schema_version,
             prompt_version=prompt_version,
             is_chunked=is_chunked,
@@ -117,7 +120,11 @@ def create_llm_activity_processor(storage: BlobService,
     return processor
 
 
-def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, output_stage: str) -> Callable:
+def create_llm_parser[T: BaseModel](storage: BlobService, 
+                      llm: LLMService, 
+                      module_name: str, 
+                      output_stage: str,
+                      merge_fn: Optional[Callable[[T, T], T]] = None) -> Callable:
     """
     Factory function to create a generic LLM output parser/validator.
     
@@ -142,7 +149,8 @@ def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, o
         metadata = storage.adapter.load_metadata(input_blob.name)
         
         # Get schema from registry
-        schema = SCHEMA_REGISTRY[module_name][metadata['schema_version']]
+        module_key = metadata.get('module_name', module_name)
+        schema = SCHEMA_REGISTRY[module_key][metadata['schema_version']]
         schema_version = metadata['schema_version']
 
         # New format: detect chunking from metadata or structure
@@ -156,20 +164,24 @@ def create_llm_parser(storage: BlobService, llm: LLMService, module_name: str, o
                 is_chunked = False
 
         if is_chunked:
-            # New chunked format: use ChunkedResponse wrapper for validation
-            # TODO: THIS BREAKS BECAUSE IT CLEARS THE TYPE INFO!
-            wrapper = ChunkedResponse[BaseModel].model_validate_json(txt)
-            if hasattr(schema, 'merge'):
-                merged = wrapper.merge(schema, schema.merge)
-            else:
-                merged = wrapper.merge()
-            cleaned_txt = llm.validate_output(merged.model_dump_json(), schema) # type: ignore
+            # Chunked format: ChunkedResponse stores raw dicts, validates at merge-time
+            wrapper = ChunkedResponse.model_validate_json(txt)
+            if module_key == FACT_MODULE:
+                # Unfortunate custom logic: chunked facts arrive as facts and are turned into proofs.
+                metadata['module_name'] = PROOF_MODULE
+            # Auto-discovers schema.merge if exists
+            data = wrapper.merge(schema, merge_fn=merge_fn)  # type: ignore
         else:
             # Single item format: validate directly
             # TODO: Not sure if validate-output is necessary anymore or called ever.
             # This if/else introduces different standards of validation for chunked/non
             # because the validation function also sanitizes for XSS
-            cleaned_txt = llm.validate_output(txt, schema)
+            data = schema.model_validate_json(txt)
+            if isinstance(data, LLMError):
+                raise ValueError("LLM returned structurally invalid output.", data.model_dump_json())
+
+        cleaned_data = llm.sanitize_response(data.model_dump())
+        cleaned_txt = json.dumps(cleaned_data, indent=2)
 
         # Update metadata with chunking info if not already set
         if 'is_chunked' not in metadata:

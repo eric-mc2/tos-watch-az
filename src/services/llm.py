@@ -42,24 +42,6 @@ class LLMService:
         resp = self.adapter.call(system, messages)
         return resp
 
-    def call_and_validate(self, system: str, messages: list[Message], validator: type[SummaryBase]) -> str:
-        """Call LLM and validate output against a Pydantic model."""
-        self.validate_input(system, messages)
-        resp = self.adapter.call(system, messages)
-        return self.validate_output(resp, validator)
-
-    def validate_output(self, resp: str, validator: type[BaseModel]) -> str:
-        """Extract JSON from response, validate against model, and sanitize."""
-        result = self.extract_json_from_response(resp)
-        if not result.success or result.data is None:
-            raise ValueError(f"Failed to parse json from chat. Error: {result.error}. Original: {resp}")
-        if isinstance(result.data, list):
-            raise ValueError(f"Expected dictionary output. Got list.")
-        model = validator(**result.data)
-        cleaned = self.sanitize_response(model.model_dump())
-        cleaned_txt = json.dumps(cleaned, indent=2)
-        return cleaned_txt
-
     def sanitize_response(self, data: dict | list | str | Any) -> dict | list | str | Any:
         """Recursively sanitize HTML from response data."""
         if isinstance(data, dict):

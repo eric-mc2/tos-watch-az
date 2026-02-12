@@ -1,15 +1,14 @@
-import json
 import logging
 from dataclasses import dataclass
-from typing import Iterator, List
+from typing import Iterator
 
-from schemas.registry import SCHEMA_REGISTRY
-from schemas.summary.migration import migrate
+from schemas.registry import SCHEMA_REGISTRY, load_data, load_schema
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
 from schemas.summary.v4 import Summary as SummaryV4
-from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION
-from schemas.factcheck.v1 import FactCheck
-from schemas.factcheck.v0 import MODULE as FACTCHECK_MODULE
+from schemas.summary.migration import migrate
+from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
+from schemas.fact.v1 import Fact, Proof
+from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION, MODULE as JUDGE_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.transforms.llm_transform import LLMTransform
@@ -65,20 +64,13 @@ class JudgeBuilder:
         examples: list = [] # self.read_examples()
 
         # Get Summary
-        summary_text = self.storage.load_text_blob(summary_blob_name)
-        metadata = self.storage.adapter.load_metadata(summary_blob_name)
-        schema = SCHEMA_REGISTRY[SUMMARY_MODULE][metadata['schema_version']]
-        summary = schema.model_validate_json(summary_text)
-        assert isinstance(summary, SummaryBase)
-        summary = migrate(summary, metadata['schema_version'])
+        summary = load_data(summary_blob_name, SUMMARY_MODULE, self.storage)
         assert isinstance(summary, SummaryV4)
 
         # Get Facts
-        facts_text = self.storage.load_text_blob(facts_blob_name)
-        metadata = self.storage.adapter.load_metadata(facts_blob_name)
-        schema = SCHEMA_REGISTRY[FACTCHECK_MODULE][metadata['schema_version']]
-        facts = schema.model_validate_json(facts_text)
-        assert isinstance(facts, FactCheck)
+        facts = load_data(facts_blob_name, PROOF_MODULE, self.storage)
+        assert isinstance(facts, Fact) or isinstance(facts, Proof)
+        facts = facts if isinstance(facts, Proof) else Proof(facts=[facts])
 
         # Build Prompt - pass the full summary structure
         prompt_msg = Message("user", self._format_prompt(summary, facts))
@@ -128,5 +120,5 @@ class Judge:
         logger.debug(f"Judging {summary_blob_name}")
         prompter = JudgeBuilder(self.storage)
         messages = prompter.build_prompt(facts_blob_name, summary_blob_name)
-        return self.executor.execute_prompts(messages, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
+        return self.executor.execute_prompts(messages, JUDGE_MODULE, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
 
