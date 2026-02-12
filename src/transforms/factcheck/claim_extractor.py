@@ -2,12 +2,11 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-from schemas.llmerror.v1 import LLMError
 from schemas.registry import SCHEMA_REGISTRY
-from schemas.summary.migration import migrate
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
-from schemas.summary.v4 import VERSION as SUMMARY_SCHEMA_VERSION, Summary as SummaryV4
-from schemas.claim.v1 import VERSION as CLAIMS_SCHEMA_VERSION
+from schemas.summary.v4 import Summary as SummaryV4
+from schemas.summary.migration import migrate
+from schemas.fact.v1 import CLAIMS_VERSION as CLAIMS_SCHEMA_VERSION, CLAIMS_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.transforms.llm_transform import LLMTransform
@@ -78,9 +77,6 @@ class ClaimExtractor:
     def extract_claims(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Extracting claims from {blob_name}")
         prompter = ClaimExtractorBuilder(self.storage)
-        messages = list(prompter.build_prompt(blob_name))
-        if not messages:
-            result = LLMError(error="No practical significance in original",raw="")
-            return result.model_dump_json(), dict(prompt_version=PROMPT_VERSION)
-        return self.executor.execute_prompts(messages, CLAIMS_SCHEMA_VERSION, PROMPT_VERSION)
+        messages = prompter.build_prompt(blob_name)
+        return self.executor.execute_prompts(messages, CLAIMS_MODULE, CLAIMS_SCHEMA_VERSION, PROMPT_VERSION)
 

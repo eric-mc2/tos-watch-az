@@ -58,7 +58,10 @@ class LLMTransform:
 
         # Only wrap in chunks array if actually chunked (>1 response)
         # Use un-typed json.dumps here instead of model_dump_json because we haven't validated yet.
-        if len(responses) == 1:
+        if len(responses) == 0:
+            response = ""
+            is_chunked = False
+        elif len(responses) == 1:
             response = json.dumps(responses[0])
             is_chunked = False
         else:
@@ -106,6 +109,11 @@ def create_llm_activity_processor(storage: BlobService,
             output, metadata = transform_fn(blob_name, paired_blob_name)
         else:
             output, metadata = transform_fn(blob_name)
+
+        if not output:
+            # TODO: By choosing to let empty list of prompts pass through the processor as a no-op,
+            #       this case conflates the LLM actually returning "" vs not sending prompts to it.
+            raise ValueError("No prompts sent to LLM. Nothing to save.")
         
         # Save versioned output
         out_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"

@@ -47,6 +47,10 @@ class ClaimCheckerBuilder:
         claims = schema.model_validate_json(claims_text)
         assert isinstance(claims, ClaimsV1)
 
+        if not claims.claims:
+            # No actual claims found.
+            return
+
         # Build RAG index once for all claims
         indexer = Indexer(storage=self.storage, embedder=self.embedder)
         indexer.build(diff_blob_name)
@@ -57,19 +61,24 @@ class ClaimCheckerBuilder:
             # Use RAG to find relevant document sections
             relevant_diffs = indexer.search(claim)
             
-            # Format the retrieved diffs as context
-            doc_context = self._format_diffs(relevant_diffs)
-            
-            prompt_data = dict(
-                claim=claim,
-                document=doc_context,
-            )
-            prompt = Message("user", json.dumps(prompt_data))
-            yield PromptMessages(
-                system=SYSTEM_PROMPT,
-                history=examples,
-                current=prompt
-            )
+            chunker = PromptChunker(TOKEN_LIMIT)
+            chunks = chunker.chunk_prompt(relevant_diffs)
+
+            for chunk in chunks:
+
+                # Format the retrieved diffs as context
+                doc_context = self._format_diffs(chunk)
+                
+                prompt_data = dict(
+                    claim=claim,
+                    document=doc_context,
+                )
+                prompt = Message("user", json.dumps(prompt_data))
+                yield PromptMessages(
+                    system=SYSTEM_PROMPT,
+                    history=examples,
+                    current=prompt
+                )
     
     @staticmethod
     def _format_diffs(diff_doc) -> str:
