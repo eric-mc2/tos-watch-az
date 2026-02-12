@@ -1,7 +1,9 @@
+import functools
 from typing import Self
 
 from schemas.summary.v0 import MODULE
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
+from schemas.summary.v3 import Summary as SummaryV3
 from schemas.registry import register
 
 VERSION = "v4"
@@ -10,6 +12,14 @@ VERSION = "v4"
 class Summary(SummaryV2):
     # Basically reverting to non-chunked representation
     pass
+
+    @classmethod
+    def migrate(cls, v3: SummaryV3) -> Self:
+        if not isinstance(v3, SummaryV3):
+            v3 = SummaryV3.migrate(v3)
+        def migrate_v2_v4(v2: SummaryV2) -> Self:
+            return cls(practically_substantive=v2.practically_substantive)
+        return functools.reduce(cls.merge, map(migrate_v2_v4, v3.chunks))
 
     @classmethod
     def merge(cls, a: Self, b: Self) -> Self:
@@ -25,3 +35,7 @@ class Summary(SummaryV2):
                 reason = reason
             )
         )
+
+    @classmethod
+    def VERSION(cls) -> str:
+        return VERSION

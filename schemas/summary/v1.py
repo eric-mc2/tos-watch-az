@@ -16,3 +16,7 @@ class Summary(SummaryBase):
     change_keywords: List[str]
     subject_keywords: List[str]
     helm_keywords: List[str]
+
+    @classmethod
+    def VERSION(cls) -> str:
+        return VERSION

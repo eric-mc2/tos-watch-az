@@ -11,3 +11,7 @@ class Substantive(BaseModel):
 @register(MODULE, VERSION)
 class Judgement(JudgeBase):
     practically_substantive: Substantive
+
+    @classmethod
+    def VERSION(cls) -> str:
+        return VERSION

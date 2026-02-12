@@ -11,6 +11,10 @@ CLAIMS_VERSION = "v1"
 class Claims(ClaimsBase):
     claims: List[str]
 
+    @classmethod
+    def VERSION(cls) -> str:
+        return CLAIMS_VERSION
+
 
 FACT_VERSION = "v1"
 
@@ -21,6 +25,9 @@ class Fact(FactBase):
     veracity: bool
     reason: str
 
+    @classmethod
+    def VERSION(cls) -> str:
+        return FACT_VERSION
 
 PROOF_VERSION = "v1"
 
@@ -32,6 +39,10 @@ class Proof(ProofBase):
     @classmethod
     def merge(cls, a: Self, b: Self) -> Self:
         return cls(facts = a.facts + b.facts)
+
+    @classmethod
+    def VERSION(cls) -> str:
+        return PROOF_VERSION
 
 
 def merge_facts(a: Fact | Proof, b: Fact | Proof) -> Proof:

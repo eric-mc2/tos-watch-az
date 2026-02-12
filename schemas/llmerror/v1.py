@@ -9,3 +9,7 @@ VERSION = "v1"
 class LLMError(LLMErrorBase):
     error: str
     raw: str
+
+    @classmethod
+    def VERSION(cls) -> str:
+        return VERSION
