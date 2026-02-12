@@ -87,7 +87,7 @@ class ServiceContainer:
             differ_transform=Differ(blob_storage),
             wayback_transform=MetadataScraper(blob_storage, http_client),
             snapshot_transform=SnapshotScraper(blob_storage, http_client),
-            summarizer_transform=Summarizer(blob_storage, llm_client, prompt_eng, llm_executor),
+            summarizer_transform=Summarizer(blob_storage, prompt_eng, llm_executor),
             claim_extractor_transform=ClaimExtractor(blob_storage, llm_executor),
             claim_checker_transform=ClaimChecker(blob_storage, llm_executor, embedding_client),
             judge_transform=Judge(blob_storage, llm_executor),

@@ -2,11 +2,10 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-from schemas.registry import SCHEMA_REGISTRY, load_data, load_schema
-from schemas.summary.v0 import MODULE as SUMMARY_MODULE, SummaryBase
+from schemas.registry import load_data
+from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.summary.v4 import Summary as SummaryV4
-from schemas.summary.migration import migrate
-from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
+from schemas.fact.v0 import PROOF_MODULE
 from schemas.fact.v1 import Fact, Proof
 from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION, MODULE as JUDGE_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages

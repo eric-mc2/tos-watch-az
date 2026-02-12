@@ -1,12 +1,10 @@
 from typing import Callable, Any
 import os
 import pandas as pd
-from pydantic import ValidationError
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from schemas.registry import SCHEMA_REGISTRY
-from schemas.summary.migration import migrate
-from schemas.summary.v0 import MODULE, SummaryBase
+from schemas.registry import load_data
+from schemas.summary.v0 import MODULE
 from schemas.summary.v4 import Summary as SummaryV4
 from src.services.blob import BlobService
 from src.stages import Stage
@@ -69,18 +67,10 @@ class PromptEng:
             key = os.path.join(Stage.DIFF_RAW.value, path.company, path.policy, path.timestamp + ".json")
             meta = self.storage.adapter.load_metadata(blob)
     
-            schema = SCHEMA_REGISTRY[MODULE][meta['schema_version']]
-            summary_raw = self.storage.load_json_blob(blob)
-            try:
-                summary = schema(**summary_raw)
-                assert isinstance(summary, SummaryBase)
-                summary = migrate(summary, meta['schema_version'])
-                assert isinstance(summary, SummaryV4)
-                parse_error = False
-                rating = summary.practically_substantive.rating
-            except (ValidationError, TypeError):
-                parse_error = True
-                rating = None
+            summary = load_data(blob, MODULE, self.storage)
+            assert isinstance(summary, SummaryV4)
+            parse_error = False
+            rating = summary.practically_substantive.rating
             pred_list.append(meta | dict(
                 blob_path = key,
                 parse_error = parse_error,

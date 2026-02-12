@@ -158,8 +158,11 @@ def create_llm_parser[T: BaseModel](storage: BlobService,
         
         # Get schema from registry
         module_key = metadata.get('module_name', module_name)
-        schema = SCHEMA_REGISTRY[module_key][metadata['schema_version']]
         schema_version = metadata['schema_version']
+        schema = load_schema(module_name, schema_version, module_key)
+
+        # Check for errors
+        error_flag = metadata.get('error_flag')
 
         # New format: detect chunking from metadata or structure
         is_chunked = metadata.get('is_chunked', False)
@@ -181,9 +184,6 @@ def create_llm_parser[T: BaseModel](storage: BlobService,
             data = wrapper.merge(schema, merge_fn=merge_fn)  # type: ignore
         else:
             # Single item format: validate directly
-            # TODO: Not sure if validate-output is necessary anymore or called ever.
-            # This if/else introduces different standards of validation for chunked/non
-            # because the validation function also sanitizes for XSS
             data = schema.model_validate_json(txt)
             if isinstance(data, LLMError):
                 raise ValueError("LLM returned structurally invalid output.", data.model_dump_json())

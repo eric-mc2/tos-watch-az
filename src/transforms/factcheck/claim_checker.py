@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-from schemas.registry import SCHEMA_REGISTRY
+from schemas.registry import load_data
 from schemas.fact.v0 import CLAIMS_MODULE
 from schemas.fact.v1 import Claims as ClaimsV1, FACT_VERSION as FACT_SCHEMA_VERSION, FACT_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
@@ -41,10 +41,7 @@ class ClaimCheckerBuilder:
 
     def build_prompt(self, blob_name: str, diff_blob_name: str) -> Iterator[PromptMessages]:
         examples: list = []  # self.read_examples() for future ICL
-        claims_text = self.storage.load_text_blob(blob_name)
-        metadata = self.storage.adapter.load_metadata(blob_name)
-        schema = SCHEMA_REGISTRY[CLAIMS_MODULE][metadata['schema_version']]
-        claims = schema.model_validate_json(claims_text)
+        claims = load_data(blob_name, CLAIMS_MODULE, self.storage)
         assert isinstance(claims, ClaimsV1)
 
         if not claims.claims:

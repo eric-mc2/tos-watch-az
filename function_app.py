@@ -6,8 +6,9 @@ import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
+from schemas.fact.v1 import merge_facts
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, FACT_MODULE as FACTCHECK_MODULE
+from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, FACT_MODULE as FACTCHECK_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 from src.transforms.seeds import STATIC_URLS
 from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser
@@ -255,7 +256,7 @@ def summarizer_processor(input_data: dict) -> None:
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
     parser = create_llm_parser(container.storage, 
-                               container.summarizer_transform.llm, 
+                               container.llm, 
                                SUMMARY_MODULE, 
                                Stage.SUMMARY_CLEAN.value)
     return parser(input_blob)
@@ -293,7 +294,7 @@ def claim_extractor_processor(input_data: dict) -> None:
 @pretty_error
 def parse_claims(input_blob: func.InputStream) -> None:
     parser = create_llm_parser(container.storage,
-                               container.claim_extractor_transform.llm,
+                               container.llm,
                                CLAIMS_MODULE,
                                Stage.CLAIM_CLEAN.value)
     return parser(input_blob)
@@ -332,9 +333,10 @@ def claim_checker_processor(input_data: dict) -> None:
 @pretty_error
 def parse_factcheck(input_blob: func.InputStream) -> None:
     parser = create_llm_parser(container.storage,
-                               container.claim_checker_transform.llm,
-                               FACTCHECK_MODULE,
-                               Stage.FACTCHECK_CLEAN.value)
+                               container.llm,
+                               PROOF_MODULE,
+                               Stage.FACTCHECK_CLEAN.value,
+                               merge_facts)
     return parser(input_blob)
 
 
@@ -372,7 +374,7 @@ def judge_processor(input_data: dict) -> None:
 @pretty_error
 def parse_judge(input_blob: func.InputStream) -> None:
     parser = create_llm_parser(container.storage,
-                               container.judge_transform.llm,
+                               container.llm,
                                JUDGE_MODULE,
                                Stage.JUDGE_CLEAN.value)
     return parser(input_blob)
