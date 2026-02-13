@@ -4,6 +4,7 @@ version: '3'
 
 vars:
   GREETING: Hello, world!
+  IMAGE: mcr.microsoft.com/azure-storage/azurite:latest
 
 tasks:
   default:
@@ -46,6 +47,11 @@ tasks:
     desc: Run all tests emulating github actions staging env.
     cmds:
       - act -W '.github/workflows/test.yml' --rm
+      - defer: |
+            docker ps -q --filter "ancestor={{.IMAGE}}" \
+              | xargs -r docker stop
+            docker ps -aq --filter "ancestor={{.IMAGE}}" \
+              | xargs -r docker rm
     interactive: true
 
   run-dev:
