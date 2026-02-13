@@ -11,6 +11,8 @@ class PromptChunker:
     def chunk_prompt(self, diffs: DiffDoc) -> list[DiffDoc]:
         limit = self.token_limit * self.headroom
 
+        # TODO: When the two document (diffs) are really just not the same at all then how can we chunk it?
+        # (Answer: Probably just split on word boundaries and maybe allow overlaps to be robust to context)
         # XXX: Edge case: need to handle any or many single diffs being larger than limit.
         # split_diffs = []
         # for i,d in enumerate(doc.diffs):

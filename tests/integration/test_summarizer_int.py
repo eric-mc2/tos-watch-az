@@ -3,8 +3,8 @@ import os
 
 from schemas.summary.v4 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
+from src.transforms.icl import ICL
 from src.transforms.llm_transform import LLMTransform
-from src.transforms.prompt_eng import PromptEng
 from src.transforms.summary.summarizer import Summarizer
 from src.services.llm import LLMService
 from src.adapters.llm.client import ClaudeAdapter
@@ -42,7 +42,7 @@ class TestSummarizerInt:
         storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage, PromptEng(storage), transform)
+        summarizer = Summarizer(storage, ICL(storage), transform)
         txt, meta = summarizer.summarize("test.json")
 
         # Assert

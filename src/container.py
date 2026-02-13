@@ -14,9 +14,9 @@ from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
 from src.transforms.differ import Differ
 from src.services.llm import LLMService
+from src.transforms.icl import ICL
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.metadata_scraper import MetadataScraper
-from src.transforms.prompt_eng import PromptEng
 from src.transforms.snapshot_scraper import SnapshotScraper
 from src.transforms.summary.summarizer import Summarizer
 from src.transforms.factcheck.claim_extractor import ClaimExtractor
@@ -40,7 +40,6 @@ class ServiceContainer:
     claim_extractor_transform: ClaimExtractor
     claim_checker_transform: ClaimChecker
     judge_transform: Judge
-    prompt_transform: PromptEng
 
 
     @classmethod
@@ -78,7 +77,6 @@ class ServiceContainer:
                          http_client: HttpProtocol,
                          llm_client: LLMService,
                          embedding_client: EmbeddingService):
-        prompt_eng = PromptEng(blob_storage)
         llm_executor = LLMTransform(blob_storage, llm_client)
         return cls(
             storage=blob_storage,
@@ -87,9 +85,8 @@ class ServiceContainer:
             differ_transform=Differ(blob_storage),
             wayback_transform=MetadataScraper(blob_storage, http_client),
             snapshot_transform=SnapshotScraper(blob_storage, http_client),
-            summarizer_transform=Summarizer(blob_storage, prompt_eng, llm_executor),
+            summarizer_transform=Summarizer(blob_storage, ICL(blob_storage), llm_executor),
             claim_extractor_transform=ClaimExtractor(blob_storage, llm_executor),
             claim_checker_transform=ClaimChecker(blob_storage, llm_executor, embedding_client),
             judge_transform=Judge(blob_storage, llm_executor),
-            prompt_transform=prompt_eng,
         )

@@ -82,10 +82,9 @@ def llm_transform(fake_storage, fake_llm):
 def run_pipeline_stage_summarizer(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp):
     """Run summarizer stage: DIFF_CLEAN -> SUMMARY_RAW."""
     from src.transforms.summary.summarizer import Summarizer
-    from src.transforms.prompt_eng import PromptEng
+    from src.transforms.icl import ICL
     
-    prompt_eng = PromptEng(fake_storage)
-    summarizer = Summarizer(fake_storage, prompt_eng, llm_transform)
+    summarizer = Summarizer(fake_storage, ICL(fake_storage), llm_transform)
     
     processor = create_llm_activity_processor(
         fake_storage,

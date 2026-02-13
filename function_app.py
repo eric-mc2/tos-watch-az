@@ -379,19 +379,3 @@ def parse_judge(input_blob: func.InputStream) -> None:
                                Stage.JUDGE_CLEAN.value)
     return parser(input_blob)
 
-
-# @app.route(route="prompt_experiment", auth_level=func.AuthLevel.FUNCTION)
-# @http_wrap
-# def prompt_experiment(req: func.HttpRequest) -> func.HttpResponse:
-#     from src.prompt_eng import run_experiment
-#     run_experiment(req.params.get("labels"))
-#     return func.HttpResponse("OK")
-#
-#
-# @app.route(route="evaluate_prompts", auth_level=func.AuthLevel.FUNCTION)
-# @http_wrap
-# def evaluate_prompts(req: func.HttpRequest) -> func.HttpResponse:
-#     from src.prompt_eng import prompt_eval
-#     return func.HttpResponse(prompt_eval(), mimetype="text/html")
-
-
