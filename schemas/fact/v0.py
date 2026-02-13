@@ -1,7 +1,4 @@
-from abc import abstractmethod, ABC
-
-from pydantic import BaseModel
-
+from schemas.base import SchemaBase
 from schemas.registry import register
 
 CLAIMS_MODULE = "claim"
@@ -9,12 +6,11 @@ CLAIMS_VERSION = "v0"
 
 
 @register(CLAIMS_MODULE, CLAIMS_VERSION)
-class ClaimsBase(BaseModel, ABC):
+class ClaimsBase(SchemaBase):
     # This is intentionally empty to basically facilitate a union type.
     pass
 
     @classmethod
-    @abstractmethod
     def VERSION(cls) -> str:
         return CLAIMS_VERSION
 
@@ -24,12 +20,11 @@ FACT_VERSION = "v0"
 
 
 @register(FACT_MODULE, FACT_VERSION)
-class FactBase(BaseModel, ABC):
+class FactBase(SchemaBase):
     # This is intentionally empty to basically facilitate a union type.
     pass
 
     @classmethod
-    @abstractmethod
     def VERSION(cls) -> str:
         return FACT_VERSION
 
@@ -39,11 +34,10 @@ PROOF_VERSION = "v0"
 
 
 @register(PROOF_MODULE, PROOF_VERSION)
-class ProofBase(BaseModel, ABC):
+class ProofBase(SchemaBase):
     # This is intentionally empty to basically facilitate a union type.
     pass
 
     @classmethod
-    @abstractmethod
     def VERSION(cls) -> str:
         return PROOF_VERSION

@@ -1,7 +1,7 @@
 import pytest
 import os
 
-from schemas.summary.v3 import Summary
+from schemas.summary.v4 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.prompt_eng import PromptEng
@@ -10,11 +10,13 @@ from src.services.llm import LLMService
 from src.adapters.llm.client import ClaudeAdapter
 from src.services.blob import BlobService
 from src.adapters.storage.fake_client import FakeStorageAdapter
+from src.utils.app_utils import load_env_vars
 
 RUNTIME_ENV = os.environ.get("RUNTIME_ENV", "PROD")
 
 @pytest.fixture
 def llm():
+    load_env_vars()
     llm_adapter = ClaudeAdapter()
     return LLMService(llm_adapter)
     
@@ -27,9 +29,9 @@ def storage():
 def transform(storage, llm):
     return LLMTransform(storage, llm)
 
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 class TestSummarizerInt:
 
-    @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
     def test_summary(self, transform, storage):
         # Arrange
         diff = DiffDoc(diffs=[
@@ -40,9 +42,9 @@ class TestSummarizerInt:
         storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage=storage, transform=transform, prompt_eng=PromptEng(storage))
+        summarizer = Summarizer(storage, PromptEng(storage), transform)
         txt, meta = summarizer.summarize("test.json")
 
         # Assert
         resp = Summary.model_validate_json(txt)
-        assert resp.chunks[0].practically_substantive
+        assert resp.practically_substantive.rating

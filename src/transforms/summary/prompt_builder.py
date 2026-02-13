@@ -1,6 +1,3 @@
-# TODO: The next thing is to have a second agent in the conversation or after it basically either directly doing RAG or
-#     just asking it to double-check that the thing mentioned is real.
-# TODO: When the two documents are really just not the same at all then how can we chunk it?
 import logging
 import os
 from dataclasses import dataclass

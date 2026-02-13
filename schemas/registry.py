@@ -1,8 +1,8 @@
-from typing import Any, Callable, Optional, Type
-from pydantic import BaseModel
+from typing import Optional, Type
+from schemas.base import SchemaBase
 from src.services.blob import BlobService
 
-SCHEMA_REGISTRY : dict[str, dict[str, Type[BaseModel]]] = {}
+SCHEMA_REGISTRY : dict[str, dict[str, Type[SchemaBase]]] = {}
 
 
 def register(module_name, name):
@@ -13,7 +13,7 @@ def register(module_name, name):
     return wrapper
 
 
-def load_data(blob_name: str, module_name: str, storage: BlobService) -> BaseModel:
+def load_data(blob_name: str, module_name: str, storage: BlobService) -> SchemaBase:
     # Extract identifiers
     txt = storage.load_text_blob(blob_name)
     metadata = storage.adapter.load_metadata(blob_name)
@@ -29,12 +29,12 @@ def load_data(blob_name: str, module_name: str, storage: BlobService) -> BaseMod
     return data
 
 
-def load_schema(module_name: str, version: str, metadata_module_name: Optional[str] = None) -> Type[BaseModel]:
+def load_schema(module_name: str, version: str, metadata_module_name: Optional[str] = None) -> Type[SchemaBase]:
     schema_key = _get_schema_key(module_name, metadata_module_name)
     return SCHEMA_REGISTRY[schema_key][version]
 
 
-def load_max_schema(module_name: str, metadata_module_name: Optional[str] = None) -> Type[BaseModel]:
+def load_max_schema(module_name: str, metadata_module_name: Optional[str] = None) -> Type[SchemaBase]:
     schema_key = _get_schema_key(module_name, metadata_module_name)
     max_version = max(map(_parse_version, SCHEMA_REGISTRY[schema_key].keys()))
     return load_schema(module_name, _format_version(max_version), metadata_module_name)

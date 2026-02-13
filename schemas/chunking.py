@@ -14,6 +14,8 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 from functools import reduce
 
+from schemas.base import SchemaBase
+
 
 class ChunkedResponse(BaseModel):
     """Wrapper for chunked LLM responses with deferred validation.
@@ -46,7 +48,7 @@ class ChunkedResponse(BaseModel):
         """Returns True if this response contains multiple chunks."""
         return len(self.chunks) > 1
     
-    def single[T: BaseModel](self, schema: type[T]) -> T:
+    def single[T: SchemaBase](self, schema: type[T]) -> T:
         """Validate and return the single chunk.
         
         Args:
@@ -65,7 +67,7 @@ class ChunkedResponse(BaseModel):
             )
         return schema.model_validate(self.chunks[0])
     
-    def merge[T: BaseModel](
+    def merge[T: SchemaBase](
         self, 
         schema: type[T], 
         merge_fn: Callable[[T, T], T] | None = None

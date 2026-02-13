@@ -4,14 +4,13 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
-from pydantic import BaseModel
 import ulid  # type: ignore
 
+from schemas.base import SchemaBase
 from schemas.chunking import ChunkedResponse
 from schemas.llmerror.v1 import LLMError
 from schemas.registry import load_schema
 from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
-from schemas.llmerror.v0 import MODULE as ERROR_MODULE
 from src.adapters.llm.protocol import PromptMessages
 from src.services.blob import BlobService
 from src.services.llm import LLMService
@@ -128,7 +127,7 @@ def create_llm_activity_processor(storage: BlobService,
     return processor
 
 
-def create_llm_parser[T: BaseModel](storage: BlobService, 
+def create_llm_parser[T: SchemaBase](storage: BlobService, 
                       llm: LLMService, 
                       module_name: str, 
                       output_stage: str,
