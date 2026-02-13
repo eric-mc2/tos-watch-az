@@ -1,6 +1,5 @@
 appsettings.json
 logs/*
-data/
 
 # Local python packages
 .python_packages/
