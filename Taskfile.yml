@@ -34,7 +34,7 @@ tasks:
       - pytest tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
-      RUNTIME_ENV: "DEV"
+      RUNTIME_ENV: DEV
     interactive: true
 
   tests-all:
@@ -58,6 +58,8 @@ tasks:
     desc: Run function app in dev mode
     cmds:
       - func start
+    env:
+      TARGET_ENV: STAGE
 
   run-prod:
     desc: Run function app in production mode

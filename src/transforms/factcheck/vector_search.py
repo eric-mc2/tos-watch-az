@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass, field
 from typing import Optional, Any
-import faiss  # type: ignore
 
 from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
@@ -9,6 +8,8 @@ from src.transforms.differ import DiffDoc, DiffSection
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
+logging.getLogger("faiss").setLevel(logging.WARNING)
+import faiss  # type: ignore
 
 
 @dataclass

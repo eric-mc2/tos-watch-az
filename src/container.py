@@ -45,7 +45,7 @@ class ServiceContainer:
     @classmethod
     def create(cls):
         target_env = os.environ.get("TARGET_ENV", "DEV")
-        if target_env == "PROD":
+        if target_env == "PROD" or target_env == "STAGE":
             return cls.create_real()
         else:
             return cls.create_fake()
