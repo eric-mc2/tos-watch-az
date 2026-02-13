@@ -44,8 +44,8 @@ class BlobService:
 
 
     @staticmethod
-    def unparse_blob_path(path: tuple):
-        return '/'.join(path)
+    def unparse_blob_path(path: tuple, suffix: str = ""):
+        return '/'.join(path) + suffix
 
 
     # Domain Specific Queries
@@ -132,6 +132,10 @@ class BlobService:
     def upload_text_blob(self, data: str, blob_name: str, metadata: Optional[dict]=None) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'text/plain; charset=utf-8'
+        if not isinstance(data, str):
+            raise TypeError(f"Expected string data got {type(data)}: {data}")
+        if not isinstance(blob_name, str):
+            raise TypeError(f"Expected string blob_name got {type(blob_name)}: {blob_name}")
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 

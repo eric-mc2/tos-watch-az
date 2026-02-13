@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pydantic import BaseModel
 from os.path import basename
-from typing import Iterable
+from typing import Iterator
 
 from src.utils.log_utils import setup_logger
 from schemas.docchunk.v1 import DocChunk
@@ -34,11 +34,13 @@ class Differ:
             if diff:
                 self.save_diff(after, diff, span_diff)
 
-    def find_diff_peers(self, blob_name: str) -> Iterable[tuple[str, str]]:
+    def find_diff_peers(self, blob_name: str) -> Iterator[tuple[str, str]]:
+        blob_name = blob_name.removeprefix(f"{self.storage.container}/")
         path = self.storage.parse_blob_path(blob_name)
+        # nb: Trailing slash prevents same-prefixed policy collision like policy-safety vs policy-privacy
         peers = sorted([x for x in self.storage.adapter.list_blobs() if
-                        x.startswith(f"{Stage.DOCCHUNK.value}/{path.company}/{path.policy}")])
-        idx = peers.index(blob_name)
+                        x.startswith(f"{Stage.DOCCHUNK.value}/{path.company}/{path.policy}/")])
+        idx = peers.index(blob_name)  # throws if missing
         if idx >= 1:
             yield peers[idx - 1], blob_name
         if idx + 1 < len(peers):

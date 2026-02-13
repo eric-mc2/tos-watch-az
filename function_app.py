@@ -233,7 +233,7 @@ def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]) -> Non
 async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the summarizer workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
-    blob_name = container.storage.unparse_blob_path(parts)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
     orchestration_input = OrchData(blob_name, "summarizer", parts.company, parts.policy, parts.timestamp).to_dict()
     logger.info(f"Initiating orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
@@ -271,7 +271,7 @@ def parse_summary(input_blob: func.InputStream) -> None:
 async def claim_extractor_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the claim extractor workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
-    blob_name = container.storage.unparse_blob_path(parts)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
     orchestration_input = OrchData(blob_name, "claim_extractor", parts.company, parts.policy, parts.timestamp).to_dict()
     logger.info(f"Initiating claim extraction orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
@@ -309,7 +309,7 @@ def parse_claims(input_blob: func.InputStream) -> None:
 async def claim_checker_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the claim checker workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
-    blob_name = container.storage.unparse_blob_path(parts)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
     orchestration_input = OrchData(blob_name, "claim_checker", parts.company, parts.policy, parts.timestamp).to_dict()
     logger.info(f"Initiating claim checking orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
@@ -349,7 +349,7 @@ def parse_factcheck(input_blob: func.InputStream) -> None:
 async def judge_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the judge workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
-    blob_name = container.storage.unparse_blob_path(parts)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
     orchestration_input = OrchData(blob_name, "judge", parts.company, parts.policy, parts.timestamp).to_dict()
     logger.info(f"Initiating judge orchestration for {blob_name}")
     await client.start_new("orchestrator", None, orchestration_input)
