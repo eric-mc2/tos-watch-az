@@ -74,6 +74,8 @@ class GenericWindower(Generic[T]):
         self.combine = combine
         self.length = length
         self.empty = empty
+        if capacity <= 0:
+            raise ValueError("Capacity must be positive")
         if overlap < 0 or overlap >= 1:
             raise ValueError("Overlap must be in range (0,1).")
 
@@ -125,7 +127,7 @@ def list_windower(capacity: int, length_fn: Callable[[Any], int], overlap: float
     )
 
 
-def string_example(text: str, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
+def chunk_string(text: str, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
     # String chunking (like before)
     char_limit = int(token_limit * text_len / token_len)
     outer_windower = string_windower(capacity=char_limit, delimiter="\n", overlap=overlap)
@@ -140,10 +142,10 @@ def string_example(text: str, token_limit: int, text_len: int, token_len: int, o
     return outer_windower.contents
 
 
-def list_example(documents, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
+def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
     # List chunking (e.g., for documents with metadata)
     char_limit = int(token_limit * text_len / token_len)
-    outer_windower = list_windower(capacity=char_limit, length_fn=lambda doc: doc["token_count"], overlap=overlap)
+    outer_windower = list_windower(capacity=char_limit, length_fn=len, overlap=overlap)
     for doc in documents:
         outer_windower.add([doc])
     return outer_windower.contents

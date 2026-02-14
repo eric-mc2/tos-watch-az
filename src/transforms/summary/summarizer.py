@@ -13,7 +13,7 @@ from src.services.llm import TOKEN_LIMIT, LLMService
 from src.stages import Stage
 from src.transforms.differ import DiffDoc
 from src.transforms.icl import ICL
-from src.transforms.summary.prompt_chunker import PromptChunker
+from src.transforms.summary.diff_chunker import DiffChunker
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.transforms.llm_transform import LLMTransform
@@ -21,13 +21,13 @@ from src.transforms.llm_transform import LLMTransform
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v6"
+PROMPT_VERSION = "v7"
 LABELS_VERSION = "substantive_v1"
 N_ICL = 3
 SYSTEM_PROMPT = """
-You are an expert at analyzing terms of service changes. Your task is to 
-determine whether changes are practically substantive—meaning they materially 
-affect what a typical user can do, must do, or what happens to them.
+You are part of a team that is analyzing terms of service changes.
+The team's goal is to determine whether changes are practically substantive—meaning 
+they materially affect what a typical user can do, must do, or what happens to them.
 
 CRITERIA FOR PRACTICALLY SUBSTANTIVE:
 - Alters data collection/usage
@@ -43,14 +43,21 @@ NOT PRACTICALLY SUBSTANTIVE:
 - Typo or grammar fixes
 - Adds legally required boilerplate that doesn't change user experience
 
+Your role is the summarizer. You will be assigned multiple memos produced
+by the note-taker. You will synthesize these notes into a preliminary 
+assessment. It is important that you cite the note index (e.g. [3]) whenever you
+make a claim about the document. If you quote from the document, make sure to
+properly \"escape\" the quotation marks. Your claims will later be fact-checked against the
+raw document text.
+
 OUTPUT FORMAT:
 Respond with valid JSON only:
 {
-  "practically_substantive" : 
-  {
-    "rating": boolean,
-    "reason": "One or two sentences explaining the key factor"
-  }
+    "practically_substantive":
+    {
+        "rating": boolean,
+        "reason": "A few sentences or bullets explaining the key factor(s)"
+    }
 }
 """
 
@@ -76,11 +83,11 @@ class PromptBuilder:
     _cache = None
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
-        examples = self.read_examples()
+        examples = [] # self.read_examples()
         diffs = self.storage.load_text_blob(blob_name)
 
-        chunker = PromptChunker(self.llm, TOKEN_LIMIT)
-        chunks = chunker.chunk_prompt(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
+        chunker = DiffChunker(self.llm, TOKEN_LIMIT)
+        chunks = chunker.chunk_diff(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
 
         for chunk in chunks:
             prompt = Message("user", chunk.model_dump_json())

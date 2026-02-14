@@ -14,7 +14,7 @@ logger = setup_logger(__name__, logging.INFO)
 @dataclass
 class OrchData:
     task_id: str
-    workflow_type: Literal["summarizer", "scraper", "meta", "webscraper", "claim_extractor", "claim_checker", "judge"]
+    workflow_type: Literal["summarizer", "briefer", "scraper", "meta", "webscraper", "claim_extractor", "claim_checker", "judge"]
     company: str = ""
     policy: str = ""
     timestamp: str = ""
@@ -46,6 +46,7 @@ WORKFLOW_CONFIGS = {
     "scraper": WorkflowConfig(10, 60, 20, "scraper_processor", 3, 2 * 60),
     "webscraper": WorkflowConfig(120, 60, 20, "scraper_scheduled_processor", 3, 60),
     "meta": WorkflowConfig(5, 60, 20, "meta_processor", 3, 3 * 60),
+    "briefer": WorkflowConfig(50, 60, 20, "briefer_processor", 3, 60),
     "claim_extractor": WorkflowConfig(50, 60, 20, "claim_extractor_processor", 3, 60),
     "claim_checker": WorkflowConfig(50, 60, 20, "claim_checker_processor", 3, 60),
     "judge": WorkflowConfig(50, 60, 20, "judge_processor", 3, 60)

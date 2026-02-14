@@ -7,8 +7,6 @@ from src.adapters.storage.protocol import BlobStorageProtocol, DEFAULT_CONNECTIO
 
 _client : Optional[BlobServiceClient] = None
 
-# TODO: Need to check interplay between this and service and function app w.r.t. CONTAINER/ prefix.
-
 class AzureStorageAdapter(BlobStorageProtocol):
 
     def __init__(self, key: str = DEFAULT_CONNECTION):

@@ -10,6 +10,9 @@ from src.adapters.storage.protocol import BlobStorageProtocol
 
 logger = setup_logger(__name__, logging.INFO)
 
+BlobPath = namedtuple("BlobPath", ['stage', 'company', 'policy', 'timestamp'])
+RunBlobPath = namedtuple("RunBlobPath", ['stage', 'company', 'policy', 'timestamp', 'run_id'])
+
 class BlobService:
     adapter: BlobStorageProtocol
     container: str
@@ -21,18 +24,16 @@ class BlobService:
             self.adapter.create_container()
 
     # Domain Specific Parsing
-    def parse_blob_path(self, path: str):
+    def parse_blob_path(self, path: str) -> BlobPath | RunBlobPath:
         path = path.removeprefix(f"{self.container}/")
         blob_path = Path(path)
         if len(blob_path.parts) == 4:
-            BlobPath = namedtuple("BlobPath", ['stage', 'company', 'policy', 'timestamp'])
             return BlobPath(
                 blob_path.parts[0],
                 blob_path.parts[1],
                 blob_path.parts[2],
                 blob_path.stem)
         elif len(blob_path.parts) == 5:
-            RunBlobPath = namedtuple("RunBlobPath", ['stage', 'company', 'policy', 'timestamp', 'run_id'])
             return RunBlobPath(
                 blob_path.parts[0],
                 blob_path.parts[1],

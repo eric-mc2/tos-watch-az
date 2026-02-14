@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Iterator
 
 from schemas.registry import load_data
@@ -10,9 +10,10 @@ from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
 from src.services.llm import TOKEN_LIMIT, LLMService
+from src.transforms.differ import DiffDoc
 from src.transforms.factcheck.vector_search import Indexer
 from src.transforms.llm_transform import LLMTransform
-from src.transforms.summary.prompt_chunker import PromptChunker
+from src.transforms.summary.diff_chunker import DiffChunker
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -57,19 +58,16 @@ class ClaimCheckerBuilder:
         # For each claim, retrieve relevant diffs and create prompt
         for claim in claims.claims:
             # Use RAG to find relevant document sections
+            # TODO: incorporate citations supplied by summarizer in retrieval
             relevant_diffs = indexer.search(claim)
             
-            chunker = PromptChunker(self.llm, TOKEN_LIMIT)
-            chunks = chunker.chunk_prompt(SYSTEM_PROMPT, [], relevant_diffs)
+            chunker = DiffChunker(self.llm, TOKEN_LIMIT)
+            chunks = chunker.chunk_diff(SYSTEM_PROMPT, [], relevant_diffs)
 
             for chunk in chunks:
-
-                # Format the retrieved diffs as context
-                doc_context = self._format_diffs(chunk)
-                
                 prompt_data = dict(
                     claim=claim,
-                    document=doc_context,
+                    document=[asdict(c) for c in chunk],  # XXX: Hope this format conversion is ok??
                 )
                 prompt = Message("user", json.dumps(prompt_data))
                 yield PromptMessages(
@@ -79,7 +77,7 @@ class ClaimCheckerBuilder:
                 )
     
     @staticmethod
-    def _format_diffs(diff_doc) -> str:
+    def _format_diffs(diff_doc: DiffDoc) -> str:
         """Format DiffDoc into readable context for the LLM."""
         if not diff_doc.diffs:
             return "No relevant document sections found."

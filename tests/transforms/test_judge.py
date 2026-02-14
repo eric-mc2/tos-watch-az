@@ -162,7 +162,7 @@ class TestJudge:
         )
         
         # Configure fake LLM to return valid judgment
-        llm_service.adapter.set_response(
+        llm_service.adapter.set_response_static(
             Judgement(practically_substantive=JudgementSubstantive(
                 rating=True,
                 reason="because")).model_dump_json())

@@ -18,6 +18,7 @@ from src.transforms.icl import ICL
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.metadata_scraper import MetadataScraper
 from src.transforms.snapshot_scraper import SnapshotScraper
+from src.transforms.summary.briefer import Briefer
 from src.transforms.summary.summarizer import Summarizer
 from src.transforms.factcheck.claim_extractor import ClaimExtractor
 from src.transforms.factcheck.claim_checker import ClaimChecker
@@ -37,6 +38,7 @@ class ServiceContainer:
     wayback_transform: MetadataScraper
     snapshot_transform: SnapshotScraper
     summarizer_transform: Summarizer
+    briefer_transform: Briefer
     claim_extractor_transform: ClaimExtractor
     claim_checker_transform: ClaimChecker
     judge_transform: Judge
@@ -87,6 +89,7 @@ class ServiceContainer:
             snapshot_transform=SnapshotScraper(blob_storage, http_client),
             summarizer_transform=Summarizer(blob_storage, ICL(blob_storage), llm_executor),
             claim_extractor_transform=ClaimExtractor(blob_storage, llm_executor),
+            briefer_transform=Briefer(blob_storage, llm_executor),
             claim_checker_transform=ClaimChecker(blob_storage, llm_executor, embedding_client),
             judge_transform=Judge(blob_storage, llm_executor),
         )

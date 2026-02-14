@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import pytest
-from src.transforms.chunker import Buffer, string_windower, string_example
+from src.transforms.chunker import Buffer, string_windower, chunk_string
 
 def word_buffer(capacity, delim):
     return Buffer(
@@ -136,7 +136,6 @@ class TestWindower:
         """Test string_windower initialization with valid parameters."""
         windower = string_windower(100, " ", 0.1)
         assert windower.capacity == 100
-        assert windower.delimiter == " "
         assert windower.overlap == 0.1
         assert windower.slots == []
 
@@ -171,7 +170,7 @@ class TestWindower:
         added = windower.add("hello")
         assert added == 1
         assert len(windower.slots) == 1
-        assert windower.slots[0].txt == "hello"
+        assert windower.slots[0].content == "hello"
 
     def test_add_to_existing_slot(self):
         """Test adding to existing slot."""
@@ -180,7 +179,7 @@ class TestWindower:
         added = windower.add("world")
         assert added == 1
         assert len(windower.slots) == 1
-        assert windower.slots[0].txt == "hello world"
+        assert windower.slots[0].content == "hello world"
 
     def test_add_triggers_overlap(self):
         """Test adding triggers overlap when pressure threshold reached."""
@@ -217,7 +216,7 @@ class WordChunker:
     capacity: int
     overlap: float
     def process(self, text, token_len, text_len):
-        return string_example(text, self.capacity, text_len, token_len, self.overlap)
+        return chunk_string(text, self.capacity, text_len, token_len, self.overlap)
 
 
 class TestWordChunker:

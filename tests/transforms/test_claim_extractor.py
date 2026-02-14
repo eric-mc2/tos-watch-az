@@ -122,7 +122,7 @@ class TestClaimExtractor:
         
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
-        llm_service.adapter.set_response(response.model_dump_json())
+        llm_service.adapter.set_response_static(response.model_dump_json())
         
         extractor = ClaimExtractor(fake_storage, llm_transform)
         
@@ -152,7 +152,7 @@ class TestClaimExtractor:
         
         # Configure fake LLM to return multiple claims
         response = Claims(claims=["claim 1", "claim 2"])
-        llm_service.adapter.set_response(response.model_dump_json())
+        llm_service.adapter.set_response_static(response.model_dump_json())
         
         extractor = ClaimExtractor(fake_storage, llm_transform)
         
@@ -177,7 +177,7 @@ class TestClaimExtractor:
         
         # Configure fake LLM to return empty claims list
         response = Claims(claims=[])
-        llm_service.adapter.set_response(response.model_dump_json())
+        llm_service.adapter.set_response_static(response.model_dump_json())
         
         extractor = ClaimExtractor(fake_storage, llm_transform)
         
@@ -203,7 +203,7 @@ class TestClaimExtractor:
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
-        llm_service.adapter.set_response(
+        llm_service.adapter.set_response_static(
             "OK here is your answer: " + \
             response.model_dump_json() + \
             " Is there anything else I can assist with?")
@@ -232,7 +232,7 @@ class TestClaimExtractor:
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
-        llm_service.adapter.set_response("what is json lol")
+        llm_service.adapter.set_response_static("what is json lol")
 
         extractor = ClaimExtractor(fake_storage, llm_transform)
 

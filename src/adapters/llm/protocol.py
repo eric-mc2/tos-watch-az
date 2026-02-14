@@ -7,6 +7,9 @@ class Message:
     role: Literal["user", "assistant"]
     content: str
 
+    def __len__(self):
+        return len(self.content)
+
 @dataclass
 class PromptMessages:
     system: str

@@ -127,20 +127,14 @@ def create_llm_activity_processor(storage: BlobService,
     return processor
 
 
-def create_llm_parser[T: SchemaBase](storage: BlobService, 
-                      llm: LLMService, 
-                      module_name: str, 
-                      output_stage: str,
-                      merge_fn: Optional[Callable[[T, T], T]] = None) -> Callable:
+def create_llm_parser_saver[T: SchemaBase](storage: BlobService,
+                                           llm: LLMService,
+                                           module_name: str,
+                                           output_stage: str,
+                                           merge_fn: Optional[Callable[[T, T], T]] = None) -> Callable:
     """
     Factory function to create a generic LLM output parser/validator.
-    
-    Handles both chunked and non-chunked formats for backward compatibility:
-    - Detects chunking from metadata['is_chunked'] flag (new format)
-    - Falls back to structure detection ({"chunks": [...]}) for historical data
-    - Validates each chunk individually against the business schema
-    - Stores in the same format it was received (preserves chunking)
-    
+
     Args:
         storage: BlobService instance for path parsing and blob uploads
         llm: LLMService instance with validate_output method
@@ -150,11 +144,40 @@ def create_llm_parser[T: SchemaBase](storage: BlobService,
     Returns:
         Parser function compatible with Azure Functions @blob_trigger
     """
-    def parser(input_blob) -> None:
-        in_path = storage.parse_blob_path(input_blob.name)
+    def parser_saver(input_blob) -> tuple[str, dict]:
         txt = input_blob.read().decode()
         metadata = storage.adapter.load_metadata(input_blob.name)
-        
+        inner_parser = create_llm_parser(llm, module_name, merge_fn)
+        cleaned_txt, metadata = inner_parser(input_blob.name, txt, metadata)
+        saver = create_llm_saver(storage, output_stage)
+        saver(input_blob.name, cleaned_txt, metadata)
+        return cleaned_txt, metadata
+    return parser_saver
+
+
+def create_llm_parser[T: SchemaBase](llm: LLMService,
+                                     module_name: str,
+                                     merge_fn: Optional[Callable[[T, T], T]] = None) -> Callable:
+    """
+    Factory function to create a generic LLM output parser/validator.
+
+    Handles both chunked and non-chunked formats for backward compatibility:
+    - Detects chunking from metadata['is_chunked'] flag (new format)
+    - Falls back to structure detection ({"chunks": [...]}) for historical data
+    - Validates each chunk individually against the business schema
+    - Stores in the same format it was received (preserves chunking)
+
+    Args:
+        storage: BlobService instance for path parsing and blob uploads
+        llm: LLMService instance with validate_output method
+        module_name: Module key in schema registry (e.g., "summary", "claim", "factcheck", "judge")
+        output_stage: Stage enum value for CLEAN output (e.g., Stage.SUMMARY_CLEAN.value)
+
+    Returns:
+        Parser function
+    """
+
+    def parser(blob_name: str, txt: str, metadata: dict, save=True) -> tuple[str, dict]:
         # Get schema from registry
         module_key = metadata.get('module_name', module_name)
         schema_version = metadata['schema_version']
@@ -176,7 +199,7 @@ def create_llm_parser[T: SchemaBase](storage: BlobService,
         if error_flag is not None:
             # TODO: technically validating the error is unnecessary if we're just printing the error text.
             logger.warning("LLM returned structurally invalid output: \n%s", txt)
-            return  # exit early! don't save anything
+            return "", {}  # exit early! don't save anything
 
         if is_chunked:
             # Chunked format: ChunkedResponse stores raw dicts, validates at merge-time
@@ -196,14 +219,22 @@ def create_llm_parser[T: SchemaBase](storage: BlobService,
         # Update metadata with chunking info -- we always merge!
         metadata['is_chunked'] = False
 
+        logger.info(
+            f"Successfully validated {module_name} blob: {blob_name} (schema={schema_version}, chunked={is_chunked})")
+
+        return cleaned_txt, metadata
+
+    return parser
+
+
+def create_llm_saver(storage: BlobService, output_stage: str) -> Callable:
+    def saver(blob_name: str, txt: str, metadata: dict) -> None:
+        in_path = storage.parse_blob_path(blob_name)
         # Save versioned output
         out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
-        storage.upload_json_blob(cleaned_txt, out_path, metadata=metadata)
-        
+        storage.upload_json_blob(txt, out_path, metadata=metadata)
+
         # Save latest output
         latest_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, "latest.json")
-        storage.upload_json_blob(cleaned_txt, latest_path, metadata=metadata)
-        
-        logger.info(f"Successfully validated {module_name} blob: {input_blob.name} (schema={schema_version}, chunked={is_chunked})")
-    
-    return parser
+        storage.upload_json_blob(txt, latest_path, metadata=metadata)
+    return saver

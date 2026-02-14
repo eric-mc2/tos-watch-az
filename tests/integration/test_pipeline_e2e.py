@@ -7,10 +7,13 @@ import pytest
 from typing import Optional, List
 from dataclasses import dataclass
 
+from schemas.brief.v0 import BRIEF_MODULE
+from schemas.brief.v1 import Memo
+from src.adapters.llm.protocol import Message
 from src.services.blob import BlobService
 from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
-from src.transforms.llm_transform import LLMTransform, create_llm_parser, create_llm_activity_processor
+from src.transforms.llm_transform import LLMTransform, create_llm_parser_saver, create_llm_activity_processor
 from src.transforms.differ import DiffDoc, DiffSection
 from src.stages import Stage
 
@@ -79,30 +82,57 @@ def llm_transform(fake_storage, fake_llm):
     return LLMTransform(fake_storage, fake_llm)
 
 
-def run_pipeline_stage_summarizer(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp):
-    """Run summarizer stage: DIFF_CLEAN -> SUMMARY_RAW."""
+def run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp):
+    """Run summarizer stage: DIFF_CLEAN -> BRIEF_RAW."""
+    from src.transforms.summary.briefer import Briefer
+
+    briefer = Briefer(fake_storage, llm_transform)
+    
+    processor = create_llm_activity_processor(
+        fake_storage,
+        briefer.brief,
+        Stage.BRIEF_RAW.value,
+        "briefer"
+    )
+    
+    processor({'task_id': diff_blob_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
+    return f"{Stage.BRIEF_RAW.value}/{company}/{policy}/{timestamp}/latest.txt"
+
+
+def run_pipeline_stage_brief_parser(fake_storage, fake_llm, brief_raw_path):
+    """Run brief parser: BRIEF_RAW -> BRIEF_CLEAN."""
+    input_blob = MockInputStream(fake_storage, brief_raw_path)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, BRIEF_MODULE, Stage.BRIEF_CLEAN.value)
+    parser(input_blob)
+    
+    parts = fake_storage.parse_blob_path(brief_raw_path)
+    return f"{Stage.BRIEF_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
+
+
+def run_pipeline_stage_summarizer(fake_storage, llm_transform, brief_clean_path, company, policy, timestamp):
+    """Run summarizer stage: BRIEF_CLEAN -> SUMMARY_RAW."""
     from src.transforms.summary.summarizer import Summarizer
     from src.transforms.icl import ICL
-    
+
     summarizer = Summarizer(fake_storage, ICL(fake_storage), llm_transform)
-    
+
     processor = create_llm_activity_processor(
         fake_storage,
         summarizer.summarize,
         Stage.SUMMARY_RAW.value,
         "summarizer"
     )
-    
-    processor({'task_id': diff_blob_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
+
+    processor({'task_id': brief_clean_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
     return f"{Stage.SUMMARY_RAW.value}/{company}/{policy}/{timestamp}/latest.txt"
 
 
 def run_pipeline_stage_summary_parser(fake_storage, fake_llm, summary_raw_path):
     """Run summary parser: SUMMARY_RAW -> SUMMARY_CLEAN."""
     input_blob = MockInputStream(fake_storage, summary_raw_path)
-    parser = create_llm_parser(fake_storage, fake_llm, SUMMARY_MODULE, Stage.SUMMARY_CLEAN.value)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, SUMMARY_MODULE, Stage.SUMMARY_CLEAN.value)
     parser(input_blob)
-    
+
     parts = fake_storage.parse_blob_path(summary_raw_path)
     return f"{Stage.SUMMARY_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
@@ -127,7 +157,7 @@ def run_pipeline_stage_claim_extractor(fake_storage, llm_transform, summary_clea
 def run_pipeline_stage_claims_parser(fake_storage, fake_llm, claim_raw_path):
     """Run claims parser: CLAIM_RAW -> CLAIM_CLEAN."""
     input_blob = MockInputStream(fake_storage, claim_raw_path)
-    parser = create_llm_parser(fake_storage, fake_llm, CLAIMS_MODULE, Stage.CLAIM_CLEAN.value)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, CLAIMS_MODULE, Stage.CLAIM_CLEAN.value)
     parser(input_blob)
     
     parts = fake_storage.parse_blob_path(claim_raw_path)
@@ -155,7 +185,7 @@ def run_pipeline_stage_claim_checker(fake_storage, llm_transform, fake_embedding
 def run_pipeline_stage_fact_parser(fake_storage, fake_llm, fact_raw_path):
     """Run fact parser: FACTCHECK_RAW -> FACTCHECK_CLEAN."""
     input_blob = MockInputStream(fake_storage, fact_raw_path)
-    parser = create_llm_parser(fake_storage, fake_llm, PROOF_MODULE, Stage.FACTCHECK_CLEAN.value, merge_facts)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, PROOF_MODULE, Stage.FACTCHECK_CLEAN.value, merge_facts)
     parser(input_blob)
     
     parts = fake_storage.parse_blob_path(fact_raw_path)
@@ -183,7 +213,7 @@ def run_pipeline_stage_judge(fake_storage, llm_transform, fact_clean_path, compa
 def run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path):
     """Run judge parser: JUDGE_RAW -> JUDGE_CLEAN."""
     input_blob = MockInputStream(fake_storage, judge_raw_path)
-    parser = create_llm_parser(fake_storage, fake_llm, JUDGE_MODULE, Stage.JUDGE_CLEAN.value)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, JUDGE_MODULE, Stage.JUDGE_CLEAN.value)
     parser(input_blob)
     
     parts = fake_storage.parse_blob_path(judge_raw_path)
@@ -479,11 +509,31 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
     
     diff_blob_path = f"{Stage.DIFF_CLEAN.value}/{company}/{policy}/{timestamp}.json"
     fake_storage.upload_text_blob(diff_doc.model_dump_json(), diff_blob_path, metadata={})
-    
+
+    # Stage 0: Briefer + Parse
+    def respond(system: str, messages: List[Message]):
+        return Memo(relevance_flag=False,
+                    section_memo=messages[1].content,
+                    running_memo=messages[0].content)
+    fake_llm.adapter.set_response_func(respond)
+
+    brief_raw_path = run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, company, policy,
+                                                     timestamp)
+    brief_clean_path = run_pipeline_stage_brief_parser(fake_storage, fake_llm, brief_raw_path)
+
+    if test_case.expect_brief_success == 'True':
+        assert fake_storage.check_blob(brief_clean_path)
+    elif test_case.expect_brief_success == 'False':
+        assert not fake_storage.check_blob(brief_clean_path)
+        assert False, "Brief unexpectedly succeeded"
+    elif test_case.expect_brief_success == 'exit':
+        assert not fake_storage.check_blob(brief_clean_path)
+        return
+
     # Stage 1 & 2: Summarizer + Parser
-    fake_llm.adapter.set_response(test_case.summary_response)
+    fake_llm.adapter.set_response_static(test_case.summary_response)
     
-    summary_raw_path = run_pipeline_stage_summarizer(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp)
+    summary_raw_path = run_pipeline_stage_summarizer(fake_storage, llm_transform, brief_clean_path, company, policy, timestamp)
     summary_clean_path = run_pipeline_stage_summary_parser(fake_storage, fake_llm, summary_raw_path)
     
     if test_case.expect_summary_success == 'True':
@@ -496,7 +546,7 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
         return
             
     # Stage 3 & 4: ClaimExtractor + Parser
-    fake_llm.adapter.set_response(test_case.claims_response)
+    fake_llm.adapter.set_response_static(test_case.claims_response)
     
     claim_raw_path = run_pipeline_stage_claim_extractor(fake_storage, llm_transform, summary_clean_path, company, policy, timestamp)
 
@@ -523,7 +573,7 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
         return
     
     # Stage 5 & 6: ClaimChecker + Parser
-    fake_llm.adapter.set_response(test_case.fact_response)
+    fake_llm.adapter.set_response_static(test_case.fact_response)
     
     fact_raw_path = run_pipeline_stage_claim_checker(fake_storage, llm_transform, fake_embedding, claim_clean_path, company, policy, timestamp)
     
@@ -543,7 +593,7 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
         return
             
     # Stage 7 & 8: Judge + Parser
-    fake_llm.adapter.set_response(test_case.judge_response)
+    fake_llm.adapter.set_response_static(test_case.judge_response)
     
     judge_raw_path = run_pipeline_stage_judge(fake_storage, llm_transform, fact_clean_path, company, policy, timestamp)
 
