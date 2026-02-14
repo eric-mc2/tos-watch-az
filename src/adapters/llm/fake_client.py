@@ -11,3 +11,6 @@ class FakeLLMAdapter(LLMProtocol):
 
     def set_response(self, response):
         self._response = response
+
+    def count_tokens(self, system: str, messages: list[Message]) -> int:
+        return 1

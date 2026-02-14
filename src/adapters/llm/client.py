@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 import anthropic
@@ -38,16 +39,7 @@ class ClaudeAdapter(LLMProtocol):
             raise ValueError("Claude API requires non-empty system text.")
 
         client = self._get_client()
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1000,
-            system=[{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            messages=[MessageParam(content=m.content, role=m.role) for m in messages]
-        )
+        response = client.messages.create(**self._config_messages(system, messages))
         if response.stop_reason != 'end_turn':
             pass  # might need to fix
         if not response.content:
@@ -56,3 +48,23 @@ class ClaudeAdapter(LLMProtocol):
             logger.warning("Multiple LLM outputs")
         txt = response.content[0].text # type:ignore
         return txt
+    
+
+    def count_tokens(self, system: str, messages: list[Message]) -> int:
+        client = self._get_client()
+        response = client.messages.count_tokens(**self._config_messages(system, messages))
+        return response.input_tokens
+    
+
+    def _config_messages(self, system: str, messages: list[Message], max_output: int = 1000) -> dict:
+        return dict(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=max_output,
+            system=[{
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[MessageParam(content=m.content, role=m.role) for m in messages]
+        )
+    

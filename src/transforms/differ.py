@@ -17,6 +17,9 @@ class DiffSection(BaseModel):
     before: str
     after: str
 
+    def __len__(self) -> int:
+        return len(self.before) + len(self.after)
+
 class DiffDoc(BaseModel):
     diffs: list[DiffSection]
 

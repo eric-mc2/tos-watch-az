@@ -118,10 +118,10 @@ def upload_test_data(fake_storage, sample_claims, sample_claim, sample_diffs, bl
 class TestClaimCheckerBuilder:
     """Unit tests for ClaimCheckerBuilder using fake adapters."""
     
-    def test_single_claim(self, fake_storage, embedding_service, upload_test_data, blob_names):
+    def test_single_claim(self, fake_storage, embedding_service, upload_test_data, blob_names, fake_llm):
         """Test that builder creates prompts for each claim."""
         # Arrange
-        builder = ClaimCheckerBuilder(fake_storage, embedding_service)
+        builder = ClaimCheckerBuilder(fake_storage, embedding_service, fake_llm)
         
         # Act
         prompts = list(builder.build_prompt(blob_names.single_claim_blob, blob_names.diffs_blob))
@@ -129,10 +129,10 @@ class TestClaimCheckerBuilder:
         # Assert
         assert len(prompts) == 1  # One prompt per claim
 
-    def test_multiple_claims(self, fake_storage, embedding_service, upload_test_data, blob_names):
+    def test_multiple_claims(self, fake_storage, embedding_service, upload_test_data, blob_names, fake_llm):
         """Test that builder creates prompts for each claim."""
         # Arrange
-        builder = ClaimCheckerBuilder(fake_storage, embedding_service)
+        builder = ClaimCheckerBuilder(fake_storage, embedding_service, fake_llm)
 
         # Act
         prompts = list(builder.build_prompt(blob_names.multi_claims_blob, blob_names.diffs_blob))
@@ -140,10 +140,10 @@ class TestClaimCheckerBuilder:
         # Assert
         assert len(prompts) == 3  # One prompt per claim
 
-    def test_empty_claims(self, fake_storage, embedding_service, upload_test_data, blob_names):
+    def test_empty_claims(self, fake_storage, embedding_service, upload_test_data, blob_names, fake_llm):
         """Test handling of empty claims list."""
         # Arrange
-        builder = ClaimCheckerBuilder(fake_storage, embedding_service)
+        builder = ClaimCheckerBuilder(fake_storage, embedding_service, fake_llm)
         
         empty_claims = ClaimsV1(claims=[])
         claims_blob = "empty_claims.json"

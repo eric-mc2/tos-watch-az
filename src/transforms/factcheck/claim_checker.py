@@ -9,7 +9,7 @@ from schemas.fact.v1 import Claims as ClaimsV1, FACT_VERSION as FACT_SCHEMA_VERS
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
-from src.services.llm import TOKEN_LIMIT
+from src.services.llm import TOKEN_LIMIT, LLMService
 from src.transforms.factcheck.vector_search import Indexer
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.summary.prompt_chunker import PromptChunker
@@ -38,6 +38,7 @@ OUTPUT FORMAT:
 class ClaimCheckerBuilder:
     storage: BlobService
     embedder: EmbeddingService
+    llm: LLMService
 
     def build_prompt(self, blob_name: str, diff_blob_name: str) -> Iterator[PromptMessages]:
         examples: list = []  # self.read_examples() for future ICL
@@ -58,8 +59,8 @@ class ClaimCheckerBuilder:
             # Use RAG to find relevant document sections
             relevant_diffs = indexer.search(claim)
             
-            chunker = PromptChunker(TOKEN_LIMIT)
-            chunks = chunker.chunk_prompt(relevant_diffs)
+            chunker = PromptChunker(self.llm, TOKEN_LIMIT)
+            chunks = chunker.chunk_prompt(SYSTEM_PROMPT, [], relevant_diffs)
 
             for chunk in chunks:
 
@@ -103,7 +104,7 @@ class ClaimChecker:
 
     def check_claim(self, blob_name: str, other_blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Checking claims from {blob_name}")
-        prompter = ClaimCheckerBuilder(self.storage, self.embedder)
+        prompter = ClaimCheckerBuilder(self.storage, self.embedder, self.executor.llm)
         messages = prompter.build_prompt(blob_name, other_blob_name)
         # Always annotate this as a FACT because the parser needs to validate the individual items, which are always facts.
         # It becomes a PROOF when the parser merges the FACTS / chunks together.

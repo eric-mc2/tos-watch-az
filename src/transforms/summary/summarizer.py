@@ -9,7 +9,7 @@ import numpy as np
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
 from schemas.summary.v4 import VERSION as SCHEMA_VERSION, MODULE
 from src.adapters.llm.protocol import PromptMessages, Message
-from src.services.llm import TOKEN_LIMIT
+from src.services.llm import TOKEN_LIMIT, LLMService
 from src.stages import Stage
 from src.transforms.differ import DiffDoc
 from src.transforms.icl import ICL
@@ -21,6 +21,39 @@ from src.transforms.llm_transform import LLMTransform
 
 logger = setup_logger(__name__, logging.DEBUG)
 
+PROMPT_VERSION = "v6"
+LABELS_VERSION = "substantive_v1"
+N_ICL = 3
+SYSTEM_PROMPT = """
+You are an expert at analyzing terms of service changes. Your task is to 
+determine whether changes are practically substantive—meaning they materially 
+affect what a typical user can do, must do, or what happens to them.
+
+CRITERIA FOR PRACTICALLY SUBSTANTIVE:
+- Alters data collection/usage
+- Changes user permissions, restrictions, or account termination conditions
+- Modifies pricing/payments/refunds
+- Affects dispute resolution or liability
+- New requirements or prohibitions on user behavior
+
+NOT PRACTICALLY SUBSTANTIVE:
+- Reformatting or reorganization only
+- Clarifies language without changing meaning
+- Administrative updates (names, addresses, dates)
+- Typo or grammar fixes
+- Adds legally required boilerplate that doesn't change user experience
+
+OUTPUT FORMAT:
+Respond with valid JSON only:
+{
+  "practically_substantive" : 
+  {
+    "rating": boolean,
+    "reason": "One or two sentences explaining the key factor"
+  }
+}
+"""
+
 
 @dataclass
 class Summarizer:
@@ -30,7 +63,7 @@ class Summarizer:
 
     def summarize(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Summarizing {blob_name}")
-        prompter = PromptBuilder(self.storage, self.icl)
+        prompter = PromptBuilder(self.storage, self.icl, self.executor.llm)
         messages = prompter.build_prompt(blob_name)
         return self.executor.execute_prompts(messages, MODULE, SCHEMA_VERSION, PROMPT_VERSION)
 
@@ -39,14 +72,15 @@ class Summarizer:
 class PromptBuilder:
     storage: BlobService
     icl: ICL
+    llm: LLMService
     _cache = None
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
         examples = self.read_examples()
         diffs = self.storage.load_text_blob(blob_name)
 
-        chunker = PromptChunker(TOKEN_LIMIT)
-        chunks = chunker.chunk_prompt(DiffDoc.model_validate_json(diffs))
+        chunker = PromptChunker(self.llm, TOKEN_LIMIT)
+        chunks = chunker.chunk_prompt(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
 
         for chunk in chunks:
             prompt = Message("user", chunk.model_dump_json())
@@ -94,35 +128,3 @@ class PromptBuilder:
         return self._cache
 
 
-SYSTEM_PROMPT = """
-You are an expert at analyzing terms of service changes. Your task is to 
-determine whether changes are practically substantive—meaning they materially 
-affect what a typical user can do, must do, or what happens to them.
-
-CRITERIA FOR PRACTICALLY SUBSTANTIVE:
-- Alters data collection/usage
-- Changes user permissions, restrictions, or account termination conditions
-- Modifies pricing/payments/refunds
-- Affects dispute resolution or liability
-- New requirements or prohibitions on user behavior
-
-NOT PRACTICALLY SUBSTANTIVE:
-- Reformatting or reorganization only
-- Clarifies language without changing meaning
-- Administrative updates (names, addresses, dates)
-- Typo or grammar fixes
-- Adds legally required boilerplate that doesn't change user experience
-
-OUTPUT FORMAT:
-Respond with valid JSON only:
-{
-  "practically_substantive" : 
-  {
-    "rating": boolean,
-    "reason": "One or two sentences explaining the key factor"
-  }
-}
-"""
-N_ICL = 3
-PROMPT_VERSION = "v6"
-LABELS_VERSION = "substantive_v1"
