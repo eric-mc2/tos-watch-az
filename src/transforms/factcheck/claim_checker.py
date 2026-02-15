@@ -13,7 +13,7 @@ from src.services.llm import TOKEN_LIMIT, LLMService
 from src.transforms.differ import DiffDoc
 from src.transforms.factcheck.vector_search import Indexer
 from src.transforms.llm_transform import LLMTransform
-from src.transforms.summary.diff_chunker import DiffChunker
+from src.transforms.summary.diff_chunker import DiffChunker, StandardDiffFormatter
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
@@ -61,7 +61,7 @@ class ClaimCheckerBuilder:
             # TODO: incorporate citations supplied by summarizer in retrieval
             relevant_diffs = indexer.search(claim)
             
-            chunker = DiffChunker(self.llm, TOKEN_LIMIT)
+            chunker = DiffChunker(self.llm, TOKEN_LIMIT, StandardDiffFormatter())
             chunks = chunker.chunk_diff(SYSTEM_PROMPT, [], relevant_diffs)
 
             for chunk in chunks:
@@ -81,17 +81,8 @@ class ClaimCheckerBuilder:
         """Format DiffDoc into readable context for the LLM."""
         if not diff_doc.diffs:
             return "No relevant document sections found."
-        
-        formatted_sections = []
-        for i, diff in enumerate(diff_doc.diffs, 1):
-            section = f"Section {i}:\n"
-            if diff.before:
-                section += f"Before: {diff.before}\n"
-            if diff.after:
-                section += f"After: {diff.after}\n"
-            formatted_sections.append(section)
-        
-        return "\n".join(formatted_sections)
+        formatter = StandardDiffFormatter()
+        return formatter.format_doc(diff_doc)
 
 
 @dataclass

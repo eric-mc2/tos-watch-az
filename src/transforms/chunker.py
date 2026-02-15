@@ -51,7 +51,7 @@ class Buffer(Generic[T]):
         if not force and not self.can_add(item):
             self.close()
             return False
-        if self.is_empty:
+        if self.is_empty or self._items is None:
             self._items = item
         else:
             self._items = self.combine(self._items, item)
@@ -147,5 +147,12 @@ def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overl
     char_limit = int(token_limit * text_len / token_len)
     outer_windower = list_windower(capacity=char_limit, length_fn=len, overlap=overlap)
     for doc in documents:
-        outer_windower.add([doc])
+        if not outer_windower.add([doc]):
+            # Item exceeds buffer capacity.  Force it into a standalone group
+            # so downstream processing (e.g. _split_oversized_section) can
+            # handle it.  Replace the empty ghost buffer that add() created.
+            buf = Buffer(char_limit, outer_windower.combine, outer_windower.length, outer_windower.empty)
+            buf.add([doc], force=True)
+            buf.close()
+            outer_windower.slots[-1] = buf
     return outer_windower.contents

@@ -47,10 +47,12 @@ class PipelineTestCase:
     """Test case configuration for pipeline execution."""
     name: str
     diff_sections: List[DiffSection]
+    # brief_response: Optional[str]  # JSON or invalid string
     summary_response: Optional[str]  # JSON or invalid string
     claims_response: Optional[str]   # JSON or invalid string
     fact_response: Optional[str]
     judge_response: Optional[str]
+    expect_brief_success: str
     expect_summary_success: str
     expect_claims_success: str
     expect_fact_success: str
@@ -265,6 +267,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='False',
             expect_summary_success='False',
             expect_claims_success='False',
             expect_fact_success='False',
@@ -280,6 +283,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -294,6 +298,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -308,6 +313,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='skip',
             expect_fact_success='False',
@@ -322,6 +328,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='exit',
             expect_claims_success='False',
             expect_fact_success='False',
@@ -337,6 +344,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -351,6 +359,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='skip',
             expect_fact_success='False',
@@ -365,6 +374,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='exit',
             expect_claims_success='False',
             expect_fact_success='False',
@@ -380,6 +390,7 @@ def generate_test_cases():
             claims_response=claims_zero,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='False',
@@ -394,6 +405,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -408,6 +420,7 @@ def generate_test_cases():
             claims_response=claims_two,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -422,6 +435,7 @@ def generate_test_cases():
             claims_response=claims_invalid,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='exit',
             expect_fact_success='False',
@@ -437,6 +451,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -451,6 +466,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_invalid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='exit',
@@ -466,6 +482,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_valid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',
@@ -480,6 +497,7 @@ def generate_test_cases():
             claims_response=claims_one,
             fact_response=fact_valid,
             judge_response=judge_invalid,
+            expect_brief_success='True',
             expect_summary_success='True',
             expect_claims_success='True',
             expect_fact_success='True',

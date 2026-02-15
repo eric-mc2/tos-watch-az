@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass, asdict
-from typing import Iterable
+from typing import Iterable, List
 
 from schemas.brief.v1 import BRIEF_MODULE, MEMO_MODULE, BRIEF_VERSION, MEMO_VERSION, Brief, Memo
 from src.adapters.llm.protocol import PromptMessages, Message
@@ -9,7 +9,7 @@ from src.services.llm import TOKEN_LIMIT, LLMService
 from src.services.blob import BlobService
 from src.stages import Stage
 from src.transforms.differ import DiffDoc
-from src.transforms.summary.diff_chunker import DiffChunker
+from src.transforms.summary.diff_chunker import DiffChunker, StandardDiffFormatter
 from src.transforms.llm_transform import LLMTransform, create_llm_parser_saver, create_llm_parser, create_llm_saver
 from src.utils.log_utils import setup_logger
 
@@ -83,7 +83,7 @@ class Briefer:
             saver(blob_name, response, metadata)
             parser = create_llm_parser(self.executor.llm, MEMO_MODULE)
             response_clean, metadata = parser(blob_name, response, metadata)
-            previous_message = Message("assistant", response_clean.model_dump_json())
+            previous_message = Message("assistant", response_clean)
             responses.append((response_clean, metadata))
         memos = [Memo.model_validate_json(txt) for txt, meta in responses]
         return Brief(memos=memos).model_dump_json(), responses[-1][1]
@@ -96,15 +96,15 @@ class BriefBuilder:
     llm: LLMService
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
-        examples = [] # self.read_examples()
+        examples : List[Message] = [] # self.read_examples()
         diffs = self.storage.load_text_blob(blob_name)
 
-        chunker = DiffChunker(self.llm, TOKEN_LIMIT)
+        chunker = DiffChunker(self.llm, TOKEN_LIMIT, StandardDiffFormatter())
         # TODO: we are ignoring the previous memo size in this calculation
         chunks = chunker.chunk_diff(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
 
         for chunk in chunks:
-            prompt = Message("user", json.dumps(map(asdict, chunk)))
+            prompt = Message("user", json.dumps([asdict(c) for c in chunk]))
             yield PromptMessages(system = SYSTEM_PROMPT,
                                 history = examples,
                                 current = prompt)
