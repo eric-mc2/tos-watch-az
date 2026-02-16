@@ -197,7 +197,6 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
                 is_chunked = False
 
         if error_flag is not None:
-            # TODO: technically validating the error is unnecessary if we're just printing the error text.
             logger.warning("LLM returned structurally invalid output: \n%s", txt)
             return "", {}  # exit early! don't save anything
 

@@ -12,7 +12,7 @@ logger = setup_logger(__name__, logging.DEBUG)
 cleaner = Cleaner()
 
 CONTEXT_WINDOW = 200000
-TOKEN_LIMIT = 50000  # TODO: Next priority is breaking up summaries to be robust to this!
+TOKEN_LIMIT = 50000
 
 
 @dataclass

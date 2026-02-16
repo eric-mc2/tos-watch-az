@@ -62,6 +62,9 @@ class Briefer:
     executor: LLMTransform
 
     def brief(self, blob_name: str) -> tuple[str, dict]:
+        # TODO: Check if this function really works best with executor or if a
+        # better abstraction exists (e.g. single vs looped vs parallel llm calls)
+
         logger.debug(f"Summarizing {blob_name}")
         prompter = BriefBuilder(self.storage, self.executor.llm)
         empty_brief = Memo(relevance_flag=False,
@@ -104,7 +107,7 @@ class BriefBuilder:
         chunks = chunker.chunk_diff(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
 
         for chunk in chunks:
-            prompt = Message("user", json.dumps([asdict(c) for c in chunk]))
+            prompt = Message("user", "\n".join((c.format() for c in chunk)))
             yield PromptMessages(system = SYSTEM_PROMPT,
                                 history = examples,
                                 current = prompt)

@@ -28,6 +28,7 @@ def run_experiment(storage, labels_path=None):
         for root, dirs, files in os.walk(DATA_DIR):
             for name in files:
                 # TODO: there's also junk in this folder! bug
+                #       re-use icl._find_all_labels
                 run_experiment(storage, os.path.join(DATA_DIR, root, name))
 
 

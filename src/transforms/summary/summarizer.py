@@ -2,18 +2,17 @@ import logging
 import os
 from dataclasses import dataclass
 from itertools import chain
-from typing import Iterable
+from typing import Iterable, List
 
 import numpy as np
 
+from schemas.brief.v1 import Brief
 from schemas.summary.v2 import Summary as SummaryV2, Substantive
 from schemas.summary.v4 import VERSION as SCHEMA_VERSION, MODULE
 from src.adapters.llm.protocol import PromptMessages, Message
 from src.services.llm import TOKEN_LIMIT, LLMService
 from src.stages import Stage
-from src.transforms.differ import DiffDoc
 from src.transforms.icl import ICL
-from src.transforms.summary.diff_chunker import DiffChunker
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.transforms.llm_transform import LLMTransform
@@ -83,17 +82,14 @@ class PromptBuilder:
     _cache = None
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
-        examples = [] # self.read_examples()
-        diffs = self.storage.load_text_blob(blob_name)
-
-        chunker = DiffChunker(self.llm, TOKEN_LIMIT)
-        chunks = chunker.chunk_diff(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
-
-        for chunk in chunks:
-            prompt = Message("user", chunk.model_dump_json())
-            yield PromptMessages(system = SYSTEM_PROMPT,
-                              history = examples,
-                              current = prompt)
+        examples : List[Message] = [] # self.read_examples()
+        brief_txt = self.storage.load_text_blob(blob_name)
+        
+        # XXX: This is now expected to be small enough to run in one pass.
+        prompt = Message("user", brief_txt)
+        yield PromptMessages(system = SYSTEM_PROMPT,
+                            history = examples,
+                            current = prompt)
 
 
     def read_examples(self) -> list[Message]:

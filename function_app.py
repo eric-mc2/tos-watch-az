@@ -8,10 +8,11 @@ from azure.functions.decorators.core import DataType
 
 from schemas.fact.v1 import merge_facts
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, FACT_MODULE as FACTCHECK_MODULE, PROOF_MODULE
+from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
+from schemas.brief.v0 import MODULE as BRIEF_MODULE
 from src.transforms.seeds import STATIC_URLS
-from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser
+from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser_saver
 from src.utils.log_utils import setup_logger
 from src.utils.app_utils import http_wrap, pretty_error, load_env_vars
 from src.stages import Stage
@@ -230,6 +231,43 @@ def clean_diffs(input_blob: func.InputStream, output_blob: func.Out[str]) -> Non
                 connection=container.storage.adapter.get_connection_key())
 @app.durable_client_input(client_name="client")
 @pretty_error
+async def briefer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+    """Blob trigger that starts the briefer workflow orchestration."""
+    parts = container.storage.parse_blob_path(input_blob.name)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
+    orchestration_input = OrchData(blob_name, "briefer", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating orchestration for {blob_name}")
+    await client.start_new("orchestrator", None, orchestration_input)
+
+
+@app.activity_trigger(input_name="input_data")
+@pretty_error(retryable=True)
+def briefer_processor(input_data: dict) -> None:
+    processor = create_llm_activity_processor(container.storage,
+                                              container.briefer_transform.brief,
+                                              Stage.BRIEF_RAW.value,
+                                              "briefer")
+    return processor(input_data)
+
+
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/06-brief-raw/{company}/{policy}/{timestamp}/latest.txt",
+                connection=container.storage.adapter.get_connection_key(),
+                data_type=DataType.STRING)
+@pretty_error
+def parse_brief(input_blob: func.InputStream) -> None:
+    parser = create_llm_parser_saver(container.storage,
+                                     container.llm,
+                                     BRIEF_MODULE,
+                                     Stage.SUMMARY_CLEAN.value)
+    return parser(input_blob)
+
+
+@app.blob_trigger(arg_name="input_blob",
+                path="documents/06-brief-clean/{company}/{policy}/{timestamp}/latest.json",
+                connection=container.storage.adapter.get_connection_key())
+@app.durable_client_input(client_name="client")
+@pretty_error
 async def summarizer_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the summarizer workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
@@ -255,10 +293,10 @@ def summarizer_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_summary(input_blob: func.InputStream) -> None:
-    parser = create_llm_parser(container.storage, 
-                               container.llm, 
-                               SUMMARY_MODULE, 
-                               Stage.SUMMARY_CLEAN.value)
+    parser = create_llm_parser_saver(container.storage,
+                                     container.llm,
+                                     SUMMARY_MODULE,
+                                     Stage.SUMMARY_CLEAN.value)
     return parser(input_blob)
 
 
@@ -293,10 +331,10 @@ def claim_extractor_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_claims(input_blob: func.InputStream) -> None:
-    parser = create_llm_parser(container.storage,
-                               container.llm,
-                               CLAIMS_MODULE,
-                               Stage.CLAIM_CLEAN.value)
+    parser = create_llm_parser_saver(container.storage,
+                                     container.llm,
+                                     CLAIMS_MODULE,
+                                     Stage.CLAIM_CLEAN.value)
     return parser(input_blob)
 
 
@@ -332,11 +370,11 @@ def claim_checker_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_factcheck(input_blob: func.InputStream) -> None:
-    parser = create_llm_parser(container.storage,
-                               container.llm,
-                               PROOF_MODULE,
-                               Stage.FACTCHECK_CLEAN.value,
-                               merge_facts)
+    parser = create_llm_parser_saver(container.storage,
+                                     container.llm,
+                                     PROOF_MODULE,
+                                     Stage.FACTCHECK_CLEAN.value,
+                                     merge_facts)
     return parser(input_blob)
 
 
@@ -373,9 +411,9 @@ def judge_processor(input_data: dict) -> None:
                 data_type=DataType.STRING)
 @pretty_error
 def parse_judge(input_blob: func.InputStream) -> None:
-    parser = create_llm_parser(container.storage,
-                               container.llm,
-                               JUDGE_MODULE,
-                               Stage.JUDGE_CLEAN.value)
+    parser = create_llm_parser_saver(container.storage,
+                                     container.llm,
+                                     JUDGE_MODULE,
+                                     Stage.JUDGE_CLEAN.value)
     return parser(input_blob)
 

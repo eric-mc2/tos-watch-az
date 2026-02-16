@@ -117,11 +117,11 @@ def string_windower(capacity: int, delimiter: str, overlap: float = 0.05) -> Gen
 
 
 # Example: List windower for chunking sequences
-def list_windower(capacity: int, length_fn: Callable[[Any], int], overlap: float = 0.05) -> GenericWindower[List[Any]]:
+def list_windower(capacity: int, item_length_fn: Callable[[Any], int], overlap: float = 0.05) -> GenericWindower[List[Any]]:
     return GenericWindower(
         capacity=capacity,
         combine=lambda a, b: a + b,
-        length=lambda lst: sum(length_fn(x) for x in lst),
+        length=lambda lst: sum(item_length_fn(x) for x in lst),
         empty=[],
         overlap=overlap
     )
@@ -142,10 +142,10 @@ def chunk_string(text: str, token_limit: int, text_len: int, token_len: int, ove
     return outer_windower.contents
 
 
-def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
+def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05, item_length_fn: Callable[[Any], int] = len):
     # List chunking (e.g., for documents with metadata)
     char_limit = int(token_limit * text_len / token_len)
-    outer_windower = list_windower(capacity=char_limit, length_fn=len, overlap=overlap)
+    outer_windower = list_windower(capacity=char_limit, item_length_fn=item_length_fn, overlap=overlap)
     for doc in documents:
         if not outer_windower.add([doc]):
             # Item exceeds buffer capacity.  Force it into a standalone group

@@ -93,32 +93,6 @@ class TestEmbeddingService:
         
         # Embeddings should not be identical
         assert not np.array_equal(embedding1, embedding2)
-    
-    def test_compute_similarity_identical(self, embedding_service):
-        """Test similarity of identical embeddings."""
-        embedding = embedding_service.embed("Test text")
-        similarity = embedding_service.compute_similarity(embedding, embedding)
-        
-        assert 0.99 <= similarity <= 1.01  # Should be very close to 1
-    
-    def test_compute_similarity_different(self, embedding_service):
-        """Test similarity of different embeddings."""
-        embedding1 = embedding_service.embed("Cat")
-        embedding2 = embedding_service.embed("Dog")
-        
-        similarity = embedding_service.compute_similarity(embedding1, embedding2)
-        
-        # Should be between -1 and 1, but not exactly 1
-        assert -1 <= similarity <= 1
-        assert similarity < 0.99
-    
-    def test_compute_similarity_zero_vector(self, embedding_service):
-        """Test similarity with zero vector."""
-        embedding = embedding_service.embed("Test")
-        zero_vector = np.zeros(384, dtype=np.float32)
-        
-        similarity = embedding_service.compute_similarity(embedding, zero_vector)
-        assert similarity == 0.0
 
 
 class TestFakeEmbeddingAdapter:

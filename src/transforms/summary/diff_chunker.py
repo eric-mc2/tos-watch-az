@@ -20,11 +20,17 @@ class TextChunk:
     parent_index: int
     index: int
 
+    def format(self) -> str:
+        parts = [f"Section: {self.parent_index}",
+                 f"Sub-Section: {self.index}",
+                 self.text]
+        return "\n".join(parts)
+
 
 class DiffFormatter(Protocol):
     """Protocol for formatting DiffSections into text for LLM consumption."""
     
-    def format_section(self, section: DiffSection, index: int) -> str:
+    def format_section(self, section: DiffSection) -> str:
         """Format a single DiffSection."""
         ...
     
@@ -65,7 +71,7 @@ class DiffChunker:
         groups = self._group_sections(system, doc)
         pages: List[List[TextChunk]] = []
         for sections in groups:
-            pages.extend(self._paginate_group(system, sections, page_offset=len(pages)))
+            pages.extend(self._paginate_group(system, sections))
         return pages
 
     # -- Phase 1: group sections into token-limited batches -----------------
@@ -77,21 +83,38 @@ class DiffChunker:
     def _group_sections(self, system: str, doc: DiffDoc) -> List[List[DiffSection]]:
         """Partition DiffSections into groups that fit within the token budget.
         
-        Uses formatted text for length calculations to ensure accuracy.
+        Uses formatted text for length calculations to ensure accuracy, including
+        the overhead of TextChunk formatting (Section: N, Sub-Section: M).
         """
-        # Calculate total length using formatted text
-        # Use 0 as placeholder index since we just need lengths, not actual output
-        formatted_sections = [self.formatter.format_section(d, 0) for d in doc.diffs]
-        text_len = sum(len(f) for f in formatted_sections)
-        combined_text = "".join(formatted_sections)
-        token_len = self._estimate_tokens(system, combined_text)
-        return chunk_list(doc.diffs, self._effective_limit, text_len, token_len)
+        # Calculate total length using formatted text wrapped in TextChunks
+        # to include the overhead of Section/Sub-Section labels
+        sample_chunks = [
+            TextChunk(
+                text=self.formatter.format_section(section),
+                parent_index=section.index,
+                index=0
+            )
+            for section in doc.diffs
+        ]
+        formatted_txt = "\n".join(chunk.format() for chunk in sample_chunks)
+        text_len = len(formatted_txt)
+        token_len = self._estimate_tokens(system, formatted_txt)
+        
+        # Use a length function that accounts for both formatter and TextChunk overhead
+        def section_length(section: DiffSection) -> int:
+            # Create a dummy TextChunk to get the full formatted length
+            chunk = TextChunk(
+                text=self.formatter.format_section(section),
+                parent_index=section.index,
+                index=0
+            )
+            return len(chunk.format())
+        
+        return chunk_list(doc.diffs, self._effective_limit, text_len, token_len, item_length_fn=section_length)
 
     # -- Phase 2: convert each group into one or more pages -----------------
 
-    def _paginate_group(
-        self, system: str, sections: List[DiffSection], page_offset: int
-    ) -> List[List[TextChunk]]:
+    def _paginate_group(self, system: str, sections: List[DiffSection]) -> List[List[TextChunk]]:
         """Convert a group of sections into pages of TextChunks.
 
         A multi-section group is guaranteed to fit and yields one page of
@@ -101,54 +124,71 @@ class DiffChunker:
         if not sections:
             return []
         if len(sections) > 1:
-            return [self._format_sections(sections, page_offset)]
-        return self._split_oversized_section(system, sections[0], page_offset)
+            return [self._format_sections(sections)]
+        return self._split_oversized_section(system, sections[0])
 
-    def _format_sections(
-        self, sections: List[DiffSection], page_index: int
-    ) -> List[TextChunk]:
+    def _format_sections(self, sections: List[DiffSection]) -> List[TextChunk]:
         """Create structured TextChunks from sections that fit within the limit."""
         return [
             TextChunk(
-                text=self.formatter.format_section(section, page_index),
+                text=self.formatter.format_section(section),
                 parent_index=section.index,
-                index=page_index,
+                index=0,  # Each section produces one chunk, so index is always 0
             )
             for section in sections
         ]
 
-    def _split_oversized_section(
-        self, system: str, section: DiffSection, page_offset: int
-    ) -> List[List[TextChunk]]:
+    def _split_oversized_section(self, system: str, section: DiffSection) -> List[List[TextChunk]]:
         """Split a single oversized section into plain-text fragment pages.
 
-        The section is formatted first, then split into fragments to ensure
-        consistency with the formatting of smaller sections.
+        The section is formatted first, then split into fragments. Each fragment
+        is wrapped in a TextChunk with overhead (Section: N, Sub-Section: M).
+        Length calculations account for this overhead to ensure each formatted
+        chunk fits within the token limit.
         """
         # Format the section using the formatter
-        formatted_text = self.formatter.format_section(section, page_offset)
-        text_len = len(formatted_text)
-        token_len = self._estimate_tokens(system, formatted_text)
+        formatted_section_text = self.formatter.format_section(section)
+        
+        # Calculate the overhead for a TextChunk with this parent_index
+        # Use index=0 as representative (actual indexes may vary by 1-2 chars)
+        dummy_chunk = TextChunk(text="", parent_index=section.index, index=0)
+        overhead_text = dummy_chunk.format()  # "Section: N\nSub-Section: 0\n"
+        overhead_len = len(overhead_text)
+        overhead_tokens = self._estimate_tokens(system, overhead_text)
+        
+        # Calculate available space after accounting for overhead
+        available_token_limit = self._effective_limit - overhead_tokens
         
         # Guard against edge cases
-        if token_len == 0 or text_len == 0:
-            return [[TextChunk(text=formatted_text, parent_index=section.index, index=page_offset)]]
+        if available_token_limit <= 0:
+            # Overhead alone exceeds limit; return formatted section as-is
+            return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
         
-        # Split the formatted text into fragments
-        fragments = chunk_string(formatted_text, self._effective_limit, text_len, token_len)
+        # Calculate text->token ratio for the formatted section
+        section_text_len = len(formatted_section_text)
+        section_token_len = self._estimate_tokens(system, formatted_section_text)
+        
+        if section_token_len == 0 or section_text_len == 0:
+            return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
+        
+        # Split the formatted section into fragments that fit in available space
+        # (after subtracting overhead)
+        fragments = chunk_string(formatted_section_text, available_token_limit, 
+                                section_text_len, section_token_len)
         
         # Filter out empty fragments
         fragments = [f for f in fragments if f.strip()]
         
         # If no valid fragments, return the original formatted text
         if not fragments:
-            return [[TextChunk(text=formatted_text, parent_index=section.index, index=page_offset)]]
+            return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
         
+        # Each fragment becomes a TextChunk with its own overhead
         return [
             [TextChunk(
                 text=fragment,
                 parent_index=section.index,
-                index=page_offset + i,
+                index=i,  # Sub-index into this diff, resets to 0 per diff
             )]
             for i, fragment in enumerate(fragments)
         ]
@@ -159,17 +199,13 @@ class DiffChunker:
 class StandardDiffFormatter:
     """Standard formatter for DiffSections with Before/After labels."""
     
-    def format_section(self, section: DiffSection, index: int) -> str:
+    @staticmethod
+    def format_section(section: DiffSection) -> str:
         """Format a single DiffSection into readable text for the LLM."""
-        parts = [f"Section {index}:"]
-        if section.before:
-            parts.append(f"Before: {section.before}")
-        if section.after:
-            parts.append(f"After: {section.after}")
-        return "\n".join(parts) + "\n"
+        parts = [f"Before: {section.before}",
+                f"After: {section.after}"]
+        return "\n".join(parts)
     
     def format_doc(self, doc: DiffDoc) -> str:
         """Format an entire DiffDoc into readable text for the LLM."""
-        return "\n".join(
-            self.format_section(section, i) for i, section in enumerate(doc.diffs, 1)
-        )
+        return "\n".join(map(self.format_section, doc.diffs))

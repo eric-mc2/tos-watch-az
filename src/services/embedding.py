@@ -90,31 +90,4 @@ class EmbeddingService:
             Integer dimension of embedding vectors
         """
         return self.adapter.get_dimension()
-    
-    def compute_similarity(self, 
-                          embedding1: npt.NDArray[np.float32], 
-                          embedding2: npt.NDArray[np.float32]) -> float:
-        """
-        Compute cosine similarity between two embedding vectors.
-        
-        Args:
-            embedding1: First embedding vector
-            embedding2: Second embedding vector
-            
-        Returns:
-            Cosine similarity score between -1 and 1
-        """
-        # TODO: Replace with FAISS
-        # Normalize vectors
-        norm1 = np.linalg.norm(embedding1)
-        norm2 = np.linalg.norm(embedding2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        normalized1 = embedding1 / norm1
-        normalized2 = embedding2 / norm2
-        
-        # Compute cosine similarity
-        similarity = float(np.dot(normalized1, normalized2))
-        return similarity
+
