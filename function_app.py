@@ -6,11 +6,12 @@ import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
+from schemas.brief.v1 import merge_memos
 from schemas.fact.v1 import merge_facts
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
-from schemas.brief.v0 import MODULE as BRIEF_MODULE
+from schemas.brief.v0 import BRIEF_MODULE
 from src.transforms.seeds import STATIC_URLS
 from src.transforms.llm_transform import create_llm_activity_processor, create_llm_parser_saver
 from src.utils.log_utils import setup_logger
@@ -259,8 +260,9 @@ def parse_brief(input_blob: func.InputStream) -> None:
     parser = create_llm_parser_saver(container.storage,
                                      container.llm,
                                      BRIEF_MODULE,
-                                     Stage.SUMMARY_CLEAN.value)
-    return parser(input_blob)
+                                     Stage.BRIEF_CLEAN.value,
+                                     merge_fn=merge_memos)
+    parser(input_blob)
 
 
 @app.blob_trigger(arg_name="input_blob",
@@ -297,7 +299,7 @@ def parse_summary(input_blob: func.InputStream) -> None:
                                      container.llm,
                                      SUMMARY_MODULE,
                                      Stage.SUMMARY_CLEAN.value)
-    return parser(input_blob)
+    parser(input_blob)
 
 
 # Claim Extraction Pipeline
@@ -335,7 +337,7 @@ def parse_claims(input_blob: func.InputStream) -> None:
                                      container.llm,
                                      CLAIMS_MODULE,
                                      Stage.CLAIM_CLEAN.value)
-    return parser(input_blob)
+    parser(input_blob)
 
 
 # Claim Checking Pipeline
@@ -375,7 +377,7 @@ def parse_factcheck(input_blob: func.InputStream) -> None:
                                      PROOF_MODULE,
                                      Stage.FACTCHECK_CLEAN.value,
                                      merge_facts)
-    return parser(input_blob)
+    parser(input_blob)
 
 
 # Judge Pipeline
@@ -415,5 +417,5 @@ def parse_judge(input_blob: func.InputStream) -> None:
                                      container.llm,
                                      JUDGE_MODULE,
                                      Stage.JUDGE_CLEAN.value)
-    return parser(input_blob)
+    parser(input_blob)
 

@@ -219,7 +219,9 @@ def create_llm_parser_saver[T: SchemaBase](storage: BlobService,
         txt = input_blob.read().decode()
         metadata = storage.adapter.load_metadata(input_blob.name)
         parser = create_llm_parser(llm, module_name, merge_fn)
-        cleaned_txt, metadata = parser(input_blob.name, txt, metadata)
+        cleaned_txt, metadata = parser(txt, metadata)
+        if not cleaned_txt:
+            return "", {}
         logger.info(
             (f"Successfully validated {module_name} blob: {input_blob.name} "
              f"(schema={metadata['schema_version']}, chunked={metadata['is_chunked']})"))

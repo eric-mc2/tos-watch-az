@@ -42,7 +42,7 @@ class ClaudeAdapter(LLMProtocol):
             raise ValueError("Claude API requires non-empty system text.")
 
         client = self._get_client()
-        response = client.messages.create(**self._config_messages(system, messages))
+        response = client.messages.create(**self._config_messages_for_model(system, messages))
         if response.stop_reason != 'end_turn':
             pass  # might need to fix
         if not response.content:
@@ -62,7 +62,6 @@ class ClaudeAdapter(LLMProtocol):
     def _config_messages(self, system: str, messages: list[Message]) -> dict:
         return dict(
             model="claude-3-5-haiku-20241022",
-            max_tokens=self.max_output,
             system=[{
                 "type": "text",
                 "text": system,
@@ -71,6 +70,10 @@ class ClaudeAdapter(LLMProtocol):
             messages=[MessageParam(content=m.content, role=m.role) for m in messages]
         )
     
-    def get_max_output(self):
-        return super().get_max_output()
+    def _config_messages_for_model(self, system: str, messages: list[Message]) -> dict:
+        return self._config_messages(system, messages) | dict(max_tokens=self.max_output)
+            
+    
+    def get_max_output(self) -> int:
+        return self.max_output
     

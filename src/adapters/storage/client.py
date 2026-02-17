@@ -16,6 +16,27 @@ class AzureStorageAdapter(BlobStorageProtocol):
             _client.close()
             _client = None
 
+    @staticmethod
+    def _convert_metadata_for_azure(metadata: Optional[dict]) -> Optional[dict]:
+        """Convert metadata values to strings for Azure"""
+        if not metadata:
+            return metadata
+        return {k: str(v) if v is not None else v for k, v in metadata.items()}
+
+    @staticmethod
+    def _unconvert_metadata_from_azure(metadata: Optional[dict]) -> Optional[dict]:
+        """Unconvert metadata from strings."""
+        if not metadata:
+            return metadata
+        result = {}
+        for k, v in metadata.items():
+            if v == "True":
+                result[k] = True
+            elif v == "False":
+                result[k] = False
+            else:
+                result[k] = v
+        return result
 
     def get_blob_service_client(self) -> BlobServiceClient:
         global _client
@@ -69,7 +90,8 @@ class AzureStorageAdapter(BlobStorageProtocol):
 
     def load_metadata(self, blob_name: str) -> dict:
         def loader(client: BlobClient):
-            return client.get_blob_properties().metadata
+            metadata = client.get_blob_properties().metadata
+            return self._unconvert_metadata_from_azure(metadata)
         return self._load_blob(blob_name, loader)
 
 
@@ -97,6 +119,9 @@ class AzureStorageAdapter(BlobStorageProtocol):
             container=self.container,
             blob=blob_name
         )
+        # Convert metadata values to strings (Azure requires string values)
+        metadata = self._convert_metadata_for_azure(metadata)
+        
         # Ensure we upload as UTF-8 bytes
         blob_client.upload_blob(
             data,
@@ -115,6 +140,7 @@ class AzureStorageAdapter(BlobStorageProtocol):
             container=self.container,
             blob=blob_name
         )
+        data = self._convert_metadata_for_azure(data)
         blob_client.set_blob_metadata(data)
 
 

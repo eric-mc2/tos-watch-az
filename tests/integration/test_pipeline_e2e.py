@@ -7,9 +7,6 @@ import pytest
 from typing import Optional, List
 from dataclasses import dataclass
 
-from schemas.brief.v0 import BRIEF_MODULE
-from schemas.brief.v1 import Memo
-from src.adapters.llm.protocol import Message
 from src.services.blob import BlobService
 from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
@@ -17,10 +14,12 @@ from src.transforms.llm_transform import LLMTransform, create_llm_parser_saver, 
 from src.transforms.differ import DiffDoc, DiffSection
 from src.stages import Stage
 
+from schemas.brief.v0 import BRIEF_MODULE
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.fact.v0 import CLAIMS_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 
+from schemas.brief.v1 import Memo, merge_memos
 from schemas.summary.v2 import Substantive as SSubstantive
 from schemas.summary.v4 import Summary
 from schemas.fact.v1 import Claims, Fact, merge_facts
@@ -47,7 +46,7 @@ class PipelineTestCase:
     """Test case configuration for pipeline execution."""
     name: str
     diff_sections: List[DiffSection]
-    # brief_response: Optional[str]  # JSON or invalid string
+    brief_response: Optional[str]  # JSON or invalid string
     summary_response: Optional[str]  # JSON or invalid string
     claims_response: Optional[str]   # JSON or invalid string
     fact_response: Optional[str]
@@ -104,7 +103,7 @@ def run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, compan
 def run_pipeline_stage_brief_parser(fake_storage, fake_llm, brief_raw_path):
     """Run brief parser: BRIEF_RAW -> BRIEF_CLEAN."""
     input_blob = MockInputStream(fake_storage, brief_raw_path)
-    parser = create_llm_parser_saver(fake_storage, fake_llm, BRIEF_MODULE, Stage.BRIEF_CLEAN.value)
+    parser = create_llm_parser_saver(fake_storage, fake_llm, BRIEF_MODULE, Stage.BRIEF_CLEAN.value, merge_memos)
     parser(input_blob)
     
     parts = fake_storage.parse_blob_path(brief_raw_path)
@@ -226,7 +225,7 @@ def run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path):
 def generate_test_cases():
     """Generate all combinations of test axes."""
     
-    # Axis 1: DiffDoc variations
+    # Axis 0: DiffDoc variations
     one_diff = [DiffSection(index=0, before="Old text.", after="New text.")]
     two_short_diffs = [
         DiffSection(index=0, before="Users must be 13.", after="Users must be 18."),
@@ -237,9 +236,13 @@ def generate_test_cases():
         DiffSection(index=1, before="C" * (TOKEN_LIMIT//3), after="D" * (TOKEN_LIMIT//3))
     ]
     empty_diff = []
+
+    # Axis 1: Brief variations
+    brief_true = Memo(running_memo="hi", section_memo="hi", relevance_flag=True).model_dump_json()
+    brief_false = Memo(running_memo="hi", section_memo="hi", relevance_flag=False).model_dump_json()
     
     # Axis 2: Summary responses
-    summary_true = Summary(practically_substantive=SSubstantive(rating=True, reason="Valid")).model_dump_json()
+    summary_true = Summary(practically_substantive=SSubstantive(rating=True, reason="Substantive")).model_dump_json()
     summary_false = Summary(practically_substantive=SSubstantive(rating=False, reason="Not substantive")).model_dump_json()
     summary_invalid = "{invalid json"
     
@@ -263,6 +266,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="empty_diff",
             diff_sections=empty_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -279,6 +283,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="one_diff",
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -294,6 +299,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="two_diffs",
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -309,6 +315,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="one_diff_summary_false",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_false,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -324,6 +331,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="one_diff_summary_inv",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_invalid,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -340,6 +348,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="long_diffs_summary_true",
             diff_sections=two_long_diffs,
+            brief_response=brief_false,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -355,6 +364,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="long_diffs_summary_false",
             diff_sections=two_long_diffs,
+            brief_response=brief_false,
             summary_response=summary_false,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -370,6 +380,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="long_diffs_summary_inv",
             diff_sections=two_long_diffs,
+            brief_response=brief_true,
             summary_response=summary_invalid,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -386,6 +397,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="zero_claims",
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_zero,
             fact_response=fact_valid,
@@ -401,6 +413,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="one_claims",
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -416,6 +429,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="two_claims", 
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_two,
             fact_response=fact_valid,
@@ -431,6 +445,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="inv_claims",
             diff_sections=one_diff,
+            brief_response=brief_true,
             summary_response=summary_true,
             claims_response=claims_invalid,
             fact_response=fact_valid,
@@ -447,6 +462,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="facts_valid",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -462,6 +478,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="facts_inv",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_invalid,
@@ -478,6 +495,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="judge_valid",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -493,6 +511,7 @@ def generate_test_cases():
         PipelineTestCase(
             name="judge_invalid",
             diff_sections=one_diff,
+            brief_response=brief_false,
             summary_response=summary_true,
             claims_response=claims_one,
             fact_response=fact_valid,
@@ -529,11 +548,7 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
     fake_storage.upload_text_blob(diff_doc.model_dump_json(), diff_blob_path, metadata={})
 
     # Stage 0: Briefer + Parse
-    def respond(system: str, messages: List[Message]):
-        return Memo(relevance_flag=False,
-                    section_memo=messages[1].content,
-                    running_memo=messages[0].content)
-    fake_llm.adapter.set_response_func(respond)
+    fake_llm.adapter.set_response_static(test_case.brief_response)
 
     brief_raw_path = run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, company, policy,
                                                      timestamp)

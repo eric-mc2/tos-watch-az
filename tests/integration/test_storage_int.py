@@ -62,6 +62,14 @@ class TestStorageIntegration:
         loaded_metadata = storage.load_metadata(blob_name)
         assert loaded_metadata == metadata
 
+    def test_metadata_conversion(self, storage):
+        metadata = {"updated": "2024-01-01", "flag": True}
+        storage.upload_blob("content", "testfile.txt", "text/plain", metadata=metadata)
+            
+        loaded_metadata = storage.load_metadata("testfile.txt")
+        assert loaded_metadata["updated"] == "2024-01-01"
+        assert loaded_metadata['flag'] is True
+
 
     def test_list_blobs(self, storage):
         """Test listing all blobs in container"""

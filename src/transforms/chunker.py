@@ -11,12 +11,14 @@ class Buffer(Generic[T]):
         capacity: int,
         combine: Callable[[T, T], T],
         length: Callable[[T], int],
-        empty: T
+        empty: T,
+        combine_cost: int = 0  # delimiter overhead for non-empty additions 
     ):
         self._items: Optional[T] = None
         self._size = 0
         self.capacity = capacity
         self.combine = combine
+        self.combine_cost = combine_cost
         self.length = length
         self.empty = empty
         self.is_open = True
@@ -45,8 +47,10 @@ class Buffer(Generic[T]):
     def can_add(self, item: T) -> bool:
         if not self.is_open:
             return False
-        # new_size = self.length(self.combine(self.content, item))
-        new_size = self._size + self.length(item)
+        if self.is_empty:
+            new_size = self.length(item)
+        else:
+            new_size = self._size + self.combine_cost + self.length(item)
         return new_size <= self.capacity
 
     def add(self, item: T, force: bool = False) -> bool:
@@ -55,9 +59,10 @@ class Buffer(Generic[T]):
             return False
         if self.is_empty or self._items is None:
             self._items = item
+            self._size += self.length(item)
         else:
             self._items = self.combine(self._items, item)
-        self._size += self.length(item)
+            self._size += self.length(item) + self.combine_cost
         return True
 
 class GenericWindower(Generic[T]):
@@ -69,12 +74,14 @@ class GenericWindower(Generic[T]):
         combine: Callable[[T, T], T],
         length: Callable[[T], int],
         empty: T,
-        overlap: float = 0.05
+        overlap: float = 0.05,
+        combine_cost: int = 0
     ):
         self.slots: List[Buffer[T]] = []
         self.overlap = overlap
         self.capacity = capacity
         self.combine = combine
+        self.combine_cost = combine_cost
         self.length = length
         self.empty = empty
         if capacity <= 0:
@@ -83,7 +90,7 @@ class GenericWindower(Generic[T]):
             raise ValueError("Overlap must be in range (0,1).")
 
     def _make_buffer(self) -> Buffer[T]:
-        return Buffer(self.capacity, self.combine, self.length, self.empty)
+        return Buffer(self.capacity, self.combine, self.length, self.empty, self.combine_cost)
 
     def add(self, item: T, force: bool = False) -> int:
         added = 0
@@ -92,7 +99,17 @@ class GenericWindower(Generic[T]):
         if added == 0:
             slot = self._make_buffer()
             self.slots.append(slot)
-            return slot.add(item, force)
+            if slot.can_add(item):
+                # Add and leave room for other stuff.
+                slot.add(item, force)
+                added = 1
+            else:
+                # We don't want to drop data, so put it in its own buffer
+                # and allow downstream processing to break it up.
+                slot.add(item, True)
+                slot.close()
+                # XXX: The return value is weird encoding of success and failure states.
+                added = 0
         elif added == 1 and 1 - self.slots[-1].pressure < self.overlap:
             slot = self._make_buffer()
             self.slots.append(slot)
@@ -115,7 +132,8 @@ def string_windower(capacity: int, delimiter: str, overlap: float = 0.05) -> Gen
         combine=lambda a, b: a + delimiter + b if a else b,
         length=len,
         empty="",
-        overlap=overlap
+        overlap=overlap,
+        combine_cost=len(delimiter)
     )
 
 
@@ -126,7 +144,8 @@ def list_windower(capacity: int, item_length_fn: Callable[[Any], int], overlap: 
         combine=lambda a, b: a + b,
         length=lambda lst: sum(item_length_fn(x) for x in lst),
         empty=[],
-        overlap=overlap
+        overlap=overlap,
+        combine_cost=0
     )
 
 
@@ -150,12 +169,5 @@ def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overl
     char_limit = int(token_limit * text_len / token_len)
     outer_windower = list_windower(capacity=char_limit, item_length_fn=item_length_fn, overlap=overlap)
     for doc in documents:
-        if not outer_windower.add([doc]):
-            # Item exceeds buffer capacity.  Force it into a standalone group
-            # so downstream processing (e.g. _split_oversized_section) can
-            # handle it.  Replace the empty ghost buffer that add() created.
-            buf = Buffer(char_limit, outer_windower.combine, outer_windower.length, outer_windower.empty)
-            buf.add([doc], force=True)
-            buf.close()
-            outer_windower.slots[-1] = buf
+        outer_windower.add([doc])
     return outer_windower.contents

@@ -2,7 +2,8 @@ import os
 import pytest
 import json
 
-from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact
+from schemas.fact.v0 import PROOF_MODULE
+from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact, Proof, merge_facts
 from src.transforms.factcheck.claim_checker import ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -11,7 +12,7 @@ from src.adapters.embedding.client import SentenceTransformerAdapter
 from src.services.blob import BlobService
 from src.services.llm import LLMService
 from src.services.embedding import EmbeddingService
-from src.transforms.llm_transform import LLMTransform
+from src.transforms.llm_transform import LLMTransform, create_llm_parser
 from src.utils.app_utils import load_env_vars
 
 RUNTIME_ENV = os.environ.get("RUNTIME_ENV", "PROD")
@@ -268,12 +269,13 @@ class TestClaimCheckerIntegration:
         
         # Act
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        parser = create_llm_parser(llm_transform.llm, PROOF_MODULE, merge_facts)
+        result_json, metadata = parser(result_json, metadata)
         
         # Assert
-        result_list = json.loads(result_json)['chunks']
-        results = [Fact.model_validate(x) for x in result_list]
-        assert all(x.veracity for x in results)
-        assert len(results) == 3
+        result = Proof.model_validate_json(result_json)
+        assert all(x.veracity for x in result.facts)
+        assert len(result.facts) == 3
 
     def test_positive_negative_claims(self, fake_storage, llm_transform,
                                          embedding_service):
@@ -319,10 +321,11 @@ class TestClaimCheckerIntegration:
 
         # Act
         result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        parser = create_llm_parser(llm_transform.llm, PROOF_MODULE, merge_facts)
+        result_json, metadata = parser(result_json, metadata)
 
         # Assert
-        result_list = json.loads(result_json)['chunks']
-        results = [Fact.model_validate(x) for x in result_list]
-        assert len(results) == 2
-        assert any(x.veracity for x in results)
-        assert not all(x.veracity for x in results)
+        result = Proof.model_validate_json(result_json)
+        assert len(result.facts) == 2
+        assert any(x.veracity for x in result.facts)
+        assert not all(x.veracity for x in result.facts)

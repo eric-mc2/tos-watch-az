@@ -9,6 +9,7 @@ def word_buffer(capacity, delim):
         combine = lambda a, b: a + delim + b if a else b,
         length = len,
         empty = "",
+        combine_cost = len(delim)
     )
 
 class TestBuffer:
@@ -197,7 +198,7 @@ class TestWindower:
         """Test force adding creates slot when normal add fails."""
         windower = string_windower(5, " ", 0.1)
         added = windower.add("verylongword", force=True)
-        assert added == 1
+        assert added == 0
         assert len(windower.slots) == 1
 
     def test_append(self):
