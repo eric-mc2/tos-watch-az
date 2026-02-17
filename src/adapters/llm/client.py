@@ -14,6 +14,9 @@ _client: Optional[anthropic.Anthropic] = None
 
 class ClaudeAdapter(LLMProtocol):
 
+    def __init__(self, max_output: int = 1000):
+        self.max_output = max_output
+
     @staticmethod
     def _get_client() -> anthropic.Anthropic:
         # Note: we don't need to close the client. In practice it's better to keep one single
@@ -56,10 +59,10 @@ class ClaudeAdapter(LLMProtocol):
         return response.input_tokens
     
 
-    def _config_messages(self, system: str, messages: list[Message], max_output: int = 1000) -> dict:
+    def _config_messages(self, system: str, messages: list[Message]) -> dict:
         return dict(
             model="claude-3-5-haiku-20241022",
-            max_tokens=max_output,
+            max_tokens=self.max_output,
             system=[{
                 "type": "text",
                 "text": system,
@@ -67,4 +70,7 @@ class ClaudeAdapter(LLMProtocol):
             }],
             messages=[MessageParam(content=m.content, role=m.role) for m in messages]
         )
+    
+    def get_max_output(self):
+        return super().get_max_output()
     

@@ -6,9 +6,15 @@ class FakeLLMAdapter(LLMProtocol):
 
     def call(self, system: str, messages: list[Message]) -> str:
         if self._response_func is not None:
-            return self._response_func(system, messages)
-        return self._response
+            resp = self._response_func(system, messages)
+        else:
+            resp = self._response
+        return self._truncate(resp)
     
+    def _truncate(self, txt: str) -> str:
+        """Makes responses self-consistent with output param."""
+        return txt[:self.get_max_output()]
+
     def close(self):
         pass
 
@@ -20,3 +26,6 @@ class FakeLLMAdapter(LLMProtocol):
 
     def count_tokens(self, system: str, messages: list[Message]) -> int:
         return len(system) + sum(len(m.content) for m in messages)
+    
+    def get_max_output(self):
+        return 9999

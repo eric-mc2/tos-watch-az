@@ -93,6 +93,24 @@ class TestDiffChunkerFormatting:
             assert tokens <= chunker._effective_limit, f"Page exceeds token limit: {tokens} > {chunker._effective_limit}"
 
 
+class TestDiffChunker:
+    def test_multiple_long(self, llm_service):
+        # Arrange
+        data  = DiffDoc(diffs=[DiffSection(index=i,
+                                           before="before",
+                                           after="after")
+                               for i in range(TOKEN_LIMIT)])
+
+        chunker = DiffChunker(llm_service, TOKEN_LIMIT, StandardDiffFormatter())
+
+        # Act
+        chunks = chunker.chunk_diff("system", [], data)
+
+        # Assert
+        for cc in chunks:
+            assert sum((len(c.text) for c in cc)) < TOKEN_LIMIT
+            assert sum((len(c.format()) for c in cc)) < TOKEN_LIMIT
+
 class TestDiffChunkerIndexing:
     """Test that TextChunk indexes are correct according to requirements:
     - parent_index points to the original diff's index

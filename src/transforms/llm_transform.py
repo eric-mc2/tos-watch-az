@@ -2,16 +2,17 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, List
 
 import ulid  # type: ignore
 
 from schemas.base import SchemaBase
+from schemas.brief.v0 import BRIEF_MODULE
 from schemas.chunking import ChunkedResponse
 from schemas.llmerror.v1 import LLMError
 from schemas.registry import load_schema
 from schemas.fact.v0 import FACT_MODULE, PROOF_MODULE
-from src.adapters.llm.protocol import PromptMessages
+from src.adapters.llm.protocol import PromptMessages, Message
 from src.services.blob import BlobService
 from src.services.llm import LLMService
 from src.stages import Stage
@@ -79,6 +80,76 @@ class LLMTransform:
             error_flag=error_flag,
         )
         return response, metadata
+    
+    def execute_prompts_serial(self,
+                               prompts: Iterable[PromptMessages],
+                               module_name: str,
+                               schema_version: str,
+                               prompt_version: str,
+                               initial_state: Optional[str] = None) -> tuple[str, dict]:
+        """
+        Execute a sequence of prompts sequentially with validation and state passing.
+        
+        Args:
+            prompts: Iterable of PromptMessages to execute sequentially
+            module_name: Module name for metadata
+            schema_version: Schema version for metadata
+            prompt_version: Prompt version for metadata tracking
+            validator: Function (text, metadata) -> (validated_text, metadata)
+                      Called after each prompt to validate before passing to next.
+                      Should return ("", {}) on validation failure.
+            saver: Optional function to save intermediate results
+            initial_state: Optional seed response for first prompt's history
+            
+        Returns:
+            List of validated_json, metadata tuple
+            Returns empty list if any prompt fails validation or execution.
+        """
+        responses : List[dict] = []
+        previous_message = Message("assistant", initial_state or "")
+
+        parser = create_llm_parser(self.llm, module_name)
+        
+        metadata = dict(
+                run_id=ulid.ulid(),
+                module_name=module_name,
+                schema_version=schema_version,
+                prompt_version=prompt_version,
+                is_chunked=False, # for sequential parsing
+                error_flag=None
+            )
+        
+        for prompt_msg in prompts:
+            # Inject previous validated response into prompt's history
+            if previous_message.content:
+                prompt_msg.history = [previous_message]
+            
+            # Execute single prompt
+            txt = self.llm.call_unsafe(prompt_msg.system,
+                                       prompt_msg.history + [prompt_msg.current])
+            parsed = self.llm.extract_json_from_response(txt)
+            
+            if not parsed.success:
+                logger.warning(f"Failed to parse response: {parsed.error}")
+                metadata['error_flag'] = LLMError.VERSION()
+                response = LLMError(error=parsed.error, raw=txt).model_dump()
+            else:
+                response_json, metadata = parser(json.dumps(parsed.data), metadata)
+                response = json.loads(response_json)
+                previous_message = Message("assistant", response_json)
+                
+            responses.append(response)
+
+            if not parsed.success:
+                break
+                                
+        if len(responses) > 1:
+            out_txt = json.dumps(dict(chunks=responses))
+            metadata['is_chunked'] = True
+        else:
+            out_txt = json.dumps(responses[0])
+        
+        return out_txt, metadata
 
 
 def create_llm_activity_processor(storage: BlobService,
@@ -147,8 +218,11 @@ def create_llm_parser_saver[T: SchemaBase](storage: BlobService,
     def parser_saver(input_blob) -> tuple[str, dict]:
         txt = input_blob.read().decode()
         metadata = storage.adapter.load_metadata(input_blob.name)
-        inner_parser = create_llm_parser(llm, module_name, merge_fn)
-        cleaned_txt, metadata = inner_parser(input_blob.name, txt, metadata)
+        parser = create_llm_parser(llm, module_name, merge_fn)
+        cleaned_txt, metadata = parser(input_blob.name, txt, metadata)
+        logger.info(
+            (f"Successfully validated {module_name} blob: {input_blob.name} "
+             f"(schema={metadata['schema_version']}, chunked={metadata['is_chunked']})"))
         saver = create_llm_saver(storage, output_stage)
         saver(input_blob.name, cleaned_txt, metadata)
         return cleaned_txt, metadata
@@ -177,7 +251,7 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
         Parser function
     """
 
-    def parser(blob_name: str, txt: str, metadata: dict, save=True) -> tuple[str, dict]:
+    def parser(txt: str, metadata: dict) -> tuple[str, dict]:
         # Get schema from registry
         module_key = metadata.get('module_name', module_name)
         schema_version = metadata['schema_version']
@@ -206,6 +280,8 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
             if module_key == FACT_MODULE:
                 # Unfortunate custom logic: chunked facts arrive as facts and are turned into proofs.
                 metadata['module_name'] = PROOF_MODULE
+            elif module_key == BRIEF_MODULE:
+                metadata['module_name'] = BRIEF_MODULE
             # Auto-discovers schema.merge if exists
             data = wrapper.merge(schema, merge_fn=merge_fn)  # type: ignore
         else:
@@ -217,9 +293,6 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
 
         # Update metadata with chunking info -- we always merge!
         metadata['is_chunked'] = False
-
-        logger.info(
-            f"Successfully validated {module_name} blob: {blob_name} (schema={schema_version}, chunked={is_chunked})")
 
         return cleaned_txt, metadata
 

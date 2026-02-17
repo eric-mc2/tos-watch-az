@@ -14,6 +14,7 @@ class Buffer(Generic[T]):
         empty: T
     ):
         self._items: Optional[T] = None
+        self._size = 0
         self.capacity = capacity
         self.combine = combine
         self.length = length
@@ -24,7 +25,7 @@ class Buffer(Generic[T]):
 
     @property
     def size(self) -> int:
-        return 0 if self._items is None else self.length(self._items)
+        return self._size
 
     @property
     def is_empty(self) -> bool:
@@ -44,7 +45,8 @@ class Buffer(Generic[T]):
     def can_add(self, item: T) -> bool:
         if not self.is_open:
             return False
-        new_size = self.length(self.combine(self.content, item))
+        # new_size = self.length(self.combine(self.content, item))
+        new_size = self._size + self.length(item)
         return new_size <= self.capacity
 
     def add(self, item: T, force: bool = False) -> bool:
@@ -55,6 +57,7 @@ class Buffer(Generic[T]):
             self._items = item
         else:
             self._items = self.combine(self._items, item)
+        self._size += self.length(item)
         return True
 
 class GenericWindower(Generic[T]):

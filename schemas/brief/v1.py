@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Self
 
 from schemas.brief.v0 import BriefBase, MemoBase, MEMO_MODULE, BRIEF_MODULE
 from schemas.registry import register
@@ -7,9 +7,9 @@ MEMO_VERSION = "v1"
 
 @register(MEMO_MODULE, MEMO_VERSION)
 class Memo(MemoBase):
-    relevance_flag: bool
-    section_memo: str
     running_memo: str
+    section_memo: str
+    relevance_flag: bool
 
     @classmethod
     def VERSION(cls) -> str:
@@ -25,3 +25,21 @@ class Brief(BriefBase):
     @classmethod
     def VERSION(cls) -> str:
         return BRIEF_VERSION
+    
+    @classmethod
+    def merge(cls, a: Self, b: Self) -> Self:
+        return cls(memos = a.memos + b.memos)
+
+
+
+def merge_memos(a: Memo | Brief, b: Memo | Brief) -> Brief:
+    if isinstance(a, Memo) and isinstance(b, Memo):
+        return Brief(memos=[a, b])
+    elif isinstance(a, Memo) and isinstance(b, Brief):
+        return Brief(memos=b.memos + [a])
+    elif isinstance(a, Brief) and isinstance(b, Memo):
+        return Brief(memos=a.memos + [b])
+    elif isinstance(a, Brief) and isinstance(b, Brief):
+        return Brief.merge(a, b)
+    else:
+        raise RuntimeError("Should not get here.")

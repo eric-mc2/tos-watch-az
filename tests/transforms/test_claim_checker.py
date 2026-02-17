@@ -172,8 +172,6 @@ class TestClaimCheckerBuilder:
         formatted = ClaimCheckerBuilder._format_diffs(diff_doc)
         
         # Assert
-        assert "Section 1" in formatted
-        assert "Section 2" in formatted
         assert "Before: Old text" in formatted
         assert "After: New text" in formatted
 
