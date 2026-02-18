@@ -7,6 +7,10 @@ import os
 import argparse
 from collections import Counter
 from azure import durable_functions as df  # type: ignore
+import threading
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from datetime import datetime
 
 from src.adapters.embedding.client import SentenceTransformerAdapter
 from src.adapters.http.client import RequestsAdapter
@@ -149,6 +153,93 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     }
 
 
+latest_data = {
+        "data": [],
+        "last_updated": None,
+        "error": None
+    }
+data_lock = threading.Lock()
+
+
+class FlightHandler(BaseHTTPRequestHandler):
+    """HTTP request handler that returns latest flight data."""
+    
+    def do_GET(self):
+        """Handle GET requests."""
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            
+            with data_lock:
+                response = json.dumps(latest_data, indent=2)
+            
+            self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+    
+    def log_message(self, format, *args):
+        """Override to customize logging."""
+        print(f"[{datetime.now().isoformat()}] {format % args}")
+
+
+
+def poll_tasks(env, workflow_type, runtimes):
+    """Poll list_in_flight every minute and update latest_data."""
+    while True:
+        try:
+            print(f"[{datetime.now().isoformat()}] Polling ...")
+            flights = list_in_flight(env, workflow_type, runtimes)
+            
+            with data_lock:
+                latest_data["data"] = flights
+                latest_data["last_updated"] = datetime.now().isoformat()
+                latest_data["error"] = None
+            
+        except Exception as e:
+            print(f"[{datetime.now().isoformat()}] Error polling: {e}")
+            with data_lock:
+                latest_data["error"] = str(e)
+        
+        time.sleep(60)  # Wait 1 minute
+
+
+def server(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
+    
+    # Start polling thread
+    poll_thread = threading.Thread(target=poll_tasks, daemon=True, args=[env, workflow_type, runtimes])
+    poll_thread.start()
+    
+    # Do an immediate poll before starting server
+    print("Performing initial poll...")
+    try:
+        flights = list_in_flight(env, workflow_type, runtimes)
+        with data_lock:
+            latest_data["data"] = flights
+            latest_data["last_updated"] = datetime.now().isoformat()
+            latest_data["error"] = None
+        print(f"Initial poll complete: {len(flights)} in-flight watches")
+    except Exception as e:
+        print(f"Initial poll failed: {e}")
+        with data_lock:
+            latest_data["error"] = str(e)
+    
+    # Start HTTP server
+    port = 8000
+    server = HTTPServer(("localhost", port), FlightHandler)
+    print(f"\nDevelopment server running at http://localhost:{port}")
+    print("Press Ctrl+C to stop\n")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        server.shutdown()
+
+
 def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
     params = {}
 
@@ -182,8 +273,8 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
 
     names = Counter([t['name'] for t in filtered_data])
     statuses = Counter([t['runtime_status'] for t in filtered_data])
-    # TODO: Add waiting for circuit reporting
     throttled = Counter([t['custom_status'] is not None and 'Throttled' in t.get('custom_status', '') for t in filtered_data])
+    waiting = Counter([t['custom_status'] is not None and 'Waiting' in t.get('custom_status', '') for t in filtered_data])
     workflows = Counter([t['input_data'].get('workflow_type') for t in filtered_data])
     companies = Counter([t['input_data'].get('company') for t in filtered_data])
 
@@ -193,6 +284,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
         summary = dict(names = names,
                        statuses = statuses,
                        throttled = throttled,
+                       waiting = waiting,
                        workflows = workflows,
                        companies = companies),
     )
@@ -236,7 +328,13 @@ if __name__ == "__main__":
                     description='List in flight tasks (run az login before)')
     subparsers = parser.add_subparsers(required=True)
 
-    parser_tasks = subparsers.add_parser('tasks', help='list running tasks')
+    parser_monitor = subparsers.add_parser('monitor', help='list running tasks (live)')
+    parser_monitor.add_argument("--workflow_type")
+    parser_monitor.add_argument("--env", choices=["DEV","PROD"], default="DEV")
+    parser_monitor.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
+    parser_monitor.set_defaults(func=server)
+
+    parser_tasks = subparsers.add_parser('tasks', help='list running tasks (static)')
     parser_tasks.add_argument("--workflow_type")
     parser_tasks.add_argument("--output")
     parser_tasks.add_argument("--env", choices=["DEV","PROD"])
@@ -261,7 +359,7 @@ if __name__ == "__main__":
     func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output']}
     output = args.func(**func_kwargs)
 
-    if args.output:
+    if hasattr(args, 'output') and args.output:
         with open(args.output, "w") as f:
             json.dump(output, f, indent=2)
     else:

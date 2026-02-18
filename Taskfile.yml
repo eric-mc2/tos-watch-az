@@ -68,6 +68,11 @@ tasks:
     env:
       TARGET_ENV: PROD
 
+  monitor:
+    desc: List current jobs in Azure runtime
+    cmds:
+      - python -m scripts.health_checks monitor {{.CLI_ARGS}}
+
   list-jobs:
     desc: List current jobs in Azure runtime
     cmds:
