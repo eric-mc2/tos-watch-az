@@ -126,8 +126,8 @@ class Differ:
         """Helper function to diff line-based files."""
         # A is a sequence of semantic lines. B is a sequence of lines.
         diffs = []
-        matcher = difflib.SequenceMatcher(lambda x: x.isspace(), chunks_a, chunks_b)
-        for outer_idx, (outer_tag, i1, i2, j1, j2) in enumerate(matcher.get_opcodes()):
+        outer_matcher = difflib.SequenceMatcher(lambda x: x.isspace(), chunks_a, chunks_b)
+        for outer_idx, (outer_tag, i1, i2, j1, j2) in enumerate(outer_matcher.get_opcodes()):
             # This aligns the two sequences as best as possible.
             alines, blines = chunks_a[i1:i2], chunks_b[j1:j2]
             # Some of the lines themselves have newlines in them. So let's normalize.
@@ -138,8 +138,8 @@ class Differ:
                 line_a = alines[inner_idx] if inner_idx < len(alines) else ""
                 line_b = blines[inner_idx] if inner_idx < len(blines) else ""
                 # Now we diff a sentence. (Don't ignore whitespace so we can properly recombine word boundaries)
-                matcher = difflib.SequenceMatcher(None, line_a, line_b)
-                for inner_tag, ii1, ii2, jj1, jj2 in matcher.get_opcodes():
+                inner_matcher = difflib.SequenceMatcher(None, line_a, line_b)
+                for inner_tag, ii1, ii2, jj1, jj2 in inner_matcher.get_opcodes():
                     diffs.append(dict(tag=inner_tag, idx=outer_idx,
                                i1=i1, i2=i2, j1=j1, j2=j2,
                                ii1=ii1, ii2=ii2, jj1=jj1, jj2=jj2,

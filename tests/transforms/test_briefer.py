@@ -5,7 +5,7 @@ import json
 import re
 
 from schemas.brief.v0 import BRIEF_MODULE
-from schemas.brief.v1 import Memo, Brief, merge_memos
+from schemas.brief.v2 import Memo, Brief, merge_memos
 from schemas.llmerror.v1 import LLMError
 from src.adapters.llm.protocol import Message
 from src.stages import Stage
@@ -108,8 +108,7 @@ class TestBriefer:
         fake_storage.upload_text_blob(data_serialized, blob_name)
 
         # Configure fake llm response
-        response = Memo(relevance_flag=False,
-                        section_memo="stuff",
+        response = Memo(section_memo="stuff",
                         running_memo="stuff")
         fake_llm.adapter.set_response_static(response.model_dump_json())
 
@@ -137,8 +136,7 @@ class TestBriefer:
         fake_storage.upload_text_blob(data_serialized, blob_name)
 
         # Configure fake llm response
-        response = Memo(relevance_flag=False,
-                        section_memo="stuff",
+        response = Memo(section_memo="stuff",
                         running_memo="stuff")
         fake_llm.adapter.set_response_static(response.model_dump_json())
 
@@ -167,8 +165,7 @@ class TestBriefer:
         fake_storage.upload_text_blob(data_serialized, blob_name)
 
         # Configure fake llm response
-        response = Memo(relevance_flag=False,
-                        section_memo="stuff",
+        response = Memo(section_memo="stuff",
                         running_memo="stuff")
         fake_llm.adapter.set_response_static(response.model_dump_json())
 
@@ -220,12 +217,10 @@ class TestBriefer:
         fake_storage.upload_text_blob(data_serialized, blob_name)
 
         # Configure fake llm response
-        overhead = Memo(relevance_flag=False,
-                        section_memo="",
+        overhead = Memo(section_memo="",
                         running_memo="").model_dump_json()
         repeats = fake_llm.adapter.get_max_output() - len(overhead)
-        fake_resp = Memo(relevance_flag=False,
-                         section_memo="1"*repeats,
+        fake_resp = Memo(section_memo="1"*repeats,
                          running_memo="")
         fake_llm.adapter.set_response_static(fake_resp.model_dump_json())
 

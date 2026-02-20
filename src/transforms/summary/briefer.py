@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from typing import Iterable, List
 
-from schemas.brief.v1 import MEMO_MODULE, MEMO_VERSION, Memo
+from schemas.brief.v2 import MEMO_MODULE, MEMO_VERSION, Memo
 from src.adapters.llm.protocol import PromptMessages, Message
 from src.services.llm import TOKEN_LIMIT, LLMService
 from src.services.blob import BlobService
@@ -13,43 +13,62 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
+N_ICL = 3
 SYSTEM_PROMPT = """
-You are part of a team that is analyzing terms of service changes.
-The team's goal is to determine whether changes are practically substantive—meaning 
+You are part of a team analyzing changes to terms of service documents.
+The team's goal is to determine whether changes are practically substantive — meaning
 they materially affect what a typical user can do, must do, or what happens to them.
+"Change" is the operative word.
 
-CRITERIA FOR PRACTICALLY SUBSTANTIVE:
-- Alters data collection/usage
-- Changes user permissions, restrictions, or account termination conditions
-- Modifies pricing/payments/refunds
-- Affects dispute resolution or liability
+Your role is the note-taker. You are condensing the document (particularly its changes)
+into key points: verifiable statements, phrases, and facts. You are stripping out
+the legalese and boilerplate (except when it matters) and preserving important 
+but succinct details. 
+
+PRACTICALLY SUBSTANTIVE changes include:
+- Alterations to data collection, retention, sharing, or use (including for AI/ML training)
+- New or expanded rights the company claims over user content
+- Changes to user permissions, account suspension, or termination conditions
+- Modifications to pricing, payments, billing cycles, or refunds
+- Changes to dispute resolution, arbitration, or liability limits
 - New requirements or prohibitions on user behavior
+- Expansions of what the platform can do with user data or content
 
 NOT PRACTICALLY SUBSTANTIVE:
-- Reformatting or reorganization only
-- Clarifies language without changing meaning
-- Administrative updates (names, addresses, dates)
+- Reformatting or reorganization with no change in meaning
+- Clarifications that don't change what either party can do
+- Administrative updates (entity names, addresses, dates)
 - Typo or grammar fixes
-- Adds legally required boilerplate that doesn't change user experience
+- Legally required boilerplate that doesn't change user experience
 
-Your role is the note taker. You will be assigned sections
-of the raw document and your task  is to write a brief memo noting what is important
-or might be relevant for other team members to check back on. 
-Your memo will mark and organize potentially relevant info pertaining to the current
-document section. It will also update a running summary of all sections seen so far.
-If helpful, use organization strategies like a checklist or keyword list, etc.
-If the document is entirely irrelevant to the question at hand (practically substantive clauses or changes),
-mark its relevance as false.
+NOTE TAKING GUIDANCE:
+Specific details matter. Here is an example of a note that identifies
+relevant topics but is vague and not actionable:
+
+    ### Notable Additions/Changes
+    - More explicit about AI product usage terms
+    - Enhanced clarity around content ownership
+    - Refined termination conditions
+
+INPUT FORMAT:
+You are reading a diff: additions and removals 
+from a specific section of the document. Old document sections are prefixed with (-)
+while new document sections are prefixed with (+). If the document is short you will see
+both (+) and (-) together, but if the document is long you may only see the (+) part or the (-) part
+at a time.
+
+You will receive: the document section's diffs + 
+your notes from the previous document section.
 
 OUTPUT FORMAT:
-Respond with valid JSON with the following structure. 
-If quoting from the document make sure to properly escape the quotes.
+You will produce a section memo containing notes from this input text,
+a running memo containing your cumulative relevant notes from previous texts + the current text.
+Respond with valid JSON. Properly escape any quotes from the document.
 
 {
-"running_memo": "Notes in narrative form or markdown with \"escaped\" quotes.",
-"section_memo": "Notes in narrative form or markdown with \"escaped\" quotes.",
-"relevance_flag": boolean
+  "section_memo": "Markdown notes",
+  "running_memo": "Markdown notes",
 }
 """
 
@@ -62,8 +81,7 @@ class Briefer:
     def brief(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Summarizing {blob_name}")
         prompter = BriefBuilder(self.storage, self.executor.llm)
-        empty_brief = Memo(relevance_flag=False,
-                            section_memo="",
+        empty_brief = Memo( section_memo="",
                             running_memo="")
         messages = prompter.build_prompt(blob_name)
         
@@ -85,8 +103,9 @@ class BriefBuilder:
         examples : List[Message] = [] # self.read_examples()
         diffs = self.storage.load_text_blob(blob_name)
 
-        limit = max(TOKEN_LIMIT // 2, TOKEN_LIMIT - self.llm.adapter.get_max_output())
-        chunker = DiffChunker(self.llm, limit, StandardDiffFormatter())
+        #  the goal is to stay well below the limit due to degrading attention weight
+        token_limit = (TOKEN_LIMIT * 6) // 10
+        chunker = DiffChunker(self.llm, token_limit, StandardDiffFormatter())
         chunks = chunker.chunk_diff(SYSTEM_PROMPT, examples, DiffDoc.model_validate_json(diffs))
 
         for chunk in chunks:

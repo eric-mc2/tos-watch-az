@@ -3,6 +3,7 @@
 # azure-monitor-opentelemetry 
 
 anthropic
+argilla
 azure-functions
 azure-functions-durable
 azure-storage-blob

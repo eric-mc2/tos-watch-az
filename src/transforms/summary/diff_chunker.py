@@ -148,7 +148,7 @@ class DiffChunker:
         """
         # Format the section using the formatter
         formatted_section_text = self.formatter.format_section(section)
-        
+
         # Calculate the overhead for a TextChunk with this parent_index
         # Use index=0 as representative (actual indexes may vary by 1-2 chars)
         dummy_chunk = TextChunk(text="", parent_index=section.index, index=0)
@@ -163,30 +163,30 @@ class DiffChunker:
         if available_token_limit <= 0:
             # Overhead alone exceeds limit; return formatted section as-is
             return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
-        
+
         # Calculate text->token ratio for the formatted section
         section_text_len = len(formatted_section_text)
         section_token_len = self._estimate_tokens(system, formatted_section_text)
-        
+
         if section_token_len == 0 or section_text_len == 0:
             return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
-        
+
         # Split the formatted section into fragments that fit in available space
         # (after subtracting overhead)
-        fragments = chunk_string(formatted_section_text, available_token_limit, 
+        fragments = chunk_string(formatted_section_text, available_token_limit,
                                 section_text_len, section_token_len)
-        
+
         # Filter out empty fragments
         fragments = [f for f in fragments if f.strip()]
-        
+
         # If no valid fragments, return the original formatted text
         if not fragments:
             return [[TextChunk(text=formatted_section_text, parent_index=section.index, index=0)]]
-        
+
         # Each fragment becomes a TextChunk with its own overhead
         return [
             [TextChunk(
-                text=fragment,
+                text=fragment, # TODO: prefix with (+) or (-) diff annotation
                 parent_index=section.index,
                 index=i,  # Sub-index into this diff, resets to 0 per diff
             )]
@@ -198,12 +198,12 @@ class DiffChunker:
 
 class StandardDiffFormatter:
     """Standard formatter for DiffSections with Before/After labels."""
-    
+
     @staticmethod
     def format_section(section: DiffSection) -> str:
         """Format a single DiffSection into readable text for the LLM."""
-        parts = [f"Before: {section.before}",
-                f"After: {section.after}"]
+        parts = [f"Before:\n{section.before}",
+                f"After:\n{section.after}"]
         return "\n".join(parts)
     
     def format_doc(self, doc: DiffDoc) -> str:

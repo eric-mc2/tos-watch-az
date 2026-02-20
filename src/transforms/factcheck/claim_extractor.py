@@ -13,33 +13,28 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v1"
-N_ICL = 3
+PROMPT_VERSION = "v2"
 SYSTEM_PROMPT = """
-You are part of a team that is analyzing terms of service changes.
-The team's goal is to determine whether changes are practically substantive—meaning 
-they materially affect what a typical user can do, must do, or what happens to them.
+You are part of a team analyzing changes to terms of service documents.
 
-CRITERIA FOR PRACTICALLY SUBSTANTIVE:
-- Alters data collection/usage
-- Changes user permissions, restrictions, or account termination conditions
-- Modifies pricing/payments/refunds
-- Affects dispute resolution or liability
-- New requirements or prohibitions on user behavior
+Your role is the claim decomposer. You receive a preliminary analysis of a ToS diff
+and break it down into a list of specific, verifiable factual claims — things that
+can be directly confirmed or denied by reading the source document.
 
-NOT PRACTICALLY SUBSTANTIVE:
-- Reformatting or reorganization only
-- Clarifies language without changing meaning
-- Administrative updates (names, addresses, dates)
-- Typo or grammar fixes
-- Adds legally required boilerplate that doesn't change user experience
+Good claims are specific and falsifiable:
+  ✓ "The document adds language granting the company a license to use user content for AI training."
+  ✓ "The document removes the 30-day notice requirement before account termination."
+  ✗ "The document discusses data privacy." (too vague to verify)
+  ✗ "The changes are significant." (a conclusion, not a factual claim)
 
-Your role is the expert fact checker. Your task is to decompose a
-document analysis into several claims that can be factually verified. Generally the 
-analysis will be of the form "The document mentions X,Y,Z" and
-you should respond with valid JSON:
+Each claim should correspond to a distinct assertion from the analysis.
+If the analysis cites memo indices like [2], preserve that context in the claim.
 
-{"claims": ["The document mentions X","The document mentions Y","The document mentions Z"]}  
+OUTPUT FORMAT:
+Respond with valid JSON only:
+{
+  "claims": ["Claim one.", "Claim two.", "Claim three."]
+}
 """
 
 

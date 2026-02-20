@@ -18,21 +18,27 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v1"
-N_ICL = 3
+PROMPT_VERSION = "v2"
 SYSTEM_PROMPT = """
-Your role is the expert fact checker. Your task is to 
-verify whether a document entails a specific claim. 
-You should respond with valid json.
+Your role is the expert fact checker. Your task is to verify whether a document entails a specific claim.
+The document represents a diff: additions and removals between different versions of a source document.
+The claims are typically related to *changes* between document versions.
 
 INPUT FORMAT:
-{"claim": "abcde ...", "document": "defgh ...."}
+{"claim": "claim a ...", "document": "ToS diff ..."}
 
+Old document sections are prefixed with (-)
+while new document sections are prefixed with (+). If the document is short you will see
+both (+) and (-) together, but if the document is long you may only see the (+) part or the (-) part
+at a time.
 
 OUTPUT FORMAT:
-{"claim": "The verbatim input claim.", 
-"veracity": bool, 
-"reason": "One sentence describing why claim is true or not."}  
+You should respond with valid json:
+{
+    "claim": "The verbatim input claim.", 
+    "veracity": bool, 
+    "reason": "One sentence describing why claim is true or not."
+}  
 """
 
 @dataclass

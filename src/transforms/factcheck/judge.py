@@ -15,8 +15,7 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v1"
-N_ICL = 3
+PROMPT_VERSION = "v2"
 SYSTEM_PROMPT = """
 You are part of a team that is analyzing terms of service changes.
 The team's goal is to determine whether changes are practically substantive—meaning 
@@ -36,19 +35,26 @@ NOT PRACTICALLY SUBSTANTIVE:
 - Typo or grammar fixes
 - Adds legally required boilerplate that doesn't change user experience
 
-Your role is the final judge. Your task is to take the initial analysis,
-the fact-checked claims, and check whether the reasoning follows from
-the factual claims. In other words, given that the analysis was proven
-or disproven, does the original conclusion still hold? What is the 
-final conclusion?
+You receive: a preliminary analysis + a set of fact-checked claims.
+Your job is to reason through whether the preliminary conclusion still holds given
+what was verified. You are not bound by the preliminary analysis — if key claims
+were found to be false or overstated, you should revise the conclusion accordingly.
+If the verified claims still support the conclusion, confirm it.
 
-You should respond with valid JSON:
+
+When making your final judgment, ask: would a regular person — not a lawyer —
+be meaningfully affected by these changes? Consider especially:
+- Changes to how their content or data might be used
+- Changes to their ability to speak freely or remain on the platform
+
 OUTPUT FORMAT:
+You should respond only with valid JSON:
 {
   "practically_substantive" : 
   {
     "rating": boolean,
-    "reason": "One or two sentences explaining the key factor"
+    "reason": "One to three sentences a regular user can understand, 
+        explaining what changed and why it matters (or doesn't)."
   }
 }
   

@@ -6,7 +6,7 @@ import azure.functions as func
 from azure import durable_functions as df
 from azure.functions.decorators.core import DataType
 
-from schemas.brief.v1 import merge_memos
+from schemas.brief.v2 import merge_memos
 from schemas.fact.v1 import merge_facts
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.fact.v0 import CLAIMS_MODULE as CLAIMS_MODULE, PROOF_MODULE
@@ -263,6 +263,7 @@ def parse_brief(input_blob: func.InputStream) -> None:
                                      Stage.BRIEF_CLEAN.value,
                                      merge_fn=merge_memos)
     parser(input_blob)
+    logger.info(f"Successfully briefed {input_blob.name}")
 
 
 @app.blob_trigger(arg_name="input_blob",
@@ -300,6 +301,7 @@ def parse_summary(input_blob: func.InputStream) -> None:
                                      SUMMARY_MODULE,
                                      Stage.SUMMARY_CLEAN.value)
     parser(input_blob)
+    logger.info(f"Successfully summarized {input_blob.name}")
 
 
 # Claim Extraction Pipeline
@@ -338,6 +340,7 @@ def parse_claims(input_blob: func.InputStream) -> None:
                                      CLAIMS_MODULE,
                                      Stage.CLAIM_CLEAN.value)
     parser(input_blob)
+    logger.info(f"Successfully claim extracted {input_blob.name}")
 
 
 # Claim Checking Pipeline
@@ -378,6 +381,7 @@ def parse_factcheck(input_blob: func.InputStream) -> None:
                                      Stage.FACTCHECK_CLEAN.value,
                                      merge_facts)
     parser(input_blob)
+    logger.info(f"Successfully fact checked {input_blob.name}")
 
 
 # Judge Pipeline
@@ -418,4 +422,5 @@ def parse_judge(input_blob: func.InputStream) -> None:
                                      JUDGE_MODULE,
                                      Stage.JUDGE_CLEAN.value)
     parser(input_blob)
+    logger.info(f"Successfully judged {input_blob.name}")
 

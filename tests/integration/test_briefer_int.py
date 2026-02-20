@@ -3,7 +3,7 @@ import pytest
 import json
 
 from schemas.brief.v0 import BRIEF_MODULE
-from schemas.brief.v1 import Memo, Brief, merge_memos
+from schemas.brief.v2 import Memo, Brief, merge_memos
 from src.adapters.storage.client import AzureStorageAdapter
 from src.stages import Stage
 from src.transforms.differ import DiffDoc, DiffSection
@@ -74,12 +74,24 @@ class TestBrieferIntegration:
         
         # Act
         result_json, metadata = briefer.brief(blob_name)
+        processor = create_llm_activity_processor(local_storage,
+                                              briefer.brief,
+                                              Stage.BRIEF_RAW.value,
+                                              "briefer")
         
-        # Assert
+        # Assert -- should not throw error
         Memo.model_validate_json(result_json)
-    
-    def test_real_doc_transform(self, local_storage, llm_transform_local):
-        blob_name = "05-diffs-clean/linkedin/professional-community-policies/20221215173159.json"
+        
+        # Assert - should not throw error
+        processor(dict(task_id=blob_name))
+
+    @staticmethod
+    def real_exceed_limit():
+        return ["05-diffs-clean/meta/printable/20240813081129.json",
+                "05-diffs-clean/x-ai/privacy-policy/20240801214117.json"]
+        
+    @pytest.mark.parametrize("blob_name", real_exceed_limit())
+    def test_real_exceeds_limit(self, local_storage, llm_transform_local, blob_name):
         briefer = Briefer(
             storage=local_storage,
             executor=llm_transform_local
@@ -94,7 +106,6 @@ class TestBrieferIntegration:
                                               "briefer")
         
         # Act
-        # XXX: Throws Type Error (sequence 2 string expected got bool) when uploading blob
         processor(dict(task_id=blob_name))
         
 
@@ -128,7 +139,6 @@ class TestBrieferIntegration:
         parsed = json.loads(result_json)
         result = Memo.model_validate(parsed)
         
-        assert result.relevance_flag
         assert len(result.running_memo) > 10
         assert any(keyword in result.running_memo.lower() for keyword in ["data", "collect", "biometric", "location", "privacy"])
 
@@ -161,7 +171,6 @@ class TestBrieferIntegration:
         parsed = json.loads(result_json)
         result = Memo.model_validate(parsed)
         
-        assert not result.relevance_flag
 
     def test_mixed_relevant_irrelevant(self, fake_storage, llm_transform):
         """Test briefing document with both relevant and irrelevant changes."""
@@ -198,7 +207,6 @@ class TestBrieferIntegration:
         result = Memo.model_validate(parsed)
         
         # Should flag as relevant due to the license change
-        assert result.relevance_flag
         assert any(keyword in result.running_memo.lower() for keyword in ["license", "content", "rights"])
 
     def test_chunked_multi_page_document(self, fake_storage, llm_transform, monkeypatch):
@@ -258,8 +266,6 @@ class TestBrieferIntegration:
         result = Brief.model_validate_json(result_json)
         # Should make a couple chunks
         assert len(result.memos) > 2
-        # At least one chunk should be flagged as relevant
-        assert any(memo.relevance_flag for memo in result.memos)
         # Running memo should accumulate information across chunks
         final_memo = result.memos[-1]
         assert len(final_memo.running_memo) > 50

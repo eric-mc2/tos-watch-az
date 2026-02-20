@@ -19,7 +19,7 @@ from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.fact.v0 import CLAIMS_MODULE, PROOF_MODULE
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 
-from schemas.brief.v1 import Memo, merge_memos
+from schemas.brief.v2 import Memo, merge_memos
 from schemas.summary.v2 import Substantive as SSubstantive
 from schemas.summary.v4 import Summary
 from schemas.fact.v1 import Claims, Fact, merge_facts
@@ -238,8 +238,8 @@ def generate_test_cases():
     empty_diff = []
 
     # Axis 1: Brief variations
-    brief_true = Memo(running_memo="hi", section_memo="hi", relevance_flag=True).model_dump_json()
-    brief_false = Memo(running_memo="hi", section_memo="hi", relevance_flag=False).model_dump_json()
+    brief_true = Memo(running_memo="hi", section_memo="hi").model_dump_json()
+    brief_false = Memo(running_memo="hi", section_memo="hi").model_dump_json()
     
     # Axis 2: Summary responses
     summary_true = Summary(practically_substantive=SSubstantive(rating=True, reason="Substantive")).model_dump_json()
