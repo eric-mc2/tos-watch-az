@@ -1,5 +1,8 @@
 {
   "version": "2.0",
+  "concurrency": {
+    "dynamicConcurrencyEnabled": false
+  },
   "logging": {
     "applicationInsights": {
       "enableLiveMetrics": false,
@@ -41,7 +44,11 @@
       "Function.judge_blob_trigger.User": "Debug",
       "Function.judge_processor.User": "Debug",
       "Function.parse_judge.User": "Debug",
-      "src": "Debug"
+      "src": "Debug",
+      "src.adapters": "Warning",
+      "src.orchestration": "Warning",
+      "src.services": "Warning",
+      "src.transforms": "Debug"
     },
     "console": {
       "isEnabled": true
@@ -52,7 +59,10 @@
       "hubName": "RateLimitedHub",
       "storageProvider": {
         "connectionStringName": "AzureWebJobsStorage"
-      }
+      },
+      "maxConcurrentOrchestratorFunctions": 1,
+      "maxConcurrentActivityFunctions": 1,
+      "extendedSessionsEnabled": false
     }
   },
   "extensionBundle": {
