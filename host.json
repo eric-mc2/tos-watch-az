@@ -1,8 +1,5 @@
 {
   "version": "2.0",
-  "concurrency": {
-    "dynamicConcurrencyEnabled": false
-  },
   "logging": {
     "applicationInsights": {
       "enableLiveMetrics": false,
@@ -59,10 +56,7 @@
       "hubName": "RateLimitedHub",
       "storageProvider": {
         "connectionStringName": "AzureWebJobsStorage"
-      },
-      "maxConcurrentOrchestratorFunctions": 1,
-      "maxConcurrentActivityFunctions": 1,
-      "extendedSessionsEnabled": false
+      }
     }
   },
   "extensionBundle": {
