@@ -29,6 +29,7 @@ from schemas.judge.v1 import Judgement, Substantive as JSubstantive
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.fake_client import FakeLLMAdapter
 from src.adapters.embedding.fake_client import FakeEmbeddingAdapter
+from src.utils.metadata_utils import PREFIXABLE_KEYS
 
 
 class MockInputStream:
@@ -221,7 +222,13 @@ def run_pipeline_stage_judge_parser(fake_storage, fake_llm, judge_raw_path):
     return f"{Stage.JUDGE_CLEAN.value}/{parts.company}/{parts.policy}/{parts.timestamp}/latest.json"
 
 
-# Test data generation
+def assert_metadata(fake_storage, clean_path, stage):
+    metadata = fake_storage.adapter.load_metadata(clean_path)
+    for key in PREFIXABLE_KEYS:
+        assert f"{Stage.get_transform_name(stage)}_{key}" in metadata
+
+
+    # Test data generation
 def generate_test_cases():
     """Generate all combinations of test axes."""
     
@@ -550,12 +557,13 @@ def test_pipeline_end_to_end_parameterized(fake_storage, fake_llm, llm_transform
     # Stage 0: Briefer + Parse
     fake_llm.adapter.set_response_static(test_case.brief_response)
 
-    brief_raw_path = run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, company, policy,
-                                                     timestamp)
+    brief_raw_path = run_pipeline_stage_brief(fake_storage, llm_transform, diff_blob_path, company, policy, timestamp)
     brief_clean_path = run_pipeline_stage_brief_parser(fake_storage, fake_llm, brief_raw_path)
 
     if test_case.expect_brief_success == 'True':
         assert fake_storage.check_blob(brief_clean_path)
+        assert_metadata(fake_storage, brief_raw_path, Stage.BRIEF_CLEAN.value)
+        assert_metadata(fake_storage, brief_clean_path, Stage.BRIEF_CLEAN.value)
     elif test_case.expect_brief_success == 'False':
         assert not fake_storage.check_blob(brief_clean_path)
         assert False, "Brief unexpectedly succeeded"

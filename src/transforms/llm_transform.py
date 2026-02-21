@@ -115,6 +115,7 @@ class LLMTransform:
         metadata = dict(
                 run_id=ulid.ulid(),
                 module_name=module_name,
+                model_version=self.llm.adapter.get_model_version(),
                 schema_version=schema_version,
                 prompt_version=prompt_version,
                 is_chunked=False, # for sequential parsing

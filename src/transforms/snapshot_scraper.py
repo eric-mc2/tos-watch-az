@@ -57,6 +57,7 @@ class SnapshotScraper:
     def extract_main_text(html_content, encoding='utf-8'):
         """Extract main content from HTML with proper encoding handling"""
         # Parse with BeautifulSoup, explicitly handling encoding
+        # TODO: Silence warning UserWarning: You provided Unicode markup but also provided a value for from_encoding. Your from_encoding will be ignored.
         soup = BeautifulSoup(html_content, "html.parser", from_encoding=encoding)
 
         # Try to find the main content; fallback to body text
