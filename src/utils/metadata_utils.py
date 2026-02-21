@@ -6,6 +6,7 @@ This module provides utilities for:
 2. Merging metadata from upstream stages
 3. Unprefixing metadata for backward compatibility
 """
+from operator import truediv
 from typing import Optional
 from src.stages import Stage
 
@@ -152,15 +153,24 @@ def extract_stage_metadata(metadata: dict, stage: Optional[str] = None, tag: Opt
     prefix = f"{transform_name}_"
     stage_metadata = {}
     
+    # Run through all keys first and check for explicit stage keys.
     for key, value in metadata.items():
-        if key.startswith(prefix):
-            unprefixed_key = key.removeprefix(prefix)
+        unprefixed_key = key.removeprefix(prefix)
+        if key == prefix + unprefixed_key and unprefixed_key in PREFIXABLE_KEYS:
             stage_metadata[unprefixed_key] = value
-        else:
-            # TODO: remove once validated.
-            # Assume non-prefixed stuff is helpful to return
-            # Might want to take this out if llm_transform:parser doesn't extract_stage_metadata
-            # stage_metadata[key] = value
-            pass
 
+    # Now run through and check for non-stage keys to add.
+    for key in metadata.keys() - stage_metadata.keys():
+        if key in PREFIXABLE_KEYS or key in GLOBAL_KEYS:
+            stage_metadata[key] = metadata[key]
+
+    # Unlisted keys belongs to something else. Don't add.
     return stage_metadata
+
+def is_lineage_data(metadata: dict) -> bool:
+    for stage in Stage:
+        pfx = Stage.get_transform_name(stage.value)
+        for key in PREFIXABLE_KEYS:
+            if f"{pfx}_{key}" in metadata:
+                return True
+    return False

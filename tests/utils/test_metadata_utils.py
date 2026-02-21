@@ -245,6 +245,29 @@ class TestExtractStageMetadata:
         
         assert result == {}
 
+    def test_bare_metadata(self):
+        """Extracting non-lineage data should return non-lineage data."""
+        metadata = {
+            "brief_run_id": "abc",
+            "run_id": "xyz"
+        }
+        result = extract_stage_metadata(metadata, Stage.JUDGE_RAW.value)
+
+        assert "run_id" in result
+        assert result["run_id"] == "xyz"
+
+    def test_bare_and_lineage_metadata(self):
+        """Extracting non-lineage data should return lineage part."""
+        metadata = {
+            "brief_run_id": "abc",
+            "run_id": "xyz"
+        }
+        result = extract_stage_metadata(metadata, Stage.BRIEF_CLEAN.value)
+
+        assert "run_id" in result
+        assert "brief_run_id" not in result
+        assert result["run_id"] == "abc"
+
 
 class TestIdempotency:
     """Test that operations are idempotent where expected."""

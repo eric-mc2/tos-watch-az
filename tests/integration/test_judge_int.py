@@ -1,6 +1,5 @@
 import os
 import pytest
-import json
 
 from schemas.judge.v1 import Judgement
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as SUMMARY_VERSION

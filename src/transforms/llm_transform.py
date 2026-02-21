@@ -17,7 +17,7 @@ from src.services.blob import BlobService
 from src.services.llm import LLMService
 from src.stages import Stage
 from src.utils.log_utils import setup_logger
-from src.utils.metadata_utils import merge_lineage, prefix_metadata, extract_stage_metadata
+from src.utils.metadata_utils import merge_lineage, prefix_metadata, extract_stage_metadata, is_lineage_data
 
 logger = setup_logger(__name__, logging.DEBUG)
 
@@ -260,21 +260,21 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
     """
 
     def parser(txt: str, metadata: dict) -> tuple[str, dict]:
-        # Get schema from registry
-        module_key = metadata.get('module_name', module_name)
-        # TODO: remove once validated
-        # Assuming that at this point we haven't passed any lineage yet.
-        # So we don't need to extract stage.
-        # stage_metadata = extract_stage_metadata(metadata, tag=module_name)
-        stage_metadata = metadata
+
+        # When this is called in the context of serial_execute it receives non-lineage data.
+        # But in the context of function_app.parse it receives lineage data.
+        # In the first case it should be a no-op. In the second case it should
+        # extract the stage-specific parts for easier handling.
+        stage_metadata = extract_stage_metadata(metadata, tag=module_name)
         schema_version = stage_metadata['schema_version']
+        module_key = stage_metadata.get('module_name', module_name)
         schema = load_schema(module_name, schema_version, module_key)
 
         # Check for errors
         error_flag = stage_metadata.get('error_flag')
 
         # New format: detect chunking from metadata or structure
-        is_chunked = metadata.get('is_chunked', False)
+        is_chunked = stage_metadata.get('is_chunked', False)
         if not is_chunked:
             # Try to detect from structure for historical data
             try:
@@ -305,10 +305,13 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
         cleaned_txt = json.dumps(cleaned_data, indent=2)
 
         # Update metadata with chunking info -- we always merge!
-        # TODO: assuming we haven't passed in lineage data yet so we don't need to do this yet.
-        # metadata = prefix_metadata(stage_metadata, tag=module_name)
-        metadata = stage_metadata
-        metadata['is_chunked'] = False
+        stage_metadata['is_chunked'] = False
+
+        # In the context of serial_executor, we're dealing with non-prefixed keys.
+        # In the context of function_app.parse, we need to re-promote the keys to lineage.
+        tag = module_name if is_lineage_data(metadata) else None
+        stage_metadata = prefix_metadata(stage_metadata, tag=tag)
+        metadata.update(stage_metadata)
 
         return cleaned_txt, metadata
 

@@ -1,6 +1,5 @@
 import os
 import pytest
-import json
 
 from schemas.fact.v0 import PROOF_MODULE
 from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact, Proof, merge_facts
