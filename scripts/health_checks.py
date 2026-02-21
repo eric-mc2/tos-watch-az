@@ -7,8 +7,6 @@ import os
 import argparse
 from collections import Counter
 from azure import durable_functions as df  # type: ignore
-import threading
-import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
@@ -153,29 +151,52 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     }
 
 
-latest_data = {
-        "data": [],
-        "last_updated": None,
-        "error": None
-    }
-data_lock = threading.Lock()
-
-
 class FlightHandler(BaseHTTPRequestHandler):
-    """HTTP request handler that returns latest flight data."""
+    """HTTP request handler that fetches flight data per request."""
+    
+    def __init__(self, env, workflow_type, runtimes, *args, **kwargs):
+        self.env = env
+        self.workflow_type = workflow_type
+        self.runtimes = runtimes
+        super().__init__(*args, **kwargs)
     
     def do_GET(self):
         """Handle GET requests."""
         if self.path == "/":
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            
-            with data_lock:
-                response = json.dumps(latest_data, indent=2)
-            
-            self.wfile.write(response.encode())
+            try:
+                print(f"[{datetime.now().isoformat()}] Fetching flight data...")
+                flights = list_in_flight(self.env, self.workflow_type, self.runtimes)
+                
+                response_data = {
+                    "data": flights,
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": None
+                }
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(response_data, indent=2)
+                self.wfile.write(response.encode())
+                
+            except Exception as e:
+                print(f"[{datetime.now().isoformat()}] Error fetching data: {e}")
+                
+                error_data = {
+                    "data": [],
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": str(e)
+                }
+                
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(error_data, indent=2)
+                self.wfile.write(response.encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -186,51 +207,18 @@ class FlightHandler(BaseHTTPRequestHandler):
         print(f"[{datetime.now().isoformat()}] {format % args}")
 
 
-
-def poll_tasks(env, workflow_type, runtimes):
-    """Poll list_in_flight every minute and update latest_data."""
-    while True:
-        try:
-            print(f"[{datetime.now().isoformat()}] Polling ...")
-            flights = list_in_flight(env, workflow_type, runtimes)
-            
-            with data_lock:
-                latest_data["data"] = flights
-                latest_data["last_updated"] = datetime.now().isoformat()
-                latest_data["error"] = None
-            
-        except Exception as e:
-            print(f"[{datetime.now().isoformat()}] Error polling: {e}")
-            with data_lock:
-                latest_data["error"] = str(e)
-        
-        time.sleep(60)  # Wait 1 minute
-
-
 def server(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
+    """Start HTTP server that fetches flight data on each request."""
     
-    # Start polling thread
-    poll_thread = threading.Thread(target=poll_tasks, daemon=True, args=[env, workflow_type, runtimes])
-    poll_thread.start()
-    
-    # Do an immediate poll before starting server
-    print("Performing initial poll...")
-    try:
-        flights = list_in_flight(env, workflow_type, runtimes)
-        with data_lock:
-            latest_data["data"] = flights
-            latest_data["last_updated"] = datetime.now().isoformat()
-            latest_data["error"] = None
-        print(f"Initial poll complete: {len(flights)} in-flight watches")
-    except Exception as e:
-        print(f"Initial poll failed: {e}")
-        with data_lock:
-            latest_data["error"] = str(e)
+    # Create handler with environment parameters
+    def handler(*args, **kwargs):
+        return FlightHandler(env, workflow_type, runtimes, *args, **kwargs)
     
     # Start HTTP server
     port = 8000
-    server = HTTPServer(("localhost", port), FlightHandler)
+    server = HTTPServer(("localhost", port), handler)
     print(f"\nDevelopment server running at http://localhost:{port}")
+    print("Data is fetched per request (no polling)")
     print("Press Ctrl+C to stop\n")
     
     try:
