@@ -1,6 +1,5 @@
 from typing import Optional, Type
 from schemas.base import SchemaBase
-from src.services.blob import BlobService
 
 SCHEMA_REGISTRY : dict[str, dict[str, Type[SchemaBase]]] = {}
 
@@ -11,22 +10,6 @@ def register(module_name, name):
         SCHEMA_REGISTRY[module_name][name] = cls
         return cls
     return wrapper
-
-
-def load_data(blob_name: str, module_name: str, storage: BlobService) -> SchemaBase:
-    # Extract identifiers
-    txt = storage.load_text_blob(blob_name)
-    metadata = storage.adapter.load_metadata(blob_name)
-    schema_version = metadata["schema_version"]  # This is pretty much guaranteed to exist
-    metadata_module_name = metadata.get("module_name")   # This might not always exist
-    # Find and load schema
-    schema = load_schema(module_name, schema_version, metadata_module_name)
-    data = schema.model_validate_json(txt)
-    # Double-check if
-    max_schema = load_max_schema(module_name, metadata_module_name)
-    if _version_compare(schema_version, max_schema.VERSION()) < 0 and hasattr(max_schema, "migrate"):
-        data = max_schema.migrate(data)
-    return data
 
 
 def load_schema(module_name: str, version: str, metadata_module_name: Optional[str] = None) -> Type[SchemaBase]:

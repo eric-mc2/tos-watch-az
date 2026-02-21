@@ -3,11 +3,10 @@ import logging
 from dataclasses import dataclass, asdict
 from typing import Iterator
 
-from schemas.registry import load_data
 from schemas.fact.v0 import CLAIMS_MODULE
 from schemas.fact.v1 import Claims as ClaimsV1, FACT_VERSION as FACT_SCHEMA_VERSION, FACT_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
-from src.services.blob import BlobService
+from src.services.blob import BlobService, load_validated_json_blob
 from src.services.embedding import EmbeddingService
 from src.services.llm import TOKEN_LIMIT, LLMService
 from src.transforms.differ import DiffDoc
@@ -49,7 +48,7 @@ class ClaimCheckerBuilder:
 
     def build_prompt(self, blob_name: str, diff_blob_name: str) -> Iterator[PromptMessages]:
         examples: list = []  # self.read_examples() for future ICL
-        claims = load_data(blob_name, CLAIMS_MODULE, self.storage)
+        claims = load_validated_json_blob(blob_name, CLAIMS_MODULE, self.storage)
         assert isinstance(claims, ClaimsV1)
 
         if not claims.claims:

@@ -11,7 +11,7 @@ from schemas.summary.v4 import VERSION as SCHEMA_VERSION, MODULE
 from src.adapters.llm.protocol import PromptMessages, Message
 from src.services.llm import TOKEN_LIMIT, LLMService
 from src.stages import Stage
-from src.transforms.icl import ICL
+from src.transforms.icl import ICLDataLoader
 from src.utils.log_utils import setup_logger
 from src.services.blob import BlobService
 from src.transforms.llm_transform import LLMTransform
@@ -73,7 +73,7 @@ Respond with valid JSON only:
 @dataclass
 class Summarizer:
     storage: BlobService
-    icl: ICL
+    icl: ICLDataLoader
     executor: LLMTransform
 
     def summarize(self, blob_name: str) -> tuple[str, dict]:
@@ -86,7 +86,7 @@ class Summarizer:
 @dataclass
 class PromptBuilder:
     storage: BlobService
-    icl: ICL
+    icl: ICLDataLoader
     llm: LLMService
     _cache = None
 
@@ -102,10 +102,18 @@ class PromptBuilder:
 
 
     def read_examples(self) -> list[Message]:
+        """
+        Load ICL (few-shot) examples for prompts.
+        
+        TODO: DATA LEAKAGE ISSUE - Currently loads from eval labels.
+        Should use ICLDataLoader reading from data/icl/ instead of EvalDataLoader.
+        Once ICL split logic is implemented, update to:
+        """
         if self._cache:
             return self._cache
 
-        gold = self.icl.load_true_labels(LABELS_VERSION)
+        icl_loader = ICLDataLoader(self.storage)
+        gold = icl_loader.load_examples(LABELS_VERSION)
         # Filter to false negatives
         gold = gold[(gold['practically_substantive_true']==0) & (gold['practically_substantive_pred']==1)]
         icl_queries = []

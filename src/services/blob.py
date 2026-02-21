@@ -5,8 +5,13 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+from schemas.base import SchemaBase
+from schemas.registry import load_schema, load_max_schema, _version_compare
+from src.stages import Stage
 from src.utils.log_utils import setup_logger
 from src.adapters.storage.protocol import BlobStorageProtocol
+from src.utils.metadata_utils import extract_stage_metadata
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -165,3 +170,19 @@ class BlobService:
         logger.debug(f"Deleting blob {blob_name}")
         self.adapter.remove_blob(blob_name)
 
+
+def load_validated_json_blob(blob_name: str, module_name: str, storage: BlobService) -> SchemaBase:
+    # Extract identifiers
+    txt = storage.load_text_blob(blob_name)
+    metadata = storage.adapter.load_metadata(blob_name)
+    stage_metadata = extract_stage_metadata(metadata, tag=module_name)
+    schema_version = stage_metadata["schema_version"]  # This is pretty much guaranteed to exist
+    metadata_module_name = stage_metadata.get("module_name")   # This might not always exist
+    # Find and load schema
+    schema = load_schema(module_name, schema_version, metadata_module_name)
+    data = schema.model_validate_json(txt)
+    # Double-check if
+    max_schema = load_max_schema(module_name, metadata_module_name)
+    if _version_compare(schema_version, max_schema.VERSION()) < 0 and hasattr(max_schema, "migrate"):
+        data = max_schema.migrate(data)
+    return data

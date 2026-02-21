@@ -25,6 +25,8 @@ if __name__ == "__main__":
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--prompt_version", required=True)
     parser.add_argument("--schema_version", required=True)
+    parser.add_argument("--split", choices=["icl", "eval"], default="eval",
+                        help="Data split: 'icl' for training examples, 'eval' for evaluation")
     args = parser.parse_args()
 
     dataset_name = f"{args.workflow}_{args.prompt_version}"
@@ -37,4 +39,4 @@ if __name__ == "__main__":
         maker.create_records(dataset, args.schema_version, args.prompt_version, 20)
     elif args.action == "download":
         maker = DatasetBase()
-        maker.get_data(dataset_name)
+        maker.get_data(dataset_name, split=args.split)

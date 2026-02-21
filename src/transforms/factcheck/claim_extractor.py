@@ -2,12 +2,11 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-from schemas.registry import load_data
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.summary.v4 import Summary as SummaryV4
 from schemas.fact.v1 import CLAIMS_VERSION as CLAIMS_SCHEMA_VERSION, CLAIMS_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
-from src.services.blob import BlobService
+from src.services.blob import BlobService, load_validated_json_blob
 from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
@@ -44,7 +43,7 @@ class ClaimExtractorBuilder:
 
     def build_prompt(self, blob_name: str) -> Iterator[PromptMessages]:
         examples: list = [] # self.read_examples()
-        summary = load_data(blob_name, SUMMARY_MODULE, self.storage)
+        summary = load_validated_json_blob(blob_name, SUMMARY_MODULE, self.storage)
         assert isinstance(summary, SummaryV4)
 
         if not summary.practically_substantive.rating:

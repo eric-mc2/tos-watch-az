@@ -14,7 +14,7 @@ from src.services.blob import BlobService
 from src.services.embedding import EmbeddingService
 from src.transforms.differ import Differ
 from src.services.llm import LLMService
-from src.transforms.icl import ICL
+from src.transforms.icl import ICLDataLoader
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.metadata_scraper import MetadataScraper
 from src.transforms.snapshot_scraper import SnapshotScraper
@@ -87,7 +87,7 @@ class ServiceContainer:
             differ_transform=Differ(blob_storage),
             wayback_transform=MetadataScraper(blob_storage, http_client),
             snapshot_transform=SnapshotScraper(blob_storage, http_client),
-            summarizer_transform=Summarizer(blob_storage, ICL(blob_storage), llm_executor),
+            summarizer_transform=Summarizer(blob_storage, ICLDataLoader(blob_storage), llm_executor),
             claim_extractor_transform=ClaimExtractor(blob_storage, llm_executor),
             briefer_transform=Briefer(blob_storage, llm_executor),
             claim_checker_transform=ClaimChecker(blob_storage, llm_executor, embedding_client),

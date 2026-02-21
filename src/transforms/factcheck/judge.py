@@ -2,14 +2,13 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
-from schemas.registry import load_data
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
 from schemas.summary.v4 import Summary as SummaryV4
 from schemas.fact.v0 import PROOF_MODULE
 from schemas.fact.v1 import Fact, Proof
 from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION, MODULE as JUDGE_MODULE
 from src.adapters.llm.protocol import Message, PromptMessages
-from src.services.blob import BlobService
+from src.services.blob import BlobService, load_validated_json_blob
 from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
@@ -69,11 +68,11 @@ class JudgeBuilder:
         examples: list = [] # self.read_examples()
 
         # Get Summary
-        summary = load_data(summary_blob_name, SUMMARY_MODULE, self.storage)
+        summary = load_validated_json_blob(summary_blob_name, SUMMARY_MODULE, self.storage)
         assert isinstance(summary, SummaryV4)
 
         # Get Facts
-        facts = load_data(facts_blob_name, PROOF_MODULE, self.storage)
+        facts = load_validated_json_blob(facts_blob_name, PROOF_MODULE, self.storage)
         assert isinstance(facts, Fact) or isinstance(facts, Proof)
         facts = facts if isinstance(facts, Proof) else Proof(facts=[facts])
 

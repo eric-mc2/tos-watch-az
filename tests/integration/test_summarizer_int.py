@@ -3,7 +3,7 @@ import os
 
 from schemas.summary.v4 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
-from src.transforms.icl import ICL
+from src.transforms.icl import ICLDataLoader
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.summary.summarizer import Summarizer
 from src.services.llm import LLMService
@@ -42,7 +42,7 @@ class TestSummarizerInt:
         storage.upload_json_blob(diff.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage, ICL(storage), transform)
+        summarizer = Summarizer(storage, ICLDataLoader(storage), transform)
         txt, meta = summarizer.summarize("test.json")
 
         # Assert
