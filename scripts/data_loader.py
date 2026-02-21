@@ -14,7 +14,6 @@ from src.transforms.icl import LabeledDataLoader
 
 
 class EvalDataLoader(LabeledDataLoader, ABC):
-    # TODO: Move out of ICL
     """Base class for loading evaluation data (ground truth + predictions)."""
 
     def __init__(self, storage: BlobService):
@@ -32,7 +31,6 @@ class EvalDataLoader(LabeledDataLoader, ABC):
 
 
 class SummaryEvalDataLoader(EvalDataLoader):
-    # TODO: Move out of ICL
     """Loads summary stage evaluation data (ground truth from labels + predictions from JUDGE_CLEAN)."""
 
     def load_true_labels(self, version: str = "") -> pd.DataFrame:

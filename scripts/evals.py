@@ -47,10 +47,13 @@ def main():
     )
     parser.add_argument(
         "--outfile",
-        required=True,
+        required=False,
         help="Output HTML file path relative to data/metrics/"
     )
     args = parser.parse_args()
+
+    if args.outfile is None:
+        args.outfile = args.label_version + ".html"
     
     # Select appropriate metrics class
     metrics_classes = {

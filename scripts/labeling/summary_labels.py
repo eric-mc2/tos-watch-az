@@ -102,7 +102,7 @@ class SummaryV1Dataset(DatasetBase):
                         # Only add records for specified versions
                         summ_name = os.path.join(Stage.SUMMARY_CLEAN.value, company, policy, timestamp, file)
                         metadata = self.container.storage.adapter.load_metadata(summ_name)
-                        stage_metadata = extract_stage_metadata(metadata, Stage.get_transform_name(Stage.SUMMARY_CLEAN.value))
+                        stage_metadata = extract_stage_metadata(metadata, stage=Stage.SUMMARY_CLEAN.value)
                         if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                             continue
 

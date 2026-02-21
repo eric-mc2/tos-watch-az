@@ -14,6 +14,14 @@ logger = setup_logger(__name__, logging.INFO)
 
 
 class BriefV1Dataset(DatasetBase):
+    metadata_fields = ["brief_model_version",
+                "brief_prompt_version",
+                "brief_schema_version",
+                "summary_model_version",
+                "summary_prompt_version",
+                "summary_schema_version",
+                "blob_path",
+                "timestamp"]
     def create_dataset(self, name):
         dataset = self.client.datasets(name)
         if dataset is not None:
@@ -77,16 +85,7 @@ class BriefV1Dataset(DatasetBase):
                 rg.LabelQuestion(name="practically_substantive", labels=["True", "False", "unsure"]),
                 rg.LabelQuestion(name="notes_good", labels=["True", "False", "unsure"]),
             ],
-            metadata=[
-                rg.TermsMetadataProperty(name="brief_model_version"),
-                rg.TermsMetadataProperty(name="brief_prompt_version"),
-                rg.TermsMetadataProperty(name="brief_schema_version"),
-                rg.TermsMetadataProperty(name="summary_model_version"),
-                rg.TermsMetadataProperty(name="summary_prompt_version"),
-                rg.TermsMetadataProperty(name="summary_schema_version"),
-                rg.TermsMetadataProperty(name="blob_path"),
-                rg.IntegerMetadataProperty(name="timestamp"),
-            ]
+            metadata=[rg.TermsMetadataProperty(name=field) for field in self.metadata_fields],
         )
 
         dataset = rg.Dataset(name=name, settings=settings)
@@ -109,7 +108,7 @@ class BriefV1Dataset(DatasetBase):
             # Only add records for specified versions
             memo_name = blob_name
             metadata = self.container.storage.adapter.load_metadata(memo_name)
-            stage_metadata = extract_stage_metadata(metadata, Stage.get_transform_name(Stage.BRIEF_CLEAN.value))
+            stage_metadata = extract_stage_metadata(metadata, stage=Stage.BRIEF_CLEAN.value)
             if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                 continue
 
@@ -136,12 +135,15 @@ class BriefV1Dataset(DatasetBase):
             if not diff:
                 continue
 
-            model_version = stage_metadata.get("model_version")
-
+            # We actually want to use the summary metadata now because its more complete.
+            metadata = self.container.storage.adapter.load_metadata(summ_name)
             summary_txt = self.container.storage.load_text_blob(summ_name)
             summary = json.loads(summary_txt)
 
             brief_txt = self.template_brief(memo_name)
+
+            record_metadata = metadata.copy() | dict(blob_path = diff_name, timestamp = int(time.time()))
+            record_metadata = {k:v for k,v in record_metadata.items() if k in self.metadata_fields}
 
             records.append(rg.Record(
                 fields={
@@ -152,10 +154,7 @@ class BriefV1Dataset(DatasetBase):
                 suggestions=[  # Pre-fill from model
                     rg.Suggestion("practically_substantive", value=str(summary['practically_substantive']['rating'])),
                 ],
-                metadata=metadata | dict(
-                    blob_path = diff_name,
-                    timestamp = int(time.time())
-                )
+                metadata= record_metadata,
             ))
             if len(records) == max_examples:
                 dataset.records.log(records)
@@ -205,3 +204,12 @@ class BriefV1Dataset(DatasetBase):
                 return '', f'<span class="diff_add">{b}</span>'
             else:
                 return '', ''
+
+class BriefV2Dataset(BriefV1Dataset):
+    def template_brief(self, brief_name):
+        brief_obj = self.container.storage.load_json_blob(brief_name)
+        parts = ["Section Memo:",
+                 brief_obj["section_memo"],
+                 "Running Memo:",
+                 brief_obj["running_memo"]]
+        return "\n".join(parts)

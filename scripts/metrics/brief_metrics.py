@@ -35,7 +35,7 @@ class BriefMetrics(BaseMetrics):
         raw = raw[raw['blob_key'].isin(gold['blob_key'])]
 
         # Also dont care about gold label provenance
-        gold = gold.drop(columns=lineage_groups)
+        gold = gold.drop(columns=lineage_groups, errors='ignore')
 
         if pred.empty:
             print("No llm output for these labels.")

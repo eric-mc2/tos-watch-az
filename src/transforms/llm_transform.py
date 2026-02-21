@@ -322,7 +322,7 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
 def create_llm_saver(storage: BlobService, output_stage: str) -> Callable:
     def saver(blob_name: str, txt: str, metadata: dict) -> None:
         in_path = storage.parse_blob_path(blob_name)
-        stage_metadata = extract_stage_metadata(metadata, output_stage)
+        stage_metadata = extract_stage_metadata(metadata, stage=output_stage)
         run_id = stage_metadata['run_id']
         # Save versioned output
         out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{run_id}.json")

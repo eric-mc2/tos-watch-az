@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -20,7 +21,6 @@ class DatasetBase:
             headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"}
         )
         self.container = ServiceContainer.create_real()
-
 
     def create_dataset(self, name):
         pass
@@ -55,3 +55,34 @@ class DatasetBase:
         os.makedirs(data_dir, exist_ok=True)
         dataset.to_disk(str(data_dir))
         print(f"Downloaded {name} to {split}/ directory")
+
+    def push_data(self, name: str, split: str = "eval"):
+        """
+        Push dataset to Argilla from local disk.
+
+        Args:
+            name: Dataset name (e.g., 'summary_v1', 'brief_v1')
+            split: Data split - 'icl' for training examples or 'eval' for evaluation
+        """
+        dataset = self.client.datasets(name)
+        if dataset is None:
+            dataset = self.create_dataset(name)
+
+        data_dir = DATA_DIR / split / name
+        if not os.path.exists(data_dir):
+            print(f"Dataset not downloaded to {split}/. Create records and download first.")
+            return
+
+        # Data cleaning (user ids also reset when space is cleared)
+        with open(data_dir / "records.json") as f:
+            data = json.load(f)
+        for record in data:
+            for question,responses in record["responses"].items():
+                for response in responses:
+                    response['user_id'] = str(self.client.users('eric-mc22').id)
+        with open(data_dir / "records.json", "w") as f:
+            json.dump(data, f)
+
+        # Finally push data
+        dataset.from_disk(str(data_dir))
+        print(f"Pushed {name} to hub")

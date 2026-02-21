@@ -1,42 +1,72 @@
 import argparse
 import logging
-from scripts.labeling.brief_v1 import BriefV1Dataset
+from scripts.labeling.brief_labels import BriefV1Dataset, BriefV2Dataset
 from scripts.labeling.dataset import DatasetBase
-from scripts.labeling.summary_v1 import SummaryV1Dataset
+from scripts.labeling.summary_labels import SummaryV1Dataset
 
 
 from src.utils.app_utils import load_env_vars
 
-# TODO: Next here. Need to label 10 examples per task. Honestly just run the argilla server and tell
-# gemini to create 4 personas with different note-taking styles and then have each persona evaluate the doc.
-# And then use the answer you like.
-# If ICL alone doesn't work, then ask gemini to refine the system prompts. 
+# TODO: Want to double the number of briefer labels to ~50 to have legit stats.
+#       Try not to blow up job queue!
+#       ALSO: Want to get 3-5 ICL examples. So over-label by 3-5 count.
+#       And then basically the ICL thing should PICK from existing Evals labels.
+#       And remove them from the evals set.
+#       Basically filter by criteria (FP, FN, etc) and order by length.
+# TODO: No I don't necessarily need summary labels because I'm labeling the summary stage in briefer.
+#       But I do need separate evals and ICL. Because briefer will first focus on examples that
+#       are wrong on the merits of the notes whereas summary will focus on examples that are
+#       wrong on the merits of the summary.
 
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('argilla').setLevel(logging.INFO)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('azure').setLevel(logging.WARNING)
 
 
 if __name__ == "__main__":
     load_env_vars()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--action", choices=["add", "download"], required=True)
-    parser.add_argument("--workflow", required=True)
-    parser.add_argument("--prompt_version", required=True)
-    parser.add_argument("--schema_version", required=True)
-    parser.add_argument("--split", choices=["icl", "eval"], default="eval",
+    subparsers = parser.add_subparsers(dest="action")
+    add_parser = subparsers.add_parser('add')
+
+    add_parser.add_argument("--workflow", required=True)
+    add_parser.add_argument("--prompt_version", required=True)
+    add_parser.add_argument("--schema_version", required=True)
+    add_parser.add_argument("--n", required=True, type=int)
+    add_parser.add_argument("--split", choices=["icl", "eval"], default="eval",
+                        help="Data split: 'icl' for training examples, 'eval' for evaluation")
+
+    download_parser = subparsers.add_parser('download')
+    download_parser.add_argument("--workflow", required=True)
+    download_parser.add_argument("--prompt_version", required=True)
+    download_parser.add_argument("--split", choices=["icl", "eval"], default="eval",
+                        help="Data split: 'icl' for training examples, 'eval' for evaluation")
+
+    push_parser = subparsers.add_parser('push')
+    push_parser.add_argument("--workflow", required=True)
+    push_parser.add_argument("--prompt_version", required=True)
+    push_parser.add_argument("--split", choices=["icl", "eval"], default="eval",
                         help="Data split: 'icl' for training examples, 'eval' for evaluation")
     args = parser.parse_args()
 
     dataset_name = f"{args.workflow}_{args.prompt_version}"
-    makers = {"summary_v1": SummaryV1Dataset, "brief_v1": BriefV1Dataset}
+    makers = {"summary_v1": SummaryV1Dataset,
+              "brief_v1": BriefV1Dataset,
+              "brief_v2": BriefV2Dataset}
     if args.action == "add":
         if dataset_name not in makers:
-            exit(1)
+            exit("Dataset maker does not exist")
         maker = makers[dataset_name]()
         dataset = maker.create_dataset(dataset_name)
-        maker.create_records(dataset, args.schema_version, args.prompt_version, 20)
+        maker.create_records(dataset, args.schema_version, args.prompt_version, args.n)
     elif args.action == "download":
         maker = DatasetBase()
         maker.get_data(dataset_name, split=args.split)
+    elif args.action == "push":
+        if dataset_name not in makers:
+            exit(1)
+        maker = makers[dataset_name]()
+        maker.push_data(dataset_name, split=args.split)

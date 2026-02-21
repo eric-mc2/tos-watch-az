@@ -1,5 +1,6 @@
 import argparse
 import logging
+import random
 import time
 from pathlib import Path
 
@@ -21,23 +22,25 @@ DATA_DIR = PROJECT_ROOT / "data"
 EVALS_DIR = DATA_DIR / "metrics"
 
 
-def main(label_name: str, stage: str):
+def trigger_random(n: int):
+    load_env_vars()
+    container = ServiceContainer.create_real()
+
+    for _ in range(n):
+        company = random.choice(list(STATIC_URLS.keys()))
+        url = random.choice(STATIC_URLS[company])
+        policy = extract_policy(url)
+        timestamp = '0'*len(time.strftime("%Y%m%d%H%M%S"))
+        trigger_url(url, container, company, policy, timestamp)
+
+
+def trigger_labels(label_name: str, stage: str):
     """
-    Prepare blob storage for running experiments on labeled data.
-    
-    This script creates empty blobs for all labeled examples so they can be
-    processed through the pipeline.
-    
-    Args:
-        storage: Blob storage service
-        label_name: Label dataset name (e.g., 'summary_v1', 'brief_v1')
-        stage: Pipeline stage being evaluated ('summary' or 'brief')
+    Trigger blobs for all labeled examples so they can be processed through the pipeline.
     """
     load_env_vars()
     container = ServiceContainer.create_real()
     storage = container.storage
-    snap = container.snapshot_transform
-    wayback = container.wayback_transform
 
     # Select appropriate data loader
     loaders = {
@@ -56,38 +59,59 @@ def main(label_name: str, stage: str):
             # Force recomputation from diff stage
             storage.touch_blobs(Stage.DIFF_RAW.value, parts.company, parts.policy, parts.timestamp)
         else:
-            # Find original url and recompute from meta stage. (can't re-compute exact snap timestamp because dont have time machine)
             urls = [url for url in STATIC_URLS[parts.company] if extract_policy(url) == parts.policy]
             assert len(urls) == 1, "Expected one url matching this policy."
-            try:
-                wayback.scrape_wayback_metadata(urls[0], parts.company)
-            except Exception as e:
-                continue
-            # This might not trigger same sample as before, but if it came from wayback we can still find it.
-            try:
-                metadata = wayback.parse_wayback_metadata(parts.company, parts.policy)
-            except Exception as e:
-                continue
-            rows = [row for row in metadata if row['timestamp'] == parts.timestamp]
-            for row in rows:
-                original_url = row['original']
-                url_key = f"{parts.timestamp}/{original_url}"
-                try:
-                    snap.get_wayback_snapshot(parts.company, parts.policy, parts.timestamp, url_key)
-                except Exception as e:
-                    continue
+            trigger_url(urls[0], container, parts.company, parts.policy, parts.timestamp)
+
+
+def trigger_url(url, container, company, policy, timestamp=None):
+    snap = container.snapshot_transform
+    wayback = container.wayback_transform
+
+    # Find original url and recompute from meta stage. (can't re-compute exact snap timestamp because dont have time machine)
+    try:
+        wayback.scrape_wayback_metadata(url, company)
+    except Exception as e:
+        return
+
+    # This might not trigger same sample as before, but if it came from wayback we can still find it.
+    try:
+        metadata = wayback.parse_wayback_metadata(company, policy)
+    except Exception as e:
+        return
+
+    rows = [row for row in metadata if row['timestamp'] == timestamp]
+    for row in rows:
+        original_url = row['original']
+        url_key = f"{timestamp}/{original_url}"
+        try:
+            snap.get_wayback_snapshot(company, policy, timestamp, url_key)
+        except Exception as e:
+            continue
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Prepare storage for running experiments on labeled data"
     )
-    parser.add_argument("--label_name", required=True,
+    sub_parsers = parser.add_subparsers(dest="source")
+
+    rand_parser = sub_parsers.add_parser("from_random")
+    rand_parser.add_argument("--n", required=True, type=int)
+
+    label_parser = sub_parsers.add_parser("from_labels")
+
+    label_parser.add_argument("--label_name", required=True,
                         help="Label dataset name (e.g., 'summary_v1', 'brief_v1')")
-    parser.add_argument("--stage",
+
+    label_parser.add_argument("--stage", required=True,
                         choices=[Stage.get_transform_name(Stage.SUMMARY_CLEAN.value),
                                  Stage.get_transform_name(Stage.BRIEF_CLEAN.value)],
                         default=Stage.get_transform_name(Stage.SUMMARY_CLEAN.value),
                         help="Pipeline stage being evaluated")
     args = parser.parse_args()
 
-    main(label_name=args.label_name, stage=args.stage)
+    if args.source == "from_random":
+        trigger_random(args.n)
+    else:
+        trigger_labels(label_name=args.label_name, stage=args.stage)
