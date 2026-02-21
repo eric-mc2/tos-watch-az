@@ -1,8 +1,24 @@
+from enum import Enum, auto
 from typing import List, Protocol, Any, Callable, Iterator, TypeVar, Generic, Optional
 
 T = TypeVar('T')
 
+class AddResult(Enum):
+        NOT_ADDED = auto()
+        SINGLE_ADDED = auto()
+        MULTI_ADDED = auto()
+        FORCE_ADDED = auto()
 
+        def __or__(self, value):
+            if self == AddResult.SINGLE_ADDED and value == AddResult.SINGLE_ADDED:
+                return AddResult.MULTI_ADDED
+            else:
+                return max(self, value)
+        def __ior__(self, other):
+            return self or other
+        def __ror__(self, value):
+            return self or value
+        
 class Buffer(Generic[T]):
     """A generic buffer class for accumulating items."""
 
@@ -53,17 +69,18 @@ class Buffer(Generic[T]):
             new_size = self._size + self.combine_cost + self.length(item)
         return new_size <= self.capacity
 
-    def add(self, item: T, force: bool = False) -> bool:
+    def add(self, item: T, force: bool = False) -> AddResult:
         if not force and not self.can_add(item):
             self.close()
-            return False
+            return AddResult.NOT_ADDED
+        forced = not self.can_add(item)
         if self.is_empty or self._items is None:
             self._items = item
             self._size += self.length(item)
         else:
             self._items = self.combine(self._items, item)
             self._size += self.length(item) + self.combine_cost
-        return True
+        return AddResult.FORCE_ADDED if forced else AddResult.SINGLE_ADDED
 
 class GenericWindower(Generic[T]):
     """Utility to segment a sequence of items into overlapping chunks."""
@@ -92,29 +109,29 @@ class GenericWindower(Generic[T]):
     def _make_buffer(self) -> Buffer[T]:
         return Buffer(self.capacity, self.combine, self.length, self.empty, self.combine_cost)
 
-    def add(self, item: T, force: bool = False) -> int:
-        added = 0
+
+    def add(self, item: T, force: bool = False) -> AddResult:
+        added = AddResult.NOT_ADDED
         for slot in self.slots:
-            added += slot.add(item, force)
-        if added == 0:
+            added |= slot.add(item, force)
+        if added == AddResult.NOT_ADDED:
             slot = self._make_buffer()
             self.slots.append(slot)
             if slot.can_add(item):
                 # Add and leave room for other stuff.
                 slot.add(item, force)
-                added = 1
+                added = AddResult.SINGLE_ADDED
             else:
                 # We don't want to drop data, so put it in its own buffer
                 # and allow downstream processing to break it up.
                 slot.add(item, True)
                 slot.close()
-                # XXX: The return value is weird encoding of success and failure states.
-                added = 0
-        elif added == 1 and 1 - self.slots[-1].pressure < self.overlap:
+                added = AddResult.FORCE_ADDED
+        elif added == AddResult.SINGLE_ADDED and 1 - self.slots[-1].pressure < self.overlap:
             slot = self._make_buffer()
             self.slots.append(slot)
-            return added + slot.add(item, force)
-        assert added <= 2, "Added too many slots"
+            return added or slot.add(item, force)
+        assert added != AddResult.MULTI_ADDED, "Added too many slots"
         return added
 
     def append(self, buf: Buffer[T]):
@@ -154,13 +171,17 @@ def chunk_string(text: str, token_limit: int, text_len: int, token_len: int, ove
     char_limit = int(token_limit * text_len / token_len)
     outer_windower = string_windower(capacity=char_limit, delimiter="\n", overlap=overlap)
     for line in text.split("\n"):
-        if not outer_windower.add(line):
+        added = outer_windower.add(line)
+        if added == AddResult.FORCE_ADDED:
+            inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap)
+            # TODO: Apply inner_windower to force added part
+        elif added == AddResult.NOT_ADDED:
             inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap)
             for word in line.split(" "):
                 inner_windower.add(word, force=True)
-            for chunk in inner_windower.slots:
-                chunk.close()
-                outer_windower.append(chunk)
+            for slot in inner_windower.slots:
+                slot.close()
+                outer_windower.append(slot)
     return outer_windower.contents
 
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import pytest
-from src.transforms.chunker import Buffer, string_windower, chunk_string
+from src.transforms.chunker import AddResult, Buffer, string_windower, chunk_string
 
 def word_buffer(capacity, delim):
     return Buffer(
@@ -84,7 +84,7 @@ class TestBuffer:
         """Test adding to empty buffer doesn't use delimiter."""
         buf = word_buffer(100, " ")
         result = buf.add("hello")
-        assert result is True
+        assert result is AddResult.SINGLE_ADDED
         assert buf.content == "hello"
         assert buf.size == 5
 
@@ -93,7 +93,7 @@ class TestBuffer:
         buf = word_buffer(100, " ")
         buf.add("hello")
         result = buf.add("world")
-        assert result is True
+        assert result is AddResult.SINGLE_ADDED
         assert buf.content == "hello world"
         assert buf.size == 11
 
@@ -102,7 +102,7 @@ class TestBuffer:
         buf = word_buffer(10, " ")
         buf.add("hello")
         result = buf.add("world")
-        assert result is False
+        assert result is AddResult.NOT_ADDED
         assert buf.is_open is False
         assert buf.content == "hello"  # Original text unchanged
 
@@ -111,7 +111,7 @@ class TestBuffer:
         buf = word_buffer(10, " ")
         buf.add("hello")
         result = buf.add("world", force=True)
-        assert result is True
+        assert result is AddResult.FORCE_ADDED
         assert buf.content == "hello world"
 
     def test_delimiter_size_calculation(self):
@@ -169,7 +169,7 @@ class TestWindower:
         """Test adding first text creates a slot."""
         windower = string_windower(100, " ", 0.1)
         added = windower.add("hello")
-        assert added == 1
+        assert added == AddResult.SINGLE_ADDED
         assert len(windower.slots) == 1
         assert windower.slots[0].content == "hello"
 
@@ -178,7 +178,7 @@ class TestWindower:
         windower = string_windower(100, " ", 0.1)
         windower.add("hello")
         added = windower.add("world")
-        assert added == 1
+        assert added == AddResult.SINGLE_ADDED
         assert len(windower.slots) == 1
         assert windower.slots[0].content == "hello world"
 
@@ -190,7 +190,7 @@ class TestWindower:
         added = windower.add("test")  # +5 chars, would be 16, pressure = 0.8
         # After adding to first slot, pressure = 0.8, so 1 - 0.8 = 0.2 = overlap
         # This should trigger creating a new slot
-        assert added >= 1
+        assert added == AddResult.MULTI_ADDED or added == AddResult.SINGLE_ADDED
         if 1 - windower.slots[0].pressure <= windower.overlap:
             assert len(windower.slots) == 2
 
@@ -198,7 +198,7 @@ class TestWindower:
         """Test force adding creates slot when normal add fails."""
         windower = string_windower(5, " ", 0.1)
         added = windower.add("verylongword", force=True)
-        assert added == 0
+        assert added == AddResult.NOT_ADDED
         assert len(windower.slots) == 1
 
     def test_append(self):

@@ -19,6 +19,8 @@ class SnapshotScraper:
 
     @staticmethod
     def decode_html(resp: Response):
+        # TODO: A couple docs have really bad encoding like meta/cybersecurity/20260220
+        
         # Handle encoding properly
         # First, try to detect the actual encoding from the response
         import re

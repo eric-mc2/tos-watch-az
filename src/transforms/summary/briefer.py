@@ -99,6 +99,8 @@ class BriefBuilder:
     storage: BlobService
     llm: LLMService
 
+    # TODO: This still regularly exceeds the limit
+
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
         examples : List[Message] = [] # self.read_examples()
         diffs = self.storage.load_text_blob(blob_name)

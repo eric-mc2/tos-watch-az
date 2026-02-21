@@ -111,6 +111,44 @@ class TestDiffChunker:
             assert sum((len(c.text) for c in cc)) < TOKEN_LIMIT
             assert sum((len(c.format()) for c in cc)) < TOKEN_LIMIT
 
+    def test_long_lines(self, llm_service):
+        # Arrange
+        before_txt = "\n".join(["abc def "*10000]*10)
+        after_txt = "\n".join(["qrs tuv "*10000]*10)
+        data  = DiffDoc(diffs=[DiffSection(index=0,
+                                           before=before_txt,
+                                           after=after_txt)])
+
+        chunker = DiffChunker(llm_service, TOKEN_LIMIT, StandardDiffFormatter())
+
+        # Act
+        chunks = chunker.chunk_diff("system", [], data)
+
+        # Assert
+        assert len(chunks) > 1
+        for cc in chunks:
+            assert sum((len(c.text) for c in cc)) < TOKEN_LIMIT
+            assert sum((len(c.format()) for c in cc)) < TOKEN_LIMIT
+    
+    def test_single_long_line(self, llm_service):
+        # Arrange
+        before_txt = "abc def "*100000
+        after_txt = "qrs tuv "*100000
+        data  = DiffDoc(diffs=[DiffSection(index=0,
+                                           before=before_txt,
+                                           after=after_txt)])
+
+        chunker = DiffChunker(llm_service, TOKEN_LIMIT, StandardDiffFormatter())
+
+        # Act
+        chunks = chunker.chunk_diff("system", [], data)
+
+        # Assert
+        assert len(chunks) > 1
+        for cc in chunks:
+            assert sum((len(c.text) for c in cc)) < TOKEN_LIMIT
+            assert sum((len(c.format()) for c in cc)) < TOKEN_LIMIT
+
 class TestDiffChunkerIndexing:
     """Test that TextChunk indexes are correct according to requirements:
     - parent_index points to the original diff's index

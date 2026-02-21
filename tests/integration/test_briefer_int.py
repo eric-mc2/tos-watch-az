@@ -87,8 +87,7 @@ class TestBrieferIntegration:
 
     @staticmethod
     def real_exceed_limit():
-        return ["05-diffs-clean/meta/printable/20240813081129.json",
-                "05-diffs-clean/x-ai/privacy-policy/20240801214117.json"]
+        return ["05-diffs-clean/meta/cybersecurity/20260220223215.json"]
         
     @pytest.mark.parametrize("blob_name", real_exceed_limit())
     def test_real_exceeds_limit(self, local_storage, llm_transform_local, blob_name):
@@ -97,18 +96,15 @@ class TestBrieferIntegration:
             executor=llm_transform_local
         )
 
-        if not local_storage.check_blob(blob_name):
-            return
+        assert local_storage.check_blob(blob_name)
         
         processor = create_llm_activity_processor(local_storage,
                                               briefer.brief,
                                               Stage.BRIEF_RAW.value,
                                               "briefer")
-        
         # Act
         processor(dict(task_id=blob_name))
         
-
 
     def test_substantive_privacy_change(self, fake_storage, llm_transform):
         """Test briefing obviously substantive privacy policy change."""
