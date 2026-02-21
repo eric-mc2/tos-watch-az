@@ -1,6 +1,9 @@
 appsettings.json
 logs/*
 
+# Non-artifact data
+data/metrics/
+
 # Local python packages
 .python_packages/
 

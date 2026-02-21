@@ -101,12 +101,12 @@ def upload_test_data(fake_storage, sample_claims, sample_claim, sample_diffs, bl
     fake_storage.upload_text_blob(
         sample_claims.model_dump_json(),
         blob_names.multi_claims_blob,
-        metadata={"schema_version": CLAIM_VERSION}
+        metadata={"claim_schema_version": CLAIM_VERSION}
     )
     fake_storage.upload_text_blob(
         sample_claim.model_dump_json(),
         blob_names.single_claim_blob,
-        metadata={"schema_version": CLAIM_VERSION}
+        metadata={"claim_schema_version": CLAIM_VERSION}
     )
     fake_storage.upload_text_blob(
         sample_diffs.model_dump_json(),
@@ -151,7 +151,7 @@ class TestClaimCheckerBuilder:
         fake_storage.upload_text_blob(
             empty_claims.model_dump_json(), 
             claims_blob, 
-            metadata={"schema_version": CLAIM_VERSION}
+            metadata={"claim_schema_version": CLAIM_VERSION}
         )
 
         # Act
@@ -172,8 +172,8 @@ class TestClaimCheckerBuilder:
         formatted = ClaimCheckerBuilder._format_diffs(diff_doc)
         
         # Assert
-        assert "Before: Old text" in formatted
-        assert "After: New text" in formatted
+        assert "Before:\nOld text" in formatted
+        assert "After:\nNew text" in formatted
 
 
 class TestClaimChecker:

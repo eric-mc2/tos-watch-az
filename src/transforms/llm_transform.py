@@ -17,6 +17,7 @@ from src.services.blob import BlobService
 from src.services.llm import LLMService
 from src.stages import Stage
 from src.utils.log_utils import setup_logger
+from src.utils.metadata_utils import merge_lineage, prefix_metadata, extract_stage_metadata
 
 logger = setup_logger(__name__, logging.DEBUG)
 
@@ -75,6 +76,7 @@ class LLMTransform:
             run_id=ulid.ulid(),
             module_name=module_name,
             schema_version=schema_version,
+            model_version=self.llm.adapter.get_model_version(),
             prompt_version=prompt_version,
             is_chunked=is_chunked,
             error_flag=error_flag,
@@ -173,6 +175,7 @@ def create_llm_activity_processor(storage: BlobService,
     def processor(input_data: dict) -> None:
         blob_name = input_data['task_id']
         in_path = storage.parse_blob_path(blob_name)
+        upstream_metadata = storage.adapter.load_metadata(blob_name)
         
         # Judge needs summary blob from earlier stage
         if paired_input_stage == Stage.DIFF_CLEAN.value:
@@ -184,9 +187,12 @@ def create_llm_activity_processor(storage: BlobService,
         else:
             output, metadata = transform_fn(blob_name)
 
+        run_id = metadata['run_id']
+        metadata = merge_lineage(upstream_metadata, metadata, output_stage)
+
         if output:
             # Save versioned output
-            out_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{metadata['run_id']}.txt"
+            out_path = f"{output_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/{run_id}.txt"
             storage.upload_text_blob(output, out_path, metadata=metadata)
             
             # Save latest output
@@ -224,7 +230,7 @@ def create_llm_parser_saver[T: SchemaBase](storage: BlobService,
             return "", {}
         logger.info(
             (f"Successfully validated {module_name} blob: {input_blob.name} "
-             f"(schema={metadata['schema_version']}, chunked={metadata['is_chunked']})"))
+             f"(chunked={metadata['is_chunked']})"))
         saver = create_llm_saver(storage, output_stage)
         saver(input_blob.name, cleaned_txt, metadata)
         return cleaned_txt, metadata
@@ -256,11 +262,16 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
     def parser(txt: str, metadata: dict) -> tuple[str, dict]:
         # Get schema from registry
         module_key = metadata.get('module_name', module_name)
-        schema_version = metadata['schema_version']
+        # TODO: remove once validated
+        # Assuming that at this point we haven't passed any lineage yet.
+        # So we don't need to extract stage.
+        # stage_metadata = extract_stage_metadata(metadata, tag=module_name)
+        stage_metadata = metadata
+        schema_version = stage_metadata['schema_version']
         schema = load_schema(module_name, schema_version, module_key)
 
         # Check for errors
-        error_flag = metadata.get('error_flag')
+        error_flag = stage_metadata.get('error_flag')
 
         # New format: detect chunking from metadata or structure
         is_chunked = metadata.get('is_chunked', False)
@@ -281,9 +292,9 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
             wrapper = ChunkedResponse.model_validate_json(txt)
             if module_key == FACT_MODULE:
                 # Unfortunate custom logic: chunked facts arrive as facts and are turned into proofs.
-                metadata['module_name'] = PROOF_MODULE
+                stage_metadata['module_name'] = PROOF_MODULE
             elif module_key == BRIEF_MODULE:
-                metadata['module_name'] = BRIEF_MODULE
+                stage_metadata['module_name'] = BRIEF_MODULE
             # Auto-discovers schema.merge if exists
             data = wrapper.merge(schema, merge_fn=merge_fn)  # type: ignore
         else:
@@ -294,6 +305,9 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
         cleaned_txt = json.dumps(cleaned_data, indent=2)
 
         # Update metadata with chunking info -- we always merge!
+        # TODO: assuming we haven't passed in lineage data yet so we don't need to do this yet.
+        # metadata = prefix_metadata(stage_metadata, tag=module_name)
+        metadata = stage_metadata
         metadata['is_chunked'] = False
 
         return cleaned_txt, metadata
@@ -304,8 +318,10 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
 def create_llm_saver(storage: BlobService, output_stage: str) -> Callable:
     def saver(blob_name: str, txt: str, metadata: dict) -> None:
         in_path = storage.parse_blob_path(blob_name)
+        stage_metadata = extract_stage_metadata(metadata, output_stage)
+        run_id = stage_metadata['run_id']
         # Save versioned output
-        out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{metadata['run_id']}.json")
+        out_path = os.path.join(output_stage, in_path.company, in_path.policy, in_path.timestamp, f"{run_id}.json")
         storage.upload_json_blob(txt, out_path, metadata=metadata)
 
         # Save latest output

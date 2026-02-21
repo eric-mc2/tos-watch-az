@@ -13,6 +13,7 @@ logger = setup_logger(__name__, logging.DEBUG)
 _client: Optional[anthropic.Anthropic] = None
 
 class ClaudeAdapter(LLMProtocol):
+    model_version = "claude-haiku-4-5-20251001"
 
     def __init__(self, max_output: int = 1000):
         self.max_output = max_output
@@ -61,7 +62,7 @@ class ClaudeAdapter(LLMProtocol):
 
     def _config_messages(self, system: str, messages: list[Message]) -> dict:
         return dict(
-            model="claude-3-5-haiku-20241022",
+            model=self.model_version,
             system=[{
                 "type": "text",
                 "text": system,
@@ -76,4 +77,7 @@ class ClaudeAdapter(LLMProtocol):
     
     def get_max_output(self) -> int:
         return self.max_output
-    
+
+
+    def get_model_version(self) -> str:
+        return self.model_version

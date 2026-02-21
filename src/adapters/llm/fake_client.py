@@ -29,3 +29,6 @@ class FakeLLMAdapter(LLMProtocol):
     
     def get_max_output(self):
         return 9999
+
+    def get_model_version(self) -> str:
+        return "parrot"

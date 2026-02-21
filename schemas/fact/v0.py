@@ -1,7 +1,10 @@
+from typing import cast
+
 from schemas.base import SchemaBase
 from schemas.registry import register
+from src.stages import Stage
 
-CLAIMS_MODULE = "claim"
+CLAIMS_MODULE = cast(str, Stage.get_transform_name(Stage.CLAIM_CLEAN.value))
 CLAIMS_VERSION = "v0"
 
 
@@ -29,7 +32,7 @@ class FactBase(SchemaBase):
         return FACT_VERSION
 
 
-PROOF_MODULE = "proof"
+PROOF_MODULE = cast(str, Stage.get_transform_name(Stage.FACTCHECK_CLEAN.value))
 PROOF_VERSION = "v0"
 
 

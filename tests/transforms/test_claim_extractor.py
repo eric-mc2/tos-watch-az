@@ -1,5 +1,4 @@
 import pytest
-import json
 
 from schemas.llmerror.v1 import LLMError
 from schemas.summary.v3 import Summary as SummaryV3, VERSION as VERSIONV3
@@ -49,7 +48,8 @@ class TestClaimExtractorBuilder:
             ))
 
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        metadata = dict(summary_schema_version=VERSION)
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata=metadata)
         
         # Act
         prompts = list(builder.build_prompt("test.json"))
@@ -71,7 +71,8 @@ class TestClaimExtractorBuilder:
             ))
 
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        metadata = dict(summary_schema_version=VERSION)
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata=metadata)
         
         # Act
         prompts = list(builder.build_prompt("test.json"))
@@ -92,10 +93,9 @@ class TestClaimExtractorBuilder:
                         reason="neg"
                     ))
             ])
+        metadata = dict(summary_schema_version=VERSIONV3)
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized,
-                                        "test.json",
-                                      metadata={"schema_version": VERSIONV3})
+        fake_storage.upload_text_blob(data_serialized,"test.json", metadata=metadata)
 
         # Act
         prompts = list(builder.build_prompt("test.json"))
@@ -118,7 +118,7 @@ class TestClaimExtractor:
             ))
 
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSION})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"summary_schema_version": VERSION})
         
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
@@ -148,7 +148,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"summary_schema_version": VERSIONV3})
         
         # Configure fake LLM to return multiple claims
         response = Claims(claims=["claim 1", "claim 2"])
@@ -173,7 +173,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"summary_schema_version": VERSIONV3})
         
         # Configure fake LLM to return empty claims list
         response = Claims(claims=[])
@@ -199,7 +199,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"summary_schema_version": VERSIONV3})
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])
@@ -228,7 +228,7 @@ class TestClaimExtractor:
             ))
         ])
         data_serialized = data.model_dump_json()
-        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"schema_version": VERSIONV3})
+        fake_storage.upload_text_blob(data_serialized, "test.json", metadata={"summary_schema_version": VERSIONV3})
 
         # Configure fake LLM response
         response = Claims(claims=["a claim"])

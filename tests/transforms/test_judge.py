@@ -68,12 +68,12 @@ def upload_test_data(fake_storage, sample_summary, sample_proof, blob_names):
     fake_storage.upload_text_blob(
         sample_summary.model_dump_json(),
         blob_names.summary_blob,
-        metadata={"schema_version": SUMMARY_VERSION}
+        metadata={"summary_schema_version": SUMMARY_VERSION}
     )
     fake_storage.upload_text_blob(
         sample_proof.model_dump_json(),
         blob_names.fact_blob,
-        metadata={"schema_version": FACT_VERSION}
+        metadata={"proof_schema_version": FACT_VERSION}
     )
 
 
@@ -133,7 +133,7 @@ class TestJudgeBuilder:
         data_serialized = data.model_dump_json()
         fake_storage.upload_text_blob(data_serialized,
                                       "old_summary.json",
-                                      metadata={"schema_version": SUMMARY_VERSION_V3})
+                                      metadata={"summary_schema_version": SUMMARY_VERSION_V3})
 
         # Act
         prompts = list(builder.build_prompt(blob_names.fact_blob, "old_summary.json"))

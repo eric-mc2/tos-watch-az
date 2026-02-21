@@ -2,10 +2,11 @@ import difflib
 import json
 import os
 import time
-import argilla as rg
+import argilla as rg  # type: ignore
 
 from scripts.labeling.dataset import DatasetBase
 from src.stages import Stage
+from src.utils.metadata_utils import extract_stage_metadata
 
 
 class SummaryV1Dataset(DatasetBase):
@@ -72,9 +73,12 @@ class SummaryV1Dataset(DatasetBase):
                 rg.LabelQuestion(name="practically_substantive", labels=["True", "False", "unsure"]),
             ],
             metadata=[
-                rg.TermsMetadataProperty(name="model_version"),
-                rg.TermsMetadataProperty(name="prompt_version"),
-                rg.TermsMetadataProperty(name="schema_version"),
+                rg.TermsMetadataProperty(name="brief_model_version"),
+                rg.TermsMetadataProperty(name="brief_prompt_version"),
+                rg.TermsMetadataProperty(name="brief_schema_version"),
+                rg.TermsMetadataProperty(name="summary_model_version"),
+                rg.TermsMetadataProperty(name="summary_prompt_version"),
+                rg.TermsMetadataProperty(name="summary_schema_version"),
                 rg.TermsMetadataProperty(name="blob_path"),
                 rg.IntegerMetadataProperty(name="timestamp"),
             ]
@@ -98,7 +102,8 @@ class SummaryV1Dataset(DatasetBase):
                         # Only add records for specified versions
                         summ_name = os.path.join(Stage.SUMMARY_CLEAN.value, company, policy, timestamp, file)
                         metadata = self.container.storage.adapter.load_metadata(summ_name)
-                        if metadata['schema_version'] != schema_version or metadata['prompt_version'] != prompt_version:
+                        stage_metadata = extract_stage_metadata(metadata, Stage.get_transform_name(Stage.SUMMARY_CLEAN.value))
+                        if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                             continue
 
                         # Defensive check
@@ -118,6 +123,7 @@ class SummaryV1Dataset(DatasetBase):
                         if not diff:
                             continue
 
+                        model_version = stage_metadata.get("model_version")
 
                         summary_txt = self.container.storage.load_text_blob(summ_name)
                         summary = json.loads(summary_txt)
@@ -131,13 +137,7 @@ class SummaryV1Dataset(DatasetBase):
                                 rg.Suggestion("legally_substantive", value=str(summary['legally_substantive']['rating'])),
                                 rg.Suggestion("practically_substantive", value=str(summary['practically_substantive']['rating'])),
                             ],
-                            metadata={
-                                "model_version": "claude-3-5-haiku-20241022",
-                                "prompt_version": prompt_version,
-                                "schema_version": schema_version,
-                                "blob_path": diff_name,
-                                "timestamp": int(time.time()),
-                            }
+                            metadata=metadata | dict(blob_path=diff_name, timestamp=int(time.time()))
                         ))
                         if len(records) == max_examples:
                             dataset.records.log(records)

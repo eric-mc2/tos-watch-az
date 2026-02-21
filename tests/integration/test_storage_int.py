@@ -21,16 +21,17 @@ def storage():
     yield adapter
     
     # Cleanup: remove all blobs and delete the container
-    try:
-        for blob_name in adapter.list_blobs():
-            adapter.remove_blob(blob_name)
-        
-        # Delete the container
-        client = adapter.get_blob_service_client()
-        container_client = client.get_container_client(adapter.container)
-        container_client.delete_container()
-    except:
-        pass
+    # TODO: BUG: TOXIC: THIS DELETES THE ENTIRE DB AND IS NOT AN ISOLATED TEST DB!!
+    # try:
+    #     for blob_name in adapter.list_blobs():
+    #         adapter.remove_blob(blob_name)
+    #
+    #     # Delete the container
+    #     client = adapter.get_blob_service_client()
+    #     container_client = client.get_container_client(adapter.container)
+    #     container_client.delete_container()
+    # except:
+    #     pass
 
 @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 class TestStorageIntegration:
@@ -83,6 +84,17 @@ class TestStorageIntegration:
         assert "blob1.txt" in blobs
         assert "blob2.txt" in blobs
         assert "blob3.txt" in blobs
+
+    def test_list_blobs_by_tag(self, storage):
+        """Test listing all blobs in container"""
+        storage.upload_blob(b"data1", "blob1.txt", "text/plain", metadata={"key":"1"})
+        storage.upload_blob(b"data2", "blob2.txt", "text/plain", metadata={"key":"2"})
+        storage.upload_blob(b"data3", "blob3.txt", "text/plain", metadata={"key":"3"})
+        
+        blobs = storage.list_blobs_by_tag([("key", "2")])
+        
+        assert len(blobs) == 1
+        assert "blob2.txt" == blobs[0]
 
 
     def test_remove_blob(self, storage):

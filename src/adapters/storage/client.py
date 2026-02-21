@@ -1,6 +1,6 @@
 import os
 import atexit
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Iterable
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings
 from src.adapters.storage.protocol import BlobStorageProtocol, DEFAULT_CONNECTION
@@ -86,7 +86,27 @@ class AzureStorageAdapter(BlobStorageProtocol):
         for blob in pages:
             blobs.append(blob.removeprefix(f"{self.container}/"))
         return blobs
+    
 
+    def list_blobs_by_tag(self, query: Iterable[tuple[str,str]]) -> list[str]:
+        client = self.get_blob_service_client()
+        container_client = client.get_container_client(self.container)
+        if not container_client.exists():
+            raise RuntimeError("Container does not exist: " + self.container)
+
+        def filter_expr(key: str, val:str) -> str:
+            return f"\"{key}\"='{val}'"
+
+        query_str = " and ".join((filter_expr(key,val) for key,val in query))
+        pages = container_client.find_blobs_by_tags(query_str)
+        raise NotImplementedError()
+        blobs = []
+        for blob in pages:
+            print(blob)  # what is blob?
+            pass
+            # blobs.append(blob.removeprefix(f"{self.container}/"))
+        return blobs
+    
 
     def load_metadata(self, blob_name: str) -> dict:
         def loader(client: BlobClient):

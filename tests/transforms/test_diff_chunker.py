@@ -26,16 +26,16 @@ class TestDiffChunkerFormatting:
         chunk = pages[0][0]
         
         # chunk.text should contain the DiffFormatter output
-        assert "Before: before" in chunk.text
-        assert "After: after" in chunk.text
+        assert "Before:\nbefore" in chunk.text
+        assert "After:\nafter" in chunk.text
         assert '{"index"' not in chunk.text  # Should NOT be JSON
         
         # chunk.format() should include Section labels plus formatted text
         formatted = chunk.format()
         assert "Section: 0" in formatted
         assert "Sub-Section: 0" in formatted
-        assert "Before: before" in formatted
-        assert "After: after" in formatted
+        assert "Before:\nbefore" in formatted
+        assert "After:\nafter" in formatted
 
     def test_large_doc_uses_formatter(self, llm_service):
         """Large documents should also be formatted using the configured formatter."""

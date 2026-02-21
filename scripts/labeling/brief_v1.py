@@ -1,14 +1,14 @@
-import difflib
 import json
 import os
 import time
-import argilla as rg
+import argilla as rg  # type: ignore
 import logging
 from random import shuffle
 
 from scripts.labeling.dataset import DatasetBase
 from src.stages import Stage
 from src.utils.log_utils import setup_logger
+from src.utils.metadata_utils import extract_stage_metadata
 
 logger = setup_logger(__name__, logging.INFO)
 
@@ -78,9 +78,12 @@ class BriefV1Dataset(DatasetBase):
                 rg.LabelQuestion(name="notes_good", labels=["True", "False", "unsure"]),
             ],
             metadata=[
-                rg.TermsMetadataProperty(name="model_version"),
-                rg.TermsMetadataProperty(name="prompt_version"),
-                rg.TermsMetadataProperty(name="schema_version"),
+                rg.TermsMetadataProperty(name="brief_model_version"),
+                rg.TermsMetadataProperty(name="brief_prompt_version"),
+                rg.TermsMetadataProperty(name="brief_schema_version"),
+                rg.TermsMetadataProperty(name="summary_model_version"),
+                rg.TermsMetadataProperty(name="summary_prompt_version"),
+                rg.TermsMetadataProperty(name="summary_schema_version"),
                 rg.TermsMetadataProperty(name="blob_path"),
                 rg.IntegerMetadataProperty(name="timestamp"),
             ]
@@ -106,7 +109,8 @@ class BriefV1Dataset(DatasetBase):
             # Only add records for specified versions
             memo_name = blob_name
             metadata = self.container.storage.adapter.load_metadata(memo_name)
-            if metadata['schema_version'] != schema_version or metadata['prompt_version'] != prompt_version:
+            stage_metadata = extract_stage_metadata(metadata, Stage.get_transform_name(Stage.BRIEF_CLEAN.value))
+            if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                 continue
 
             # Defensive check
@@ -132,6 +136,8 @@ class BriefV1Dataset(DatasetBase):
             if not diff:
                 continue
 
+            model_version = stage_metadata.get("model_version")
+
             summary_txt = self.container.storage.load_text_blob(summ_name)
             summary = json.loads(summary_txt)
 
@@ -146,13 +152,10 @@ class BriefV1Dataset(DatasetBase):
                 suggestions=[  # Pre-fill from model
                     rg.Suggestion("practically_substantive", value=str(summary['practically_substantive']['rating'])),
                 ],
-                metadata={
-                    "model_version": "claude-3-5-haiku-20241022",
-                    "prompt_version": prompt_version,
-                    "schema_version": schema_version,
-                    "blob_path": diff_name,
-                    "timestamp": int(time.time()),
-                }
+                metadata=metadata | dict(
+                    blob_path = diff_name,
+                    timestamp = int(time.time())
+                )
             ))
             if len(records) == max_examples:
                 dataset.records.log(records)
@@ -177,7 +180,7 @@ class BriefV1Dataset(DatasetBase):
         diff_obj = self.container.storage.load_json_blob(diff_name)
         # xxx: argilla does NOT accept list values.
         # so must be a string-keyed dict
-        diffs = {}
+        diffs : dict[str, dict[str, str]] = {}
         for d in diff_obj['diffs']:
             before, after = self.render_span_as_html(d['tag'], d['before'], d['after'])
             key = str(d['idx'])

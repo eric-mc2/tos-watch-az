@@ -1,8 +1,10 @@
+from typing import cast
 from schemas.base import SchemaBase
 from schemas.registry import register
+from src.stages import Stage
 
 VERSION = "v0"
-MODULE = "summary"
+MODULE = cast(str, Stage.get_transform_name(Stage.SUMMARY_CLEAN.value))
 
 @register(MODULE, VERSION)
 class SummaryBase(SchemaBase):
