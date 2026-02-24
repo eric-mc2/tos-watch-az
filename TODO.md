@@ -1,10 +1,3 @@
-# Diff chunk length
-
-- [x] Repro integration test
-- [x] Repro unit test
-- [ ] Diagnose root cause
-- [ ] Implement fix
-
 # Diff Chunk Prompt Formatting
 
 Want to prefix diff chunks with (+) and (-).

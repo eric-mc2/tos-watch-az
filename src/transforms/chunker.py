@@ -1,24 +1,22 @@
-from enum import Enum, auto
+from enum import Enum, auto, IntEnum
 from typing import List, Protocol, Any, Callable, Iterator, TypeVar, Generic, Optional
 
 T = TypeVar('T')
 
-class AddResult(Enum):
-        NOT_ADDED = auto()
-        SINGLE_ADDED = auto()
-        MULTI_ADDED = auto()
-        FORCE_ADDED = auto()
+class AddResult(IntEnum):
+    NOT_ADDED = auto()
+    SINGLE_ADDED = auto()
+    MULTI_ADDED = auto()
+    FORCE_ADDED = auto()
 
-        def __or__(self, value):
-            if self == AddResult.SINGLE_ADDED and value == AddResult.SINGLE_ADDED:
-                return AddResult.MULTI_ADDED
-            else:
-                return max(self, value)
-        def __ior__(self, other):
-            return self or other
-        def __ror__(self, value):
-            return self or value
-        
+    def __or__(self, value):
+        if not isinstance(value, AddResult):
+            raise TypeError(f"Expected {AddResult}, got {type(value)}")
+        if self == AddResult.SINGLE_ADDED and value == AddResult.SINGLE_ADDED:
+            return AddResult.MULTI_ADDED
+        else:
+            return max(self, value)
+
 class Buffer(Generic[T]):
     """A generic buffer class for accumulating items."""
 
@@ -82,6 +80,7 @@ class Buffer(Generic[T]):
             self._size += self.length(item) + self.combine_cost
         return AddResult.FORCE_ADDED if forced else AddResult.SINGLE_ADDED
 
+
 class GenericWindower(Generic[T]):
     """Utility to segment a sequence of items into overlapping chunks."""
 
@@ -99,7 +98,7 @@ class GenericWindower(Generic[T]):
         self.capacity = capacity
         self.combine = combine
         self.combine_cost = combine_cost
-        self.length = length
+        self.length_fn = length
         self.empty = empty
         if capacity <= 0:
             raise ValueError("Capacity must be positive")
@@ -107,8 +106,7 @@ class GenericWindower(Generic[T]):
             raise ValueError("Overlap must be in range (0,1).")
 
     def _make_buffer(self) -> Buffer[T]:
-        return Buffer(self.capacity, self.combine, self.length, self.empty, self.combine_cost)
-
+        return Buffer(self.capacity, self.combine, self.length_fn, self.empty, self.combine_cost)
 
     def add(self, item: T, force: bool = False) -> AddResult:
         added = AddResult.NOT_ADDED
@@ -130,8 +128,7 @@ class GenericWindower(Generic[T]):
         elif added == AddResult.SINGLE_ADDED and 1 - self.slots[-1].pressure < self.overlap:
             slot = self._make_buffer()
             self.slots.append(slot)
-            return added or slot.add(item, force)
-        assert added != AddResult.MULTI_ADDED, "Added too many slots"
+            added = slot.add(item, force)
         return added
 
     def append(self, buf: Buffer[T]):
@@ -140,6 +137,12 @@ class GenericWindower(Generic[T]):
     @property
     def contents(self) -> List[T]:
         return [x.content for x in self.slots]
+
+    def pop(self) -> T:
+        if len(self.slots) == 0:
+            return self.empty
+        buf = self.slots.pop()
+        return buf.content
 
 
 # Convenience factory for string windowing (preserves original behavior)
@@ -166,28 +169,25 @@ def list_windower(capacity: int, item_length_fn: Callable[[Any], int], overlap: 
     )
 
 
-def chunk_string(text: str, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05):
+def chunk_string(text: str, char_limit: int, overlap: float = 0.05):
     # String chunking (like before)
-    char_limit = int(token_limit * text_len / token_len)
     outer_windower = string_windower(capacity=char_limit, delimiter="\n", overlap=overlap)
     for line in text.split("\n"):
         added = outer_windower.add(line)
         if added == AddResult.FORCE_ADDED:
-            inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap)
-            # TODO: Apply inner_windower to force added part
-        elif added == AddResult.NOT_ADDED:
+            line = outer_windower.pop()
+        if added == AddResult.NOT_ADDED or added == AddResult.FORCE_ADDED:
             inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap)
             for word in line.split(" "):
-                inner_windower.add(word, force=True)
+                inner_windower.add(word)
             for slot in inner_windower.slots:
                 slot.close()
                 outer_windower.append(slot)
     return outer_windower.contents
 
 
-def chunk_list(documents, token_limit: int, text_len: int, token_len: int, overlap: float = 0.05, item_length_fn: Callable[[Any], int] = len):
+def chunk_list(documents, char_limit: int, overlap: float = 0.05, item_length_fn: Callable[[Any], int] = len):
     # List chunking (e.g., for documents with metadata)
-    char_limit = int(token_limit * text_len / token_len)
     outer_windower = list_windower(capacity=char_limit, item_length_fn=item_length_fn, overlap=overlap)
     for doc in documents:
         outer_windower.add([doc])

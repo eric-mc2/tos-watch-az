@@ -198,7 +198,7 @@ class TestWindower:
         """Test force adding creates slot when normal add fails."""
         windower = string_windower(5, " ", 0.1)
         added = windower.add("verylongword", force=True)
-        assert added == AddResult.NOT_ADDED
+        assert added == AddResult.FORCE_ADDED
         assert len(windower.slots) == 1
 
     def test_append(self):
@@ -217,7 +217,8 @@ class WordChunker:
     capacity: int
     overlap: float
     def process(self, text, token_len, text_len):
-        return chunk_string(text, self.capacity, text_len, token_len, self.overlap)
+        char_limit = int(self.capacity * text_len / token_len)
+        return chunk_string(text, char_limit, self.overlap)
 
 
 class TestWordChunker:

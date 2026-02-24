@@ -1,6 +1,7 @@
 import pytest
 import os
 
+from schemas.brief.v2 import Memo, Brief
 from schemas.summary.v4 import Summary
 from src.transforms.differ import DiffDoc, DiffSection
 from src.transforms.icl import ICLDataLoader
@@ -34,12 +35,10 @@ class TestSummarizerInt:
 
     def test_summary(self, transform, storage):
         # Arrange
-        diff = DiffDoc(diffs=[
-            DiffSection(index=0,
-                        before="Our policy is to do good.",
-                        after="Our policy is to do evil.")
-        ])
-        storage.upload_json_blob(diff.model_dump_json(), "test.json")
+        data = Brief(memos=[Memo(section_memo="""Policy changed from 'We will never collect or sell your data'
+                                                to 'We will sell your interactions with our advertising partners.""",
+                          running_memo="The company now monetizes on user behavior.")])
+        storage.upload_json_blob(data.model_dump_json(), "test.json")
 
         # Act
         summarizer = Summarizer(storage, ICLDataLoader(storage), transform)

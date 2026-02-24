@@ -99,7 +99,8 @@ class DiffChunker:
         formatted_txt = "\n".join(chunk.format() for chunk in sample_chunks)
         text_len = len(formatted_txt)
         token_len = self._estimate_tokens(system, formatted_txt)
-        
+        char_limit = int(self._effective_limit * text_len / token_len)
+
         # Use a length function that accounts for both formatter and TextChunk overhead
         def section_length(section: DiffSection) -> int:
             # Create a dummy TextChunk to get the full formatted length
@@ -110,7 +111,7 @@ class DiffChunker:
             )
             return len(chunk.format())
         
-        return chunk_list(doc.diffs, self._effective_limit, text_len, token_len, item_length_fn=section_length)
+        return chunk_list(doc.diffs, char_limit, item_length_fn=section_length)
 
     # -- Phase 2: convert each group into one or more pages -----------------
 
@@ -173,8 +174,8 @@ class DiffChunker:
 
         # Split the formatted section into fragments that fit in available space
         # (after subtracting overhead)
-        fragments = chunk_string(formatted_section_text, available_token_limit,
-                                section_text_len, section_token_len)
+        char_limit = int(available_token_limit * section_text_len / section_token_len)
+        fragments = chunk_string(formatted_section_text, char_limit)
 
         # Filter out empty fragments
         fragments = [f for f in fragments if f.strip()]
