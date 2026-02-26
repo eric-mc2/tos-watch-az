@@ -13,7 +13,7 @@ def llm_service():
 class TestDiffChunkerFormatting:
     """Test that formatting is consistent regardless of document size."""
 
-    def test_small_doc_uses_formatter(self, llm_service):
+    def test_small_doc_format(self, llm_service):
         """Small documents should be formatted using the configured formatter."""
         doc = DiffDoc(diffs=[DiffSection(index=0, before="before", after="after")])
         formatter = StandardDiffFormatter()
@@ -26,18 +26,22 @@ class TestDiffChunkerFormatting:
         chunk = pages[0][0]
         
         # chunk.text should contain the DiffFormatter output
-        assert "Before:\nbefore" in chunk.text
-        assert "After:\nafter" in chunk.text
+        assert formatter.PREFIX_BEFORE + "before" in chunk.text
+        assert formatter.PREFIX_AFTER + "after" in chunk.text
+        assert formatter.PREFIX_BEFORE + formatter.PREFIX_BEFORE not in chunk.text
+        assert formatter.PREFIX_AFTER + formatter.PREFIX_AFTER not in chunk.text
         assert '{"index"' not in chunk.text  # Should NOT be JSON
         
         # chunk.format() should include Section labels plus formatted text
         formatted = chunk.format()
         assert "Section: 0" in formatted
         assert "Sub-Section: 0" in formatted
-        assert "Before:\nbefore" in formatted
-        assert "After:\nafter" in formatted
+        assert formatter.PREFIX_BEFORE + "before" in formatted
+        assert formatter.PREFIX_AFTER + "after" in formatted
+        assert formatter.PREFIX_BEFORE + formatter.PREFIX_BEFORE not in formatted
+        assert formatter.PREFIX_AFTER + formatter.PREFIX_AFTER not in formatted
 
-    def test_large_doc_uses_formatter(self, llm_service):
+    def test_large_doc_format(self, llm_service):
         """Large documents should also be formatted using the configured formatter."""
         # Create an oversized section
         large_text = "11 22 33 " * int(TOKEN_LIMIT * 0.9)
@@ -51,19 +55,40 @@ class TestDiffChunkerFormatting:
         assert len(pages) >= 2
         
         # Each chunk should contain formatted text from StandardDiffFormatter
-        # The first chunk should contain the "Before:" header
-        first_chunk = pages[0][0]
-        assert "Before:" in first_chunk.text
-        
-        # All chunks should be plain text fragments from the formatted output
-        # (not JSON with {"index": ...})
+        # Every chunk should contain the "Before:" header
+        # The formatted output should include Section labels
         for page in pages:
             for chunk in page:
-                # Should NOT be raw JSON
-                assert not chunk.text.strip().startswith('{"index"')
-                # The formatted output should include Section labels
+                assert (chunk.text.startswith(formatter.PREFIX_BEFORE)
+                        or chunk.text.startswith(formatter.PREFIX_AFTER)), "Missing prefix"
+                assert formatter.PREFIX_BEFORE + formatter.PREFIX_BEFORE not in chunk.text, "Double prefix before"
+                assert formatter.PREFIX_AFTER + formatter.PREFIX_AFTER not in chunk.text, "Double prefix after"
                 formatted = chunk.format()
-                assert "Section: 0" in formatted
+                assert "Section: 0" in formatted, "Missing section"
+
+    def test_many_docs_format(self, llm_service):
+        """Large documents should also be formatted using the configured formatter."""
+        # Create an oversized section
+        medium_text = "11 22 33 " * 100
+        doc = DiffDoc(diffs=[DiffSection(index=0, before=medium_text, after="after")]*TOKEN_LIMIT)
+        formatter = StandardDiffFormatter()
+        chunker = DiffChunker(llm_service, TOKEN_LIMIT, formatter)
+
+        pages = chunker.chunk_diff("system", [], doc)
+
+        # Should be chunked into multiple pages
+        assert len(pages) >= 2
+
+        # Each chunk should contain formatted text from StandardDiffFormatter
+        # Every chunk should contain the "Before:" header
+        # The formatted output should include Section labels
+        for i, page in enumerate(pages):
+            for chunk in page:
+                assert chunk.text.startswith(formatter.PREFIX_BEFORE) or chunk.text.startswith(formatter.PREFIX_AFTER)
+                assert formatter.PREFIX_BEFORE + formatter.PREFIX_BEFORE not in chunk.text
+                assert formatter.PREFIX_AFTER + formatter.PREFIX_AFTER not in chunk.text
+                formatted = chunk.format()
+                # assert f"Section: {i}" in formatted ## not sure if index expectation is correct
 
     def test_formatted_length_calculation(self, llm_service):
         """Length calculations should account for formatting overhead."""

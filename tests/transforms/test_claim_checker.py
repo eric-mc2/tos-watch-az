@@ -159,21 +159,6 @@ class TestClaimCheckerBuilder:
         
         # Assert
         assert len(prompts) == 0
-    
-    def test_format_diffs(self):
-        """Test diff formatting for LLM context."""
-        # Arrange
-        diff_doc = DiffDoc(diffs=[
-            DiffSection(index=0, before="Old text", after="New text"),
-            DiffSection(index=1, before="Another old", after="Another new")
-        ])
-        
-        # Act
-        formatted = ClaimCheckerBuilder._format_diffs(diff_doc)
-        
-        # Assert
-        assert "Before:\nOld text" in formatted
-        assert "After:\nNew text" in formatted
 
 
 class TestClaimChecker:

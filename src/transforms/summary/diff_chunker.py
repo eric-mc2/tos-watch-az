@@ -29,14 +29,33 @@ class TextChunk:
 
 class DiffFormatter(Protocol):
     """Protocol for formatting DiffSections into text for LLM consumption."""
-    
+    PREFIX_BEFORE :str = ""
+    PREFIX_AFTER :str = ""
+
     def format_section(self, section: DiffSection) -> str:
         """Format a single DiffSection."""
         ...
-    
+
     def format_doc(self, doc: DiffDoc) -> str:
         """Format an entire DiffDoc."""
         ...
+
+
+class StandardDiffFormatter:
+    """Standard formatter for DiffSections with Before/After labels."""
+    PREFIX_BEFORE = "(-) "
+    PREFIX_AFTER = "(+) "
+
+    @classmethod
+    def format_section(cls, section: DiffSection) -> str:
+        """Format a single DiffSection into readable text for the LLM."""
+        parts = [cls.PREFIX_BEFORE + section.before,
+                 cls.PREFIX_AFTER + section.after]
+        return "\n".join(parts)
+
+    def format_doc(self, doc: DiffDoc) -> str:
+        """Format an entire DiffDoc into readable text for the LLM."""
+        return "\n".join(map(self.format_section, doc.diffs))
 
 
 @dataclass
@@ -116,17 +135,19 @@ class DiffChunker:
     # -- Phase 2: convert each group into one or more pages -----------------
 
     def _paginate_group(self, system: str, sections: List[DiffSection]) -> List[List[TextChunk]]:
-        """Convert a group of sections into pages of TextChunks.
-
-        A multi-section group is guaranteed to fit and yields one page of
-        formatted chunks.  A single-section group may exceed the limit and
-        is split into plain-text fragment pages.
-        """
+        """Convert a group of sections into pages of TextChunks."""
         if not sections:
             return []
+        formatted = self._format_sections(sections)
+        formatted_len = sum((len(x.text) for x in formatted))
+        # A multi-section group is guaranteed to fit and yields one page.
         if len(sections) > 1:
-            return [self._format_sections(sections)]
-        return self._split_oversized_section(system, sections[0])
+            return [formatted]
+        # A single-section group could fit and yields one page.
+        elif formatted_len <= self._effective_limit:
+            return [formatted]
+        else:
+            return self._split_oversized_section(system, sections[0])
 
     def _format_sections(self, sections: List[DiffSection]) -> List[TextChunk]:
         """Create structured TextChunks from sections that fit within the limit."""
@@ -175,10 +196,11 @@ class DiffChunker:
         # Split the formatted section into fragments that fit in available space
         # (after subtracting overhead)
         char_limit = int(available_token_limit * section_text_len / section_token_len)
-        fragments = chunk_string(formatted_section_text, char_limit)
+        before_fragments = chunk_string(section.before, char_limit, overhead=self.formatter.PREFIX_BEFORE)
+        after_fragments = chunk_string(section.after, char_limit, overhead=self.formatter.PREFIX_AFTER)
 
         # Filter out empty fragments
-        fragments = [f for f in fragments if f.strip()]
+        fragments = [f for f in before_fragments + after_fragments if f.strip()]
 
         # If no valid fragments, return the original formatted text
         if not fragments:
@@ -187,26 +209,9 @@ class DiffChunker:
         # Each fragment becomes a TextChunk with its own overhead
         return [
             [TextChunk(
-                text=fragment, # TODO: prefix with (+) or (-) diff annotation
+                text=fragment,
                 parent_index=section.index,
                 index=i,  # Sub-index into this diff, resets to 0 per diff
             )]
             for i, fragment in enumerate(fragments)
         ]
-
-
-# -- Formatting helpers (importable by other modules) ----------------------
-
-class StandardDiffFormatter:
-    """Standard formatter for DiffSections with Before/After labels."""
-
-    @staticmethod
-    def format_section(section: DiffSection) -> str:
-        """Format a single DiffSection into readable text for the LLM."""
-        parts = [f"Before:\n{section.before}",
-                f"After:\n{section.after}"]
-        return "\n".join(parts)
-    
-    def format_doc(self, doc: DiffDoc) -> str:
-        """Format an entire DiffDoc into readable text for the LLM."""
-        return "\n".join(map(self.format_section, doc.diffs))

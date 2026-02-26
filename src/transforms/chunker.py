@@ -26,7 +26,8 @@ class Buffer(Generic[T]):
         combine: Callable[[T, T], T],
         length: Callable[[T], int],
         empty: T,
-        combine_cost: int = 0  # delimiter overhead for non-empty additions 
+        combine_cost: int = 0,  # delimiter overhead for non-empty additions
+        overhead: T = None
     ):
         self._items: Optional[T] = None
         self._size = 0
@@ -35,6 +36,7 @@ class Buffer(Generic[T]):
         self.combine_cost = combine_cost
         self.length = length
         self.empty = empty
+        self.overhead = overhead
         self.is_open = True
         if self.capacity <= 0:
             raise ValueError("Capacity must be positive")
@@ -62,7 +64,8 @@ class Buffer(Generic[T]):
         if not self.is_open:
             return False
         if self.is_empty:
-            new_size = self.length(item)
+            overhead_size = self.length(self.overhead) if self.overhead is not None else 0
+            new_size = self.length(item) + overhead_size
         else:
             new_size = self._size + self.combine_cost + self.length(item)
         return new_size <= self.capacity
@@ -73,7 +76,7 @@ class Buffer(Generic[T]):
             return AddResult.NOT_ADDED
         forced = not self.can_add(item)
         if self.is_empty or self._items is None:
-            self._items = item
+            self._items = self.overhead + item if self.overhead else item  # don't use combine
             self._size += self.length(item)
         else:
             self._items = self.combine(self._items, item)
@@ -91,7 +94,8 @@ class GenericWindower(Generic[T]):
         length: Callable[[T], int],
         empty: T,
         overlap: float = 0.05,
-        combine_cost: int = 0
+        combine_cost: int = 0,
+        overhead: T = None
     ):
         self.slots: List[Buffer[T]] = []
         self.overlap = overlap
@@ -100,13 +104,14 @@ class GenericWindower(Generic[T]):
         self.combine_cost = combine_cost
         self.length_fn = length
         self.empty = empty
+        self.overhead = overhead
         if capacity <= 0:
             raise ValueError("Capacity must be positive")
         if overlap < 0 or overlap >= 1:
             raise ValueError("Overlap must be in range (0,1).")
 
     def _make_buffer(self) -> Buffer[T]:
-        return Buffer(self.capacity, self.combine, self.length_fn, self.empty, self.combine_cost)
+        return Buffer(self.capacity, self.combine, self.length_fn, self.empty, self.combine_cost, self.overhead)
 
     def add(self, item: T, force: bool = False) -> AddResult:
         added = AddResult.NOT_ADDED
@@ -146,14 +151,15 @@ class GenericWindower(Generic[T]):
 
 
 # Convenience factory for string windowing (preserves original behavior)
-def string_windower(capacity: int, delimiter: str, overlap: float = 0.05) -> GenericWindower[str]:
+def string_windower(capacity: int, delimiter: str, overlap: float = 0.05, overhead: str = "") -> GenericWindower[str]:
     return GenericWindower(
         capacity=capacity,
         combine=lambda a, b: a + delimiter + b if a else b,
         length=len,
         empty="",
         overlap=overlap,
-        combine_cost=len(delimiter)
+        combine_cost=len(delimiter),
+        overhead=overhead
     )
 
 
@@ -169,15 +175,16 @@ def list_windower(capacity: int, item_length_fn: Callable[[Any], int], overlap: 
     )
 
 
-def chunk_string(text: str, char_limit: int, overlap: float = 0.05):
+def chunk_string(text: str, char_limit: int, overlap: float = 0.05, overhead: str = "") -> List[str]:
     # String chunking (like before)
-    outer_windower = string_windower(capacity=char_limit, delimiter="\n", overlap=overlap)
+    outer_windower = string_windower(capacity=char_limit, delimiter="\n", overlap=overlap, overhead=overhead)
     for line in text.split("\n"):
         added = outer_windower.add(line)
         if added == AddResult.FORCE_ADDED:
             line = outer_windower.pop()
+            line = line.removeprefix(overhead) # if overhead has spaces, remove so we don't double it.
         if added == AddResult.NOT_ADDED or added == AddResult.FORCE_ADDED:
-            inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap)
+            inner_windower = string_windower(capacity=char_limit, delimiter=" ", overlap=overlap, overhead=overhead)
             for word in line.split(" "):
                 inner_windower.add(word)
             for slot in inner_windower.slots:
