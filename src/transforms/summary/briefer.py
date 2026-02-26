@@ -13,7 +13,7 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 N_ICL = 3
 SYSTEM_PROMPT = """
 You are part of a team analyzing changes to terms of service documents.
@@ -46,10 +46,12 @@ NOTE TAKING GUIDANCE:
 Specific details matter. Here is an example of a note that identifies
 relevant topics but is vague and not actionable:
 
-    ### Notable Additions/Changes
-    - More explicit about AI product usage terms
-    - Enhanced clarity around content ownership
-    - Refined termination conditions
+```
+### Notable Additions/Changes
+- More explicit about AI product usage terms
+- Enhanced clarity around content ownership
+- Refined termination conditions
+```
 
 INPUT FORMAT:
 You are reading a diff: additions and removals 

@@ -17,7 +17,7 @@ from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 SYSTEM_PROMPT = """
 Your role is the expert fact checker. Your task is to verify whether a document entails a specific claim.
 The document represents a diff: additions and removals between different versions of a source document.
