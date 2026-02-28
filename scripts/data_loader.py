@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import cast
+from typing import Optional, Self, cast
 
 import pandas as pd
+from pydantic import BaseModel
 
 from schemas.judge.v0 import MODULE as JUDGE_MODULE
 from schemas.judge.v1 import Judgement
@@ -36,7 +37,7 @@ class SummaryEvalDataLoader(EvalDataLoader):
     def load_true_labels(self, version: str = "") -> pd.DataFrame:
         """Load ground truth labels for summary evaluation."""
         gold_list = []
-        labels = self._load_cached_labels(self._find_label_file(version))
+        labels = self.load_labels(version=version)
         for label in labels:
             gold_list.append(label['metadata'] | dict(
                 practically_substantive_true=label['responses']['practically_substantive'][0]['value'],
@@ -74,19 +75,60 @@ class SummaryEvalDataLoader(EvalDataLoader):
         return predictions_df
 
 
+class BriefLabelBase(BaseModel):
+    ...
+
+
+def optional_bool(value: str) -> Optional[bool]:
+    return {'True': True, 'False': False, "unsure": None}.get(value, None)
+
+
+class BriefLabelV1(BriefLabelBase):
+    practically_substantive_true: Optional[bool]
+    practically_substantive_pred: bool
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        pst = label['responses'].get('practically_substantive',[{}])[0].get('value')
+        psp = label['suggestions']['practically_substantive']['value']
+        pst = optional_bool(pst)
+        psp = optional_bool(psp)
+        return BriefLabelV1(
+            practically_substantive_true = pst,
+            practically_substantive_pred = psp
+        )
+    
+
+class BriefLabelV2(BriefLabelV1):
+    notes_good: Optional[bool]
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        v1 = super().from_dict(label)
+        v2 = cls.migrate(v1)
+        good = label['responses'].get('notes_good',[{}])[0].get('value')
+        v2.notes_good = optional_bool(good)
+        return v2
+        
+    @classmethod
+    def migrate(cls, v1: BriefLabelV1) -> Self:
+        if not isinstance(v1, BriefLabelV1):
+            raise TypeError(f"Expected BriefLabelV1, got {type(v1)}")
+        v2 = BriefLabelV2(practically_substantive_true = v1.practically_substantive_true,
+                 practically_substantive_pred = v1.practically_substantive_pred,
+                 notes_good = None)
+        return v2
+
+
 class BriefEvalDataLoader(EvalDataLoader):
     """Loads brief stage evaluation data (ground truth from labels + predictions from SUMMARY_CLEAN)."""
 
-    def load_true_labels(self, version: str = "") -> pd.DataFrame:
+    def load_true_labels(self, version: str = "", stage: str = "") -> pd.DataFrame:
         """Load ground truth labels for brief evaluation."""
         gold_list = []
-        labels = self._load_cached_labels(self._find_label_file(version))
+        labels = self.load_labels(version, stage)
         for label in labels:
-            gold_list.append(label['metadata'] | dict(
-                practically_substantive_true=label['responses'].get('practically_substantive',[{}])[0].get('value'),
-                practically_substantive_pred=label['suggestions']['practically_substantive']['value'],
-                notes_good=label['responses'].get('notes_good',[{}])[0].get('value'),
-            ))
+            gold_list.append(label['metadata'] | BriefLabelV2.from_dict(label).model_dump())
         gold = pd.DataFrame.from_records(gold_list)  # type: ignore
 
         # Add this for easy linking
@@ -95,7 +137,7 @@ class BriefEvalDataLoader(EvalDataLoader):
         # Change dtypes
         remap_cols = ['practically_substantive_true', 'practically_substantive_pred', 'notes_good']
         for col in remap_cols:
-            gold[col] = gold[col].map({'True': 1, 'False': 0})
+            gold[col] = gold[col].astype('boolean')
 
         # Drop suggestion columns and simplify names
         gold = gold.drop(columns=[c for c in gold.columns if c.endswith('_pred')])

@@ -86,6 +86,8 @@ class Briefer:
         empty_brief = Memo( section_memo="",
                             running_memo="")
         messages = prompter.build_prompt(blob_name)
+
+        # TODO: there is a bug saving these as Memos when they are Briefs
         
         return self.executor.execute_prompts_serial(
             messages,
@@ -100,8 +102,6 @@ class Briefer:
 class BriefBuilder:
     storage: BlobService
     llm: LLMService
-
-    # TODO: This still regularly exceeds the limit
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
         examples : List[Message] = [] # self.read_examples()

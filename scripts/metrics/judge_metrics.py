@@ -16,7 +16,7 @@ class JudgeMetrics(BaseMetrics):
         self.storage = storage
         # TODO: Create JudgeEvalDataLoader when labels exist
     
-    def compute_metrics(self, label_version: str, outfile: str) -> None:
+    def compute_metrics(self, label_version: str, stage: str, outfile: str) -> None:
         """
         Compute judge stage metrics.
         

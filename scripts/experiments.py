@@ -34,13 +34,14 @@ def trigger_random(n: int):
         trigger_url(url, container, company, policy, timestamp)
 
 
-def trigger_labels(label_name: str, stage: str):
+def trigger_labels(label_name: str):
     """
     Trigger blobs for all labeled examples so they can be processed through the pipeline.
     """
     load_env_vars()
     container = ServiceContainer.create_real()
     storage = container.storage
+    stage = label_name.split("_")[0]
 
     # Select appropriate data loader
     loaders = {
@@ -100,18 +101,11 @@ if __name__ == "__main__":
     rand_parser.add_argument("--n", required=True, type=int)
 
     label_parser = sub_parsers.add_parser("from_labels")
-
     label_parser.add_argument("--label_name", required=True,
                         help="Label dataset name (e.g., 'summary_v1', 'brief_v1')")
-
-    label_parser.add_argument("--stage", required=True,
-                        choices=[Stage.get_transform_name(Stage.SUMMARY_CLEAN.value),
-                                 Stage.get_transform_name(Stage.BRIEF_CLEAN.value)],
-                        default=Stage.get_transform_name(Stage.SUMMARY_CLEAN.value),
-                        help="Pipeline stage being evaluated")
     args = parser.parse_args()
 
     if args.source == "from_random":
         trigger_random(args.n)
     else:
-        trigger_labels(label_name=args.label_name, stage=args.stage)
+        trigger_labels(label_name=args.label_name)

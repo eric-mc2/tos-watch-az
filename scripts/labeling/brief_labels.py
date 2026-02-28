@@ -5,6 +5,9 @@ import argilla as rg  # type: ignore
 import logging
 from random import shuffle
 
+from pydantic import ValidationError
+
+from schemas.brief.v2 import Brief, Memo
 from scripts.labeling.dataset import DatasetBase
 from src.stages import Stage
 from src.utils.log_utils import setup_logger
@@ -208,8 +211,15 @@ class BriefV1Dataset(DatasetBase):
 class BriefV2Dataset(BriefV1Dataset):
     def template_brief(self, brief_name):
         brief_obj = self.container.storage.load_json_blob(brief_name)
-        parts = ["Section Memo:",
-                 brief_obj["section_memo"],
-                 "Running Memo:",
-                 brief_obj["running_memo"]]
-        return "\n".join(parts)
+        # TODO: This shouldn't be so complicated but sometimes Memos are saved as Briefs
+        try:
+            memo = Memo.model_validate(brief_obj)
+            parts = ["Section Memo:",
+                     memo.section_memo,
+                     "Running Memo:",
+                     memo.running_memo]
+            return "\n".join(parts)
+        except ValidationError as e:
+            brief = Brief.model_validate(brief_obj)
+            parts = [["Section Memo:", m.section_memo, "Running Memo:", m.running_memo] for m in brief.memos]
+            return "\n".join((s for p in parts for s in p))

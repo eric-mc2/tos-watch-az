@@ -32,18 +32,17 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compute metrics for pipeline stages"
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--label_version",
+        help="Label dataset name (e.g., 'summary_v1', 'brief_v1')"
+    )
+    group.add_argument(
         "--stage",
         choices=[Stage.get_transform_name(Stage.SUMMARY_CLEAN.value),
                  Stage.get_transform_name(Stage.BRIEF_CLEAN.value),
                  Stage.get_transform_name(Stage.JUDGE_CLEAN.value)],
-        required=True,
         help="Pipeline stage to evaluate"
-    )
-    parser.add_argument(
-        "--label_version",
-        required=True,
-        help="Label dataset name (e.g., 'summary_v1', 'brief_v1')"
     )
     parser.add_argument(
         "--outfile",
@@ -53,7 +52,7 @@ def main():
     args = parser.parse_args()
 
     if args.outfile is None:
-        args.outfile = args.label_version + ".html"
+        args.outfile = (args.label_version or args.stage) + ".html"
     
     # Select appropriate metrics class
     metrics_classes = {
@@ -61,11 +60,13 @@ def main():
         Stage.get_transform_name(Stage.BRIEF_CLEAN.value): BriefMetrics,
         Stage.get_transform_name(Stage.JUDGE_CLEAN.value): JudgeMetrics,
     }
-    
-    metrics = metrics_classes[args.stage](container.storage)
+
+    stage = args.stage if args.stage else "_".join(args.label_version.split("_")[:-1])
+
+    metrics = metrics_classes[stage](container.storage)
     
     try:
-        metrics.compute_metrics(args.label_version, args.outfile)
+        metrics.compute_metrics(args.label_version, args.stage, args.outfile)
         print(f"Metrics computed successfully. Output: data/metrics/{args.outfile}")
     except Exception as e:
         print(f"Error computing metrics: {e}")

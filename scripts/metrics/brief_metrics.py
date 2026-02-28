@@ -13,7 +13,7 @@ class BriefMetrics(BaseMetrics):
         self.storage = storage
         self.loader = BriefEvalDataLoader(storage)
     
-    def compute_metrics(self, label_version: str, outfile: str) -> None:
+    def compute_metrics(self, label_version: str, stage: str, outfile: str) -> None:
         """
         Compute brief stage metrics.
         
@@ -22,7 +22,7 @@ class BriefMetrics(BaseMetrics):
             outfile: Output HTML file path relative to evals directory
         """
         # Load ground truth and predictions
-        gold = self.loader.load_true_labels(label_version)
+        gold = self.loader.load_true_labels(label_version, stage)
         pred = self.loader.load_pred_labels()
         raw = self.loader.load_raw_exists()
 
@@ -55,11 +55,30 @@ class BriefMetrics(BaseMetrics):
 
         table = gold.merge(pred, on="blob_key", how="inner", suffixes=("_true", "_pred"))
 
+
+        brief_metrics = table.groupby(brief_groups, as_index=False)['notes_good'].mean()
+
         summary_metrics = self.compute_binary_classification_metrics(
             table,
             lineage_groups,
             "practically_substantive_true",
             "practically_substantive_pred"
+        )
+
+        conditional_metrics = self.compute_confusion_table(
+            table,
+            brief_groups + ["notes_good"],
+            "practically_substantive_true",
+            "practically_substantive_pred"
+        ).merge(
+            self.compute_binary_classification_metrics(
+                table,
+                brief_groups + ["notes_good"],
+                "practically_substantive_true",
+                "practically_substantive_pred"
+            )
+        ).merge(
+            table.groupby(brief_groups + ["notes_good"]).size().rename("N").reset_index()
         )
 
         # Generate HTML report
@@ -68,6 +87,8 @@ class BriefMetrics(BaseMetrics):
             'N_PROCESSED_BLOBS': n_processed.reset_index(),
             'N_VALID_BLOBS': n_valid.reset_index(),
             'PCT_VALID_BLOBS': pct_valid.reset_index(),
+            "BRIEF_METRICS": brief_metrics,
             "SUMMARY_METRICS": summary_metrics,
+            "CONDITIONAL_METRICS": conditional_metrics,
         }
         self.write_html_report(outfile, sections)  # type: ignore

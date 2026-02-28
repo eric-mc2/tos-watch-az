@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Callable, Union
 
 import pandas as pd
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -19,7 +18,7 @@ class BaseMetrics(ABC):
     """Base class for stage-specific metrics computation."""
     
     @abstractmethod
-    def compute_metrics(self, label_version: str, outfile: str) -> None:
+    def compute_metrics(self, label_version: str, stage: str, outfile: str) -> None:
         """
         Compute metrics for this stage.
         
@@ -58,7 +57,37 @@ class BaseMetrics(ABC):
         f1 = compute_metric(df, f1_score, "f1")
         
         return pd.concat([accuracy, precision, recall, f1], axis=1).reset_index()
-    
+
+    @staticmethod
+    def compute_confusion_table(
+        df: pd.DataFrame,
+        groups: list[str],
+        true_col: str,
+        pred_col: str
+    ) -> pd.DataFrame:
+        """
+        Compute standard binary classification metrics grouped by specified columns.
+
+        Args:
+            df: DataFrame with predictions and ground truth
+            groups: Column names to group by
+            true_col: Name of column with ground truth labels
+            pred_col: Name of column with predicted labels
+
+        Returns:
+            DataFrame with TP TN FP FN for each group
+        """
+        def wrapper(y: pd.DataFrame):
+            if len(y) > 1:
+                tn, fp, fn, tp = confusion_matrix(y[true_col], y[pred_col], normalize="all").round(2).ravel().tolist()
+            else:
+                tn = not y[true_col].item() and not y[pred_col].item()
+                fp = not y[true_col].item() and y[pred_col].item()
+                fn = y[true_col].item() and not y[pred_col].item()
+                tp = y[true_col].item() and y[pred_col].item()
+            return pd.Series([tn, fp, fn, tp], index=["TN", "FP", "FN", "TP"])
+        return df.groupby(groups).apply(wrapper).reset_index()
+
     @staticmethod
     def write_html_report(outfile: str, sections: dict[str, Union[pd.DataFrame, str]]) -> None:
         """

@@ -16,7 +16,7 @@ class SummaryMetrics(BaseMetrics):
         self.storage = storage
         self.loader = SummaryEvalDataLoader(storage)
     
-    def compute_metrics(self, label_version: str, outfile: str) -> None:
+    def compute_metrics(self, label_version: str, stage: str, outfile: str) -> None:
         """
         Compute summary stage metrics.
         

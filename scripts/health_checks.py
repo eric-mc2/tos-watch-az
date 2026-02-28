@@ -31,19 +31,11 @@ setup_logger(__name__, logging.WARNING)
 logging.getLogger("azure").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-load_env_vars()
-
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
-def validate_files(env, *args, **kwargs) -> dict:
-    # TODO: Consolidate environment handling into service container?
-    conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
-    storage = BlobService(AzureStorageAdapter(conn_key))
-    http = RequestsAdapter()
-    llm = LLMService(ClaudeAdapter())
-    embeddings = EmbeddingService(SentenceTransformerAdapter())
-    container = ServiceContainer.create_container(storage, http, llm, embeddings)
+def validate_files() -> dict:
+    container = ServiceContainer.create_real()
     try:
         blobs = set(container.storage.adapter.list_blobs())
     except RuntimeError as e:
@@ -94,7 +86,7 @@ def validate_files(env, *args, **kwargs) -> dict:
      }
 
 
-def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
+def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     Terminate all running orchestrations.
     
@@ -107,7 +99,6 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     # Get all running/pending orchestrations
     in_flight = list_in_flight(
-        env=env,
         workflow_type=workflow_type,
         runtimes="Running", #["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )
@@ -128,7 +119,7 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
         if should_terminate:
             try:
                 # Use REST API to terminate
-                url = f"{_get_app_url(env)}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
+                url = f"{_get_app_url()}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
                 params = {
                     'reason': reason,
                     'code': os.environ.get("AZURE_FUNCTION_MASTER_KEY")
@@ -154,8 +145,7 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
 class FlightHandler(BaseHTTPRequestHandler):
     """HTTP request handler that fetches flight data per request."""
     
-    def __init__(self, env, workflow_type, runtimes, *args, **kwargs):
-        self.env = env
+    def __init__(self, workflow_type, runtimes, *args, **kwargs):
         self.workflow_type = workflow_type
         self.runtimes = runtimes
         super().__init__(*args, **kwargs)
@@ -165,7 +155,7 @@ class FlightHandler(BaseHTTPRequestHandler):
         if self.path == "/":
             try:
                 print(f"[{datetime.now().isoformat()}] Fetching flight data...")
-                flights = list_in_flight(self.env, self.workflow_type, self.runtimes)
+                flights = list_in_flight(self.workflow_type, self.runtimes)
                 
                 response_data = {
                     "data": flights,
@@ -207,12 +197,12 @@ class FlightHandler(BaseHTTPRequestHandler):
         print(f"[{datetime.now().isoformat()}] {format % args}")
 
 
-def server(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
+def server(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
     """Start HTTP server that fetches flight data on each request."""
     
     # Create handler with environment parameters
     def handler(*args, **kwargs):
-        return FlightHandler(env, workflow_type, runtimes, *args, **kwargs)
+        return FlightHandler(workflow_type, runtimes, *args, **kwargs)
     
     # Start HTTP server
     port = 8000
@@ -228,7 +218,7 @@ def server(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str
         server.shutdown()
 
 
-def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
+def list_in_flight(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
     params = {}
 
     if runtimes is None:
@@ -237,7 +227,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
 
     params['code'] = str(os.environ.get("AZURE_FUNCTION_MASTER_KEY"))
    
-    data = _list_in_flight_paged(params, env)
+    data = _list_in_flight_paged(params)
 
     data = [dict(
             name = t.get('name'),
@@ -280,7 +270,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
     return formatted
 
 
-def _list_in_flight_paged(params, env, pages = None, next_token=None):
+def _list_in_flight_paged(params, pages = None, next_token=None):
     if pages is None:
         pages = []
     
@@ -288,64 +278,69 @@ def _list_in_flight_paged(params, env, pages = None, next_token=None):
     if next_token is not None:
         headers["x-ms-continuation-token"] = next_token
 
-    resp = requests.get(_get_app_url(env) + "/runtime/webhooks/durabletask/instances", 
+    resp = requests.get(_get_app_url() + "/runtime/webhooks/durabletask/instances",
                         params=params,
                         headers=headers)
     resp.raise_for_status()
     pages.extend(resp.json())
     next_page = resp.headers.get("x-ms-continuation-token")
     if next_page:
-        return _list_in_flight_paged(params, env, pages, next_token=next_page)
+        return _list_in_flight_paged(params, pages, next_token=next_page)
     else:
         return pages
 
 
-def _get_app_url(env):
-    if env == "PROD":
-        app_url = os.environ.get('WEBSITE_HOSTNAME')
-        if not app_url:
-            raise RuntimeError("Environment variable WEBSITE_HOSTNAME not set.")
-    else:
-        app_url = "http://127.0.0.1:7071"
-    return app_url
+def _get_app_url():
+    return os.environ.get('WEBSITE_HOSTNAME')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='health_checks',
                     description='List in flight tasks (run az login before)')
-    subparsers = parser.add_subparsers(required=True)
+    subparsers = parser.add_subparsers(required=True, dest='action')
 
     parser_monitor = subparsers.add_parser('monitor', help='list running tasks (live)')
     parser_monitor.add_argument("--workflow_type")
     parser_monitor.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_monitor.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
-    parser_monitor.set_defaults(func=server)
 
     parser_tasks = subparsers.add_parser('tasks', help='list running tasks (static)')
     parser_tasks.add_argument("--workflow_type")
     parser_tasks.add_argument("--output")
-    parser_tasks.add_argument("--env", choices=["DEV","PROD"])
+    parser_tasks.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
-    parser_tasks.set_defaults(func=list_in_flight)
 
     parser_files = subparsers.add_parser('files', help='list missing files')
     parser_files.add_argument("--output")
-    parser_files.add_argument("--env", choices=["DEV","PROD"])
-    parser_files.set_defaults(func=validate_files)
+    parser_files.add_argument("--env", choices=["DEV","PROD"], default="DEV")
 
     parser_kill = subparsers.add_parser('kill', help='terminate all running orchestrations')
     parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
     parser_kill.add_argument("--output")
-    parser_kill.add_argument("--env", choices=["DEV","PROD"])
+    parser_kill.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_kill.add_argument("--reason", default=KILL_CIRCUIT, help='termination reason')
     parser_kill.set_defaults(func=kill_all)
 
     args = parser.parse_args()
-    
+
+    os.environ["TARGET_ENV"] = args.env
+    load_env_vars()
+
+    if args.action == "monitor":
+        server(args.workflow_type, args.runtimes)
+    elif args.action == "tasks":
+        list_in_flight(args.workflow_type, args.runtimes)
+    elif args.action == "files":
+        validate_files()
+    elif args.action == "kill":
+        kill_all(args.workflow_type, args.reason)
+
     # Extract function arguments
-    func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output']}
-    output = args.func(**func_kwargs)
+    func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output', 'env']}
+
+
+    output = args.func(**func_kwargs, container=container)
 
     if hasattr(args, 'output') and args.output:
         with open(args.output, "w") as f:
