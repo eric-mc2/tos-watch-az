@@ -39,7 +39,7 @@ class ClaudeAdapter(LLMProtocol):
 
         client = self._get_client()
         response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1000,
             system=[{
                 "type": "text",
