@@ -1,7 +1,12 @@
 from enum import Enum, auto, IntEnum
 from typing import List, Protocol, Any, Callable, Iterator, TypeVar, Generic, Optional
 
-T = TypeVar('T')
+class SupportsAdd(Protocol):
+    """Protocol for types that support addition."""
+    def __add__(self, other):
+        ...
+
+T = TypeVar('T', bound=SupportsAdd)
 
 class AddResult(IntEnum):
     NOT_ADDED = auto()
@@ -27,7 +32,7 @@ class Buffer(Generic[T]):
         length: Callable[[T], int],
         empty: T,
         combine_cost: int = 0,  # delimiter overhead for non-empty additions
-        overhead: T = None
+        overhead: Optional[T] = None
     ):
         self._items: Optional[T] = None
         self._size = 0
@@ -95,7 +100,7 @@ class GenericWindower(Generic[T]):
         empty: T,
         overlap: float = 0.05,
         combine_cost: int = 0,
-        overhead: T = None
+        overhead: Optional[T] = None
     ):
         self.slots: List[Buffer[T]] = []
         self.overlap = overlap

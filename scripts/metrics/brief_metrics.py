@@ -2,7 +2,7 @@
 Metrics computation for Brief stage (evaluating briefer output via Summarizer).
 """
 from scripts.metrics.base import BaseMetrics
-from scripts.data_loader import BriefEvalDataLoader
+from src.transforms.icl import BriefDataLoader
 from src.services.blob import BlobService
 
 
@@ -11,7 +11,7 @@ class BriefMetrics(BaseMetrics):
     
     def __init__(self, storage: BlobService):
         self.storage = storage
-        self.loader = BriefEvalDataLoader(storage)
+        self.loader = BriefDataLoader(storage)
     
     def compute_metrics(self, label_version: str, stage: str, outfile: str) -> None:
         """
@@ -22,7 +22,7 @@ class BriefMetrics(BaseMetrics):
             outfile: Output HTML file path relative to evals directory
         """
         # Load ground truth and predictions
-        gold = self.loader.load_true_labels(label_version, stage)
+        gold = self.loader.load_eval_labels(label_version, stage, 'v3')
         pred = self.loader.load_pred_labels()
         raw = self.loader.load_raw_exists()
 

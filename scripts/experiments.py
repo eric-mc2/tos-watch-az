@@ -8,7 +8,7 @@ from src.container import ServiceContainer
 from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
 from src.utils.app_utils import load_env_vars
-from scripts.data_loader import SummaryEvalDataLoader, BriefEvalDataLoader
+from src.transforms.icl import SummaryDataLoader, BriefDataLoader, LabeledDataLoader
 from src.utils.path_utils import extract_policy
 
 logging.getLogger('httpcore').setLevel(logging.WARNING)
@@ -22,16 +22,31 @@ DATA_DIR = PROJECT_ROOT / "data"
 EVALS_DIR = DATA_DIR / "metrics"
 
 
-def trigger_random(n: int):
+def trigger_random(n: int, stage: str):
     load_env_vars()
     container = ServiceContainer.create_real()
+    loader: LabeledDataLoader
+    if stage == "brief":
+        loader = BriefDataLoader(container.storage)
+    else:
+        loader = SummaryDataLoader(container.storage)
 
-    for _ in range(n):
+    exclude = []
+    icl = loader.load_labels(stage=stage)
+    exclude.extend([x['blob_path'] for x in icl])
+
+    m = 0
+    while m < n:
         company = random.choice(list(STATIC_URLS.keys()))
         url = random.choice(STATIC_URLS[company])
         policy = extract_policy(url)
         timestamp = '0'*len(time.strftime("%Y%m%d%H%M%S"))
-        trigger_url(url, container, company, policy, timestamp)
+
+        # TODO: verify exclusion
+        blob_path = container.storage.unparse_blob_path((Stage.DIFF_CLEAN.value, company, policy, timestamp), ".json")
+        if blob_path not in exclude:
+            trigger_url(url, container, company, policy, timestamp)
+            m += 1
 
 
 def trigger_labels(label_name: str):
@@ -45,12 +60,12 @@ def trigger_labels(label_name: str):
 
     # Select appropriate data loader
     loaders = {
-        Stage.get_transform_name(Stage.SUMMARY_CLEAN.value): SummaryEvalDataLoader,
-        Stage.get_transform_name(Stage.BRIEF_CLEAN.value): BriefEvalDataLoader,
+        Stage.get_transform_name(Stage.SUMMARY_CLEAN.value): SummaryDataLoader,
+        Stage.get_transform_name(Stage.BRIEF_CLEAN.value): BriefDataLoader,
     }
     
     loader = loaders[stage](storage)
-    labels = loader.load_true_labels(label_name)
+    labels = loader.load_eval_labels(label_version=label_name, prompt_version="v9") # TODO: dont hardcode
     
     # Touch blobs for all labeled examples
     for record in labels.blob_path:
@@ -65,15 +80,17 @@ def trigger_labels(label_name: str):
             trigger_url(urls[0], container, parts.company, parts.policy, parts.timestamp)
 
 
-def trigger_url(url, container, company, policy, timestamp=None):
+def trigger_url(url, container: ServiceContainer, company, policy, timestamp=None):
     snap = container.snapshot_transform
     wayback = container.wayback_transform
 
-    # Find original url and recompute from meta stage. (can't re-compute exact snap timestamp because dont have time machine)
-    try:
-        wayback.scrape_wayback_metadata(url, company)
-    except Exception as e:
-        return
+    metadata_path = container.storage.unparse_blob_path((Stage.META.value, company, policy, "metadata"), ".json")
+    if not container.storage.check_blob(metadata_path):
+        # Find original url and recompute from meta stage. (can't re-compute exact snap timestamp because dont have time machine)
+        try:
+            wayback.scrape_wayback_metadata(url, company)
+        except Exception as e:
+            return
 
     # This might not trigger same sample as before, but if it came from wayback we can still find it.
     try:
@@ -82,6 +99,13 @@ def trigger_url(url, container, company, policy, timestamp=None):
         return
 
     rows = [row for row in metadata if row['timestamp'] == timestamp]
+
+    if len(rows) == 0:
+        print("Timestamp doesn't exist in metadata. Can't recreate from wayback. Skipping: {}/{}/{}".format(
+            company, policy, timestamp
+        ))
+        return
+
     for row in rows:
         original_url = row['original']
         url_key = f"{timestamp}/{original_url}"
@@ -99,6 +123,7 @@ if __name__ == "__main__":
 
     rand_parser = sub_parsers.add_parser("from_random")
     rand_parser.add_argument("--n", required=True, type=int)
+    rand_parser.add_argument("--stage", required=True)
 
     label_parser = sub_parsers.add_parser("from_labels")
     label_parser.add_argument("--label_name", required=True,
@@ -106,6 +131,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.source == "from_random":
-        trigger_random(args.n)
+        trigger_random(args.n, args.stage)
     else:
         trigger_labels(label_name=args.label_name)

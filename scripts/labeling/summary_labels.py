@@ -2,7 +2,10 @@ import difflib
 import json
 import os
 import time
+from typing import Optional, cast
+
 import argilla as rg  # type: ignore
+from pydantic import BaseModel
 
 from scripts.labeling.dataset import DatasetBase
 from src.stages import Stage
@@ -71,6 +74,7 @@ class SummaryV1Dataset(DatasetBase):
             questions=[
                 rg.LabelQuestion(name="legally_substantive", labels=["True", "False", "unsure"]),
                 rg.LabelQuestion(name="practically_substantive", labels=["True", "False", "unsure"]),
+                rg.TextQuestion(name="feedback", required=False)
             ],
             metadata=[
                 rg.TermsMetadataProperty(name="brief_model_version"),
@@ -92,7 +96,7 @@ class SummaryV1Dataset(DatasetBase):
 
     def create_records(self, dataset, schema_version, prompt_version, max_examples=10):
         # Stream from blob storage
-        blob_names = self.container.storage.list_blobs_nest()
+        blob_names = self.storage.list_blobs_nest()
 
         records = []
         for company, policies in blob_names[Stage.SUMMARY_CLEAN.value].items():
@@ -101,7 +105,7 @@ class SummaryV1Dataset(DatasetBase):
                     for file in files:
                         # Only add records for specified versions
                         summ_name = os.path.join(Stage.SUMMARY_CLEAN.value, company, policy, timestamp, file)
-                        metadata = self.container.storage.adapter.load_metadata(summ_name)
+                        metadata = self.storage.adapter.load_metadata(summ_name)
                         stage_metadata = extract_stage_metadata(metadata, stage=Stage.SUMMARY_CLEAN.value)
                         if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                             continue
@@ -125,7 +129,7 @@ class SummaryV1Dataset(DatasetBase):
 
                         model_version = stage_metadata.get("model_version")
 
-                        summary_txt = self.container.storage.load_text_blob(summ_name)
+                        summary_txt = self.storage.load_text_blob(summ_name)
                         summary = json.loads(summary_txt)
 
                         records.append(rg.Record(
@@ -148,7 +152,7 @@ class SummaryV1Dataset(DatasetBase):
 
 
     def template_diffs(self, diff_name) -> dict:
-        diff_obj = self.container.storage.load_json_blob(diff_name)
+        diff_obj = self.storage.load_json_blob(diff_name)
         # xxx: argilla does NOT accept list values.
         # so must be a string-keyed dict
         diffs = {}
@@ -185,3 +189,25 @@ class SummaryV1Dataset(DatasetBase):
                 after_result.append(f'<span class="diff_add">{b}</span>')
 
         return ''.join(before_result), ''.join(after_result)
+
+
+class SummaryLabelBase(BaseModel):
+    ...
+
+def optional_bool(value: str) -> Optional[bool]:
+    return {'True': True, 'False': False, "unsure": None}.get(value, None)
+
+class SummaryLabelV1(SummaryLabelBase):
+    practically_substantive_true: Optional[bool]
+    practically_substantive_pred: bool
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        pst = label['responses'].get('practically_substantive', [{}])[0].get('value')
+        psp = label['suggestions']['practically_substantive']['value']
+        pst = optional_bool(pst)
+        psp = cast(bool, optional_bool(psp))
+        return SummaryLabelV1(
+            practically_substantive_true=pst,
+            practically_substantive_pred=psp
+        )

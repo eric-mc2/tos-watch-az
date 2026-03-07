@@ -4,7 +4,7 @@ from pathlib import Path
 
 import argilla as rg  # type: ignore
 
-from src.container import ServiceContainer
+from src.services.blob import BlobService
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -12,15 +12,16 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 class DatasetBase:
     client: rg.Argilla
-    container: ServiceContainer
+    storage: BlobService
 
-    def __init__(self):
+    def __init__(self, storage):
         self.client = rg.Argilla(
-            api_url="https://eric-mc22-tos-watch-ft.hf.space",
+            api_url="https://eric-mc22-tos-watch-labels.hf.space", #"https://eric-mc22-tos-watch-ft.hf.space",
             api_key=os.environ['ARGILLA_API_KEY'], # note: this resets when the HF space goes inactive!
             headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"}
         )
-        self.container = ServiceContainer.create_real()
+        self.storage = storage
+
 
     def create_dataset(self, name):
         pass

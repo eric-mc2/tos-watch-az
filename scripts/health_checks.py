@@ -10,13 +10,14 @@ from azure import durable_functions as df  # type: ignore
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
+from src.transforms.icl import SummaryDataLoader
 from src.adapters.embedding.client import SentenceTransformerAdapter
 from src.adapters.http.client import RequestsAdapter
 from src.adapters.llm.client import ClaudeAdapter
 from src.adapters.storage.client import AzureStorageAdapter
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
-from src.services.blob import BlobService
+from src.services.blob import BlobService, RunBlobPath
 from src.services.embedding import EmbeddingService
 from src.services.llm import LLMService
 from src.utils.app_utils import load_env_vars
@@ -36,54 +37,48 @@ KILL_ALL = "KILL_ALL"
 
 def validate_files() -> dict:
     container = ServiceContainer.create_real()
-    try:
-        blobs = set(container.storage.adapter.list_blobs())
-    except RuntimeError as e:
-        return {"error": str(e)}
-    urls = STATIC_URLS
-    missing_metadata: list[str] = []
-    missing_snaps: list[str] = []
-    missing_docs: list[str] = []
-    missing_trees: list[str] = []
-    missing_diff: list[str] = []
-    meta_counter, snap_counter = 0, 0
-    for company, url_list in urls.items():
-        for url in url_list:
-            meta_counter += 1
-            policy = extract_policy(url)
-            blob_name = f"{Stage.META.value}/{company}/{policy}/manifest.json"
-            if blob_name not in blobs:
-                missing_metadata.append(blob_name)
-                continue
-            metadata = container.storage.load_json_blob(blob_name)
-            assert isinstance(metadata, list)
-            meta = container.wayback_transform.sample_wayback_metadata(metadata, company, policy)
-            for row in meta:
-                timestamp = row['timestamp']
-                snap_counter += 1
-                blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
-                if blob_name not in blobs:
-                    missing_snaps.append(blob_name)
-                blob_name = f"{Stage.DOCTREE.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_trees.append(blob_name)
-                blob_name = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_docs.append(blob_name)
-                blob_name = f"{Stage.DIFF_RAW.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_diff.append(blob_name)
-    return {"Missing Metadata Count": f"{len(missing_metadata)}/{meta_counter}",
-            "Missing Metadata Files":  missing_metadata,
-            "Missing Snapshot Count": f"{len(missing_snaps)}/{snap_counter}",
-             "Missing Snapshot Files": missing_snaps,
-            "Missing Trees Count": f"{len(missing_trees)}/{snap_counter}",
-             "Missing Trees Files": missing_trees,
-            "Missing Docs Count": f"{len(missing_docs)}/{snap_counter}",
-             "Missing Docs Files": missing_docs,
-            "Missing Diffs Count": f"{len(missing_diff)}/{snap_counter}",
-             "Missing Diffs Files": missing_diff,
-     }
+    blobs: dict[tuple, list] = {}
+    metas: dict[tuple, list] = {}
+    for blob in container.storage.adapter.list_blobs():
+        parts = container.storage.parse_blob_path(blob)
+        key = (parts.company, parts.policy, parts.timestamp)
+        meta = container.storage.adapter.load_metadata(blob)
+        if isinstance(parts, RunBlobPath) and parts.run_id == "latest":
+            continue
+        blobs.setdefault(key, []).append(parts)
+        metas.setdefault(key, []).append(meta)
+
+    missing_brief_count = 0
+    missing_brief_files = []
+    missing_summary_count = 0
+    missing_summary_files = []
+    for key, bbs in blobs.items():
+        if not any((b.stage == Stage.BRIEF_CLEAN.value for b in bbs)):
+            missing_brief_count += 1
+            missing_brief_files.append(key)
+        if not any((b.stage == Stage.SUMMARY_CLEAN.value for b in bbs)):
+            missing_summary_count += 1
+            missing_summary_files.append(key)
+
+    loader = SummaryDataLoader(container.storage)
+    evals = {version: loader.load_blob_keys(version) for version in loader.find_all_versions()}
+    evals_missing = {}
+    for version, keys in evals.items():
+        for key in keys:
+            if key not in blobs:
+                evals_missing[key] = {version}
+            else:
+                if not any((b.stage == Stage.BRIEF_CLEAN.value for b in blobs[key])):
+                    evals_missing.setdefault(key, {version}).add("brief")
+                if not any((b.stage == Stage.SUMMARY_CLEAN.value for b in blobs[key])):
+                    evals_missing.setdefault(key, {version}).add("summary")
+
+    evals_missing = {k: list(v) for k,v in evals_missing.items()}  # sets are not json serializable
+    return {"Missing Briefs Count": missing_brief_count,
+            "Missing Brief Files": missing_brief_files,
+            "Missing Summary Count": missing_summary_count,
+            "Missing Summary Files": missing_summary_files,
+            "Evals Missing": evals_missing}
 
 
 def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
@@ -98,16 +93,16 @@ def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
         dict with count of terminated orchestrations and their details
     """
     # Get all running/pending orchestrations
-    in_flight = list_in_flight(
+    tasks = list_tasks(
         workflow_type=workflow_type,
         runtimes="Running", #["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )
     
-    if in_flight['count'] == 0:
+    if tasks['count'] == 0:
         return {"count": 0, "terminated": [], "message": "No orchestrations to terminate"}
     
     terminated = []
-    for task in in_flight['tasks']:
+    for task in tasks['tasks']:
         instance_id = task.get('instance_id')
         should_terminate = instance_id is not None and task['name'] == "orchestrator"
         if reason == KILL_CIRCUIT:
@@ -142,9 +137,7 @@ def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
     }
 
 
-class FlightHandler(BaseHTTPRequestHandler):
-    """HTTP request handler that fetches flight data per request."""
-    
+class HttpHandler(BaseHTTPRequestHandler):
     def __init__(self, workflow_type, runtimes, *args, **kwargs):
         self.workflow_type = workflow_type
         self.runtimes = runtimes
@@ -154,11 +147,11 @@ class FlightHandler(BaseHTTPRequestHandler):
         """Handle GET requests."""
         if self.path == "/":
             try:
-                print(f"[{datetime.now().isoformat()}] Fetching flight data...")
-                flights = list_in_flight(self.workflow_type, self.runtimes)
+                print(f"[{datetime.now().isoformat()}] Fetching task data...")
+                tasks = list_tasks(self.workflow_type, self.runtimes)
                 
                 response_data = {
-                    "data": flights,
+                    "data": tasks,
                     "fetched_at": datetime.now().isoformat(),
                     "error": None
                 }
@@ -187,6 +180,41 @@ class FlightHandler(BaseHTTPRequestHandler):
                 
                 response = json.dumps(error_data, indent=2)
                 self.wfile.write(response.encode())
+        elif self.path == "/files":
+            try:
+                print(f"[{datetime.now().isoformat()}] Fetching files validation data...")
+                files_data = validate_files()
+                
+                response_data = {
+                    "data": files_data,
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": None
+                }
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(response_data, indent=2)
+                self.wfile.write(response.encode())
+                
+            except Exception as e:
+                print(f"[{datetime.now().isoformat()}] Error fetching files data: {e}")
+                
+                error_data = {
+                    "data": {},
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": str(e)
+                }
+                
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(error_data, indent=2)
+                self.wfile.write(response.encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -198,16 +226,17 @@ class FlightHandler(BaseHTTPRequestHandler):
 
 
 def server(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
-    """Start HTTP server that fetches flight data on each request."""
-    
     # Create handler with environment parameters
     def handler(*args, **kwargs):
-        return FlightHandler(workflow_type, runtimes, *args, **kwargs)
+        return HttpHandler(workflow_type, runtimes, *args, **kwargs)
     
     # Start HTTP server
     port = 8000
     server = HTTPServer(("localhost", port), handler)
     print(f"\nDevelopment server running at http://localhost:{port}")
+    print(f"  Routes:")
+    print(f"    /       - Task data")
+    print(f"    /files  - File validation data")
     print("Data is fetched per request (no polling)")
     print("Press Ctrl+C to stop\n")
     
@@ -218,7 +247,7 @@ def server(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]
         server.shutdown()
 
 
-def list_in_flight(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
+def list_tasks(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
     params = {}
 
     if runtimes is None:
@@ -227,7 +256,7 @@ def list_in_flight(workflow_type: Optional[str] = None, runtimes: Optional[str|l
 
     params['code'] = str(os.environ.get("AZURE_FUNCTION_MASTER_KEY"))
    
-    data = _list_in_flight_paged(params)
+    data = _list_tasks_paged(params)
 
     data = [dict(
             name = t.get('name'),
@@ -270,7 +299,7 @@ def list_in_flight(workflow_type: Optional[str] = None, runtimes: Optional[str|l
     return formatted
 
 
-def _list_in_flight_paged(params, pages = None, next_token=None):
+def _list_tasks_paged(params, pages = None, next_token=None):
     if pages is None:
         pages = []
     
@@ -285,7 +314,7 @@ def _list_in_flight_paged(params, pages = None, next_token=None):
     pages.extend(resp.json())
     next_page = resp.headers.get("x-ms-continuation-token")
     if next_page:
-        return _list_in_flight_paged(params, pages, next_token=next_page)
+        return _list_tasks_paged(params, pages, next_token=next_page)
     else:
         return pages
 
@@ -311,10 +340,6 @@ if __name__ == "__main__":
     parser_tasks.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
 
-    parser_files = subparsers.add_parser('files', help='list missing files')
-    parser_files.add_argument("--output")
-    parser_files.add_argument("--env", choices=["DEV","PROD"], default="DEV")
-
     parser_kill = subparsers.add_parser('kill', help='terminate all running orchestrations')
     parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
     parser_kill.add_argument("--output")
@@ -329,18 +354,11 @@ if __name__ == "__main__":
 
     if args.action == "monitor":
         server(args.workflow_type, args.runtimes)
+        output = None
     elif args.action == "tasks":
-        list_in_flight(args.workflow_type, args.runtimes)
-    elif args.action == "files":
-        validate_files()
+        output = list_tasks(args.workflow_type, args.runtimes)
     elif args.action == "kill":
-        kill_all(args.workflow_type, args.reason)
-
-    # Extract function arguments
-    func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output', 'env']}
-
-
-    output = args.func(**func_kwargs, container=container)
+        output = kill_all(args.workflow_type, args.reason)
 
     if hasattr(args, 'output') and args.output:
         with open(args.output, "w") as f:

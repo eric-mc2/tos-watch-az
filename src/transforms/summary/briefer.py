@@ -7,14 +7,14 @@ from src.adapters.llm.protocol import PromptMessages, Message
 from src.services.llm import TOKEN_LIMIT, LLMService
 from src.services.blob import BlobService
 from src.transforms.differ import DiffDoc
+from src.transforms.icl import BriefDataLoader
 from src.transforms.summary.diff_chunker import DiffChunker, StandardDiffFormatter
 from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v3"
-N_ICL = 3
+PROMPT_VERSION = "v5"
 SYSTEM_PROMPT = """
 You are part of a team analyzing changes to terms of service documents.
 The team's goal is to determine whether changes are practically substantive — meaning
@@ -82,7 +82,7 @@ class Briefer:
 
     def brief(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Summarizing {blob_name}")
-        prompter = BriefBuilder(self.storage, self.executor.llm)
+        prompter = BriefBuilder(self.storage, BriefDataLoader(self.storage), self.executor.llm)
         empty_brief = Memo( section_memo="",
                             running_memo="")
         messages = prompter.build_prompt(blob_name)
@@ -101,10 +101,11 @@ class Briefer:
 @dataclass
 class BriefBuilder:
     storage: BlobService
+    icl: BriefDataLoader
     llm: LLMService
 
     def build_prompt(self, blob_name: str) -> Iterable[PromptMessages]:
-        examples : List[Message] = [] # self.read_examples()
+        examples = self.icl.load_icl()
         diffs = self.storage.load_text_blob(blob_name)
 
         #  the goal is to stay well below the limit due to degrading attention weight

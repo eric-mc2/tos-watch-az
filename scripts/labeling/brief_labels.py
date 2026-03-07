@@ -1,11 +1,13 @@
 import json
 import os
 import time
+from typing import Optional, cast, Self
+
 import argilla as rg  # type: ignore
 import logging
 from random import shuffle
 
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
 
 from schemas.brief.v2 import Brief, Memo
 from scripts.labeling.dataset import DatasetBase
@@ -87,6 +89,7 @@ class BriefV1Dataset(DatasetBase):
             questions=[
                 rg.LabelQuestion(name="practically_substantive", labels=["True", "False", "unsure"]),
                 rg.LabelQuestion(name="notes_good", labels=["True", "False", "unsure"]),
+                rg.TextQuestion(name="feedback", required=False)
             ],
             metadata=[rg.TermsMetadataProperty(name=field) for field in self.metadata_fields],
         )
@@ -98,19 +101,19 @@ class BriefV1Dataset(DatasetBase):
 
 
     def create_records(self, dataset, schema_version, prompt_version, max_examples=10):
-        blob_names = self.container.storage.adapter.list_blobs()
+        blob_names = self.storage.adapter.list_blobs()
         shuffle(blob_names)
 
         records = []
         for blob_name in blob_names:
-            parts = self.container.storage.parse_blob_path(blob_name)
+            parts = self.storage.parse_blob_path(blob_name)
 
             if parts.stage != Stage.BRIEF_CLEAN.value:
                 continue
 
             # Only add records for specified versions
             memo_name = blob_name
-            metadata = self.container.storage.adapter.load_metadata(memo_name)
+            metadata = self.storage.adapter.load_metadata(memo_name)
             stage_metadata = extract_stage_metadata(metadata, stage=Stage.BRIEF_CLEAN.value)
             if stage_metadata['schema_version'] != schema_version or stage_metadata['prompt_version'] != prompt_version:
                 continue
@@ -139,8 +142,8 @@ class BriefV1Dataset(DatasetBase):
                 continue
 
             # We actually want to use the summary metadata now because its more complete.
-            metadata = self.container.storage.adapter.load_metadata(summ_name)
-            summary_txt = self.container.storage.load_text_blob(summ_name)
+            metadata = self.storage.adapter.load_metadata(summ_name)
+            summary_txt = self.storage.load_text_blob(summ_name)
             summary = json.loads(summary_txt)
 
             brief_txt = self.template_brief(memo_name)
@@ -168,7 +171,7 @@ class BriefV1Dataset(DatasetBase):
 
 
     def template_brief(self, brief_name):
-        brief_obj = self.container.storage.load_json_blob(brief_name)
+        brief_obj = self.storage.load_json_blob(brief_name)
         parts = ["Relevant:",
                  str(brief_obj["relevance_flag"]),
                 "Section Memo:",
@@ -179,7 +182,7 @@ class BriefV1Dataset(DatasetBase):
 
 
     def template_diffs(self, diff_name) -> dict:
-        diff_obj = self.container.storage.load_json_blob(diff_name)
+        diff_obj = self.storage.load_json_blob(diff_name)
         # xxx: argilla does NOT accept list values.
         # so must be a string-keyed dict
         diffs : dict[str, dict[str, str]] = {}
@@ -223,3 +226,48 @@ class BriefV2Dataset(BriefV1Dataset):
             brief = Brief.model_validate(brief_obj)
             parts = [["Section Memo:", m.section_memo, "Running Memo:", m.running_memo] for m in brief.memos]
             return "\n".join((s for p in parts for s in p))
+
+
+class BriefLabelBase(BaseModel):
+    ...
+
+
+class BriefLabelV1(BriefLabelBase):
+    practically_substantive_true: Optional[bool]
+    practically_substantive_pred: bool
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        pst = label['responses'].get('practically_substantive',[{}])[0].get('value')
+        psp = label['suggestions']['practically_substantive']['value']
+        pst = optional_bool(pst)
+        psp = cast(bool, optional_bool(psp))
+        return BriefLabelV1(
+            practically_substantive_true = pst,
+            practically_substantive_pred = psp
+        )
+
+
+class BriefLabelV2(BriefLabelV1):
+    notes_good: Optional[bool]
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        v1 = super().from_dict(label)
+        v2 = cls.migrate(v1)
+        good = label['responses'].get('notes_good',[{}])[0].get('value')
+        v2.notes_good = optional_bool(good)
+        return v2
+
+    @classmethod
+    def migrate(cls, v1: BriefLabelV1) -> Self:
+        if not isinstance(v1, BriefLabelV1):
+            raise TypeError(f"Expected BriefLabelV1, got {type(v1)}")
+        v2 = cls(practically_substantive_true = v1.practically_substantive_true,
+                 practically_substantive_pred = v1.practically_substantive_pred,
+                 notes_good = None)
+        return v2
+
+
+def optional_bool(value: str) -> Optional[bool]:
+    return {'True': True, 'False': False, "unsure": None}.get(value, None)
