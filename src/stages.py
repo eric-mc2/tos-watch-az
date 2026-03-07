@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
 
 class Stage(Enum):
@@ -22,19 +22,10 @@ class Stage(Enum):
     FACTCHECK_CLEAN = "13-factcheck-clean"
     JUDGE_RAW = "14-judge-raw"
     JUDGE_CLEAN = "15-judge-clean"
-    
-    @classmethod
-    def get_transform_name(cls, stage: str) -> Optional[str]:
-        """
-        Get the transform name for a given stage.
-        
-        Args:
-            stage: Stage enum value (e.g., Stage.BRIEF_RAW.value)
-            
-        Returns:
-            Transform name (e.g., "briefer") or None if not an LLM stage
-        """
-        STAGE_TO_TRANSFORM = {
+
+    @staticmethod
+    def _mapping():
+        return {
             Stage.BRIEF_RAW.value: "brief",
             Stage.BRIEF_CLEAN.value: "brief",
             Stage.SUMMARY_RAW.value: "summary",
@@ -46,4 +37,21 @@ class Stage(Enum):
             Stage.JUDGE_RAW.value: "judge",
             Stage.JUDGE_CLEAN.value: "judge",
         }
-        return STAGE_TO_TRANSFORM.get(stage)
+    
+    @classmethod
+    def get_transform_names(cls) -> List[str]:
+        return list(set(cls._mapping().values()))
+
+    @classmethod
+    def get_transform_name(cls, stage: str) -> Optional[str]:
+        """
+        Get the transform name for a given stage.
+        
+        Args:
+            stage: Stage enum value (e.g., Stage.BRIEF_RAW.value)
+            
+        Returns:
+            Transform name (e.g., "briefer") or None if not an LLM stage
+        """
+
+        return cls._mapping().get(stage)

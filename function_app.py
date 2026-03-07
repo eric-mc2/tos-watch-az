@@ -366,8 +366,7 @@ def claim_checker_processor(input_data: dict) -> None:
     processor = create_llm_activity_processor(container.storage,
                                               container.claim_checker_transform.check_claim,
                                               Stage.FACTCHECK_RAW.value,
-                                              "claim_checker",
-                                              paired_input_stage=Stage.DIFF_CLEAN.value)
+                                              "claim_checker")
     return processor(input_data)
 
 
@@ -388,11 +387,24 @@ def parse_factcheck(input_blob: func.InputStream) -> None:
 
 # Judge Pipeline
 @app.blob_trigger(arg_name="input_blob",
+                path="documents/08-summary-clean/{company}/{policy}/{timestamp}/latest.json",
+                connection=container.storage.adapter.get_connection_key())
+@app.durable_client_input(client_name="client")
+@pretty_error
+async def judge_summary_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+    """Blob trigger that starts the judge workflow orchestration."""
+    parts = container.storage.parse_blob_path(input_blob.name)
+    blob_name = container.storage.unparse_blob_path(parts, ".json")
+    orchestration_input = OrchData(blob_name, "judge", parts.company, parts.policy, parts.timestamp).to_dict()
+    logger.info(f"Initiating judge orchestration for {blob_name}")
+    await client.start_new("orchestrator", None, orchestration_input)
+
+@app.blob_trigger(arg_name="input_blob",
                 path="documents/13-factcheck-clean/{company}/{policy}/{timestamp}/latest.json",
                 connection=container.storage.adapter.get_connection_key())
 @app.durable_client_input(client_name="client")
 @pretty_error
-async def judge_blob_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
+async def judge_fact_trigger(input_blob: func.InputStream, client: df.DurableOrchestrationClient) -> None:
     """Blob trigger that starts the judge workflow orchestration."""
     parts = container.storage.parse_blob_path(input_blob.name)
     blob_name = container.storage.unparse_blob_path(parts, ".json")
@@ -404,12 +416,10 @@ async def judge_blob_trigger(input_blob: func.InputStream, client: df.DurableOrc
 @app.activity_trigger(input_name="input_data")
 @pretty_error(retryable=True)
 def judge_processor(input_data: dict) -> None:
-    # Judge needs summary blob from earlier stage
     processor = create_llm_activity_processor(container.storage,
                                               container.judge_transform.judge,
                                               Stage.JUDGE_RAW.value,
-                                              "judge",
-                                              paired_input_stage=Stage.SUMMARY_CLEAN.value)
+                                              "judge")
     return processor(input_data)
 
 

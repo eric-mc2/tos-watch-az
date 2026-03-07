@@ -3,8 +3,7 @@ import os
 
 from schemas.brief.v2 import Memo, Brief
 from schemas.summary.v4 import Summary
-from src.transforms.differ import DiffDoc, DiffSection
-from src.transforms.icl import ICLDataLoader
+from src.transforms.icl import SummaryDataLoader
 from src.transforms.llm_transform import LLMTransform
 from src.transforms.summary.summarizer import Summarizer
 from src.services.llm import LLMService
@@ -41,7 +40,7 @@ class TestSummarizerInt:
         storage.upload_json_blob(data.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage, ICLDataLoader(storage), transform)
+        summarizer = Summarizer(storage, SummaryDataLoader(storage), transform)
         txt, meta = summarizer.summarize("test.json")
 
         # Assert

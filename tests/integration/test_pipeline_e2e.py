@@ -7,10 +7,10 @@ import pytest
 from typing import Optional, List
 from dataclasses import dataclass
 
+from src.transforms.icl import SummaryDataLoader
 from src.services.blob import BlobService
 from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
-from src.transforms.icl import ICLDataLoader
 from src.transforms.llm_transform import LLMTransform, create_llm_parser_saver, create_llm_activity_processor
 from src.transforms.differ import DiffDoc, DiffSection
 from src.stages import Stage
@@ -116,7 +116,7 @@ def run_pipeline_stage_summarizer(fake_storage, llm_transform, brief_clean_path,
     """Run summarizer stage: BRIEF_CLEAN -> SUMMARY_RAW."""
     from src.transforms.summary.summarizer import Summarizer
 
-    summarizer = Summarizer(fake_storage, ICLDataLoader(fake_storage), llm_transform)
+    summarizer = Summarizer(fake_storage, SummaryDataLoader(fake_storage), llm_transform)
 
     processor = create_llm_activity_processor(
         fake_storage,

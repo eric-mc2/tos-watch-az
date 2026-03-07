@@ -2,19 +2,22 @@ import logging
 from dataclasses import dataclass
 from typing import Iterator
 
+from schemas.brief.v0 import BRIEF_MODULE
+from schemas.brief.v2 import Brief, Memo
 from schemas.summary.v0 import MODULE as SUMMARY_MODULE
-from schemas.summary.v4 import Summary as SummaryV4
+from schemas.summary.v4 import Summary as SummaryV4, Summary
 from schemas.fact.v0 import PROOF_MODULE
 from schemas.fact.v1 import Fact, Proof
-from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION, MODULE as JUDGE_MODULE
+from schemas.judge.v1 import VERSION as JUDGE_SCHEMA_VERSION, MODULE as JUDGE_MODULE, Judgement, Substantive
 from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService, load_validated_json_blob
+from src.stages import Stage
 from src.transforms.llm_transform import LLMTransform
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 SYSTEM_PROMPT = """
 You are part of a team that is analyzing terms of service changes.
 The team's goal is to determine whether changes are practically substantive—meaning 
@@ -64,29 +67,35 @@ You should respond only with valid JSON:
 class JudgeBuilder:
     storage: BlobService
 
-    def build_prompt(self, facts_blob_name: str, summary_blob_name: str) -> Iterator[PromptMessages]:
+    def build_prompt(self, brief_blob_name: str, summary_blob_name: str, facts_blob_name: str | None) -> Iterator[PromptMessages]:
         examples: list = [] # self.read_examples()
 
         # Get Summary
+        brief = load_validated_json_blob(brief_blob_name, BRIEF_MODULE, self.storage)
+        assert isinstance(brief, Brief) or isinstance(brief, Memo)
+
         summary = load_validated_json_blob(summary_blob_name, SUMMARY_MODULE, self.storage)
         assert isinstance(summary, SummaryV4)
 
         # Get Facts
-        facts = load_validated_json_blob(facts_blob_name, PROOF_MODULE, self.storage)
-        assert isinstance(facts, Fact) or isinstance(facts, Proof)
-        facts = facts if isinstance(facts, Proof) else Proof(facts=[facts])
+        if facts_blob_name is not None:
+            facts = load_validated_json_blob(facts_blob_name, PROOF_MODULE, self.storage)
+            assert isinstance(facts, Fact) or isinstance(facts, Proof)
+            facts = facts if isinstance(facts, Proof) else Proof(facts=[facts])
+        else:
+            facts = None
 
         # Build Prompt - pass the full summary structure
-        prompt_msg = Message("user", self._format_prompt(summary, facts))
+        prompt_msg = Message("user", self._format_prompt(brief, summary, facts))
         yield PromptMessages(system=SYSTEM_PROMPT,
                              history=examples,
                              current=prompt_msg)
 
 
     @classmethod
-    def _format_prompt(cls, summary: SummaryV4, facts: Proof):
-        plaintext_summary = cls._format_summary(summary)
-        plaintext_facts = cls._format_proof(facts)
+    def _format_prompt(cls, brief: Brief, summary: SummaryV4, facts: Proof | None):
+        plaintext_summary = cls._format_summary(summary, brief)
+        plaintext_facts = cls._format_proof(facts) if facts is not None else "None"
         formatted = [plaintext_summary,
                       "Fact-Checking:",
                       plaintext_facts]
@@ -94,12 +103,12 @@ class JudgeBuilder:
 
 
     @classmethod
-    def _format_summary(cls, summary: SummaryV4):
+    def _format_summary(cls, summary: SummaryV4, brief: Brief):
         formatted = ["Preliminary analysis:",
                      "Is the change practically substantive?",
                      str(summary.practically_substantive.rating),
-                     "Reasoning:",
-                      summary.practically_substantive.reason]
+                     "Reasoning notes:"] + \
+                    [m.section_memo for m in brief.memos] if isinstance(brief, Brief) else [brief.section_memo]
         return "\n".join(formatted)
 
     @classmethod
@@ -120,9 +129,14 @@ class Judge:
     storage: BlobService
     executor: LLMTransform
 
-    def judge(self, facts_blob_name: str, summary_blob_name: str) -> tuple[str, dict]:
-        logger.debug(f"Judging {summary_blob_name}")
+    def judge(self, facts_blob_name: str) -> tuple[str, dict]:
+        logger.debug(f"Judging {facts_blob_name}")
+        parts = self.storage.parse_blob_path(facts_blob_name)
+        brief_blob_name = self.storage.unparse_blob_path((Stage.BRIEF_CLEAN.value, parts.company, parts.policy, parts.timestamp, "latest.json"))
+        summary_blob_name = self.storage.unparse_blob_path((Stage.SUMMARY_CLEAN.value, parts.company, parts.policy, parts.timestamp, "latest.json"))
         prompter = JudgeBuilder(self.storage)
-        messages = prompter.build_prompt(facts_blob_name, summary_blob_name)
+        if parts.stage != Stage.FACTCHECK_CLEAN.value:
+            facts_blob_name = None  # Just passing along summary with no factchecking.
+        messages = prompter.build_prompt(brief_blob_name, summary_blob_name, facts_blob_name)
         return self.executor.execute_prompts(messages, JUDGE_MODULE, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
 

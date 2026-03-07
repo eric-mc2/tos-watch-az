@@ -86,7 +86,7 @@ class TestJudgeBuilder:
         builder = JudgeBuilder(fake_storage)
 
         # Act
-        prompts = list(builder.build_prompt(blob_names.fact_blob, blob_names.summary_blob))
+        prompts = list(builder.build_prompt(blob_names.summary_blob, blob_names.fact_blob))
         
         # Assert
         assert len(prompts) == 1  # Judge produces single prompt
@@ -100,7 +100,7 @@ class TestJudgeBuilder:
         builder = JudgeBuilder(fake_storage)
         
         # Act
-        prompts = list(builder.build_prompt(blob_names.fact_blob, blob_names.summary_blob))
+        prompts = list(builder.build_prompt(blob_names.summary_blob, blob_names.fact_blob))
         prompt_content = prompts[0].current.content
         
         # Assert
@@ -112,7 +112,7 @@ class TestJudgeBuilder:
         builder = JudgeBuilder(fake_storage)
         
         # Act
-        prompts = list(builder.build_prompt(blob_names.fact_blob, blob_names.summary_blob))
+        prompts = list(builder.build_prompt(blob_names.summary_blob, blob_names.fact_blob))
         prompt_content = prompts[0].current.content
         
         # Assert
@@ -136,7 +136,7 @@ class TestJudgeBuilder:
                                       metadata={"summary_schema_version": SUMMARY_VERSION_V3})
 
         # Act
-        prompts = list(builder.build_prompt(blob_names.fact_blob, "old_summary.json"))
+        prompts = list(builder.build_prompt("old_summary.json", blob_names.fact_blob))
         prompt = prompts[0]
 
         # Assert

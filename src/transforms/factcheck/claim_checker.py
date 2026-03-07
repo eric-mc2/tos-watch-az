@@ -9,6 +9,7 @@ from src.adapters.llm.protocol import Message, PromptMessages
 from src.services.blob import BlobService, load_validated_json_blob
 from src.services.embedding import EmbeddingService
 from src.services.llm import TOKEN_LIMIT, LLMService
+from src.stages import Stage
 from src.transforms.differ import DiffDoc
 from src.transforms.factcheck.vector_search import Indexer
 from src.transforms.llm_transform import LLMTransform
@@ -96,8 +97,10 @@ class ClaimChecker:
     executor: LLMTransform
     embedder: EmbeddingService
 
-    def check_claim(self, blob_name: str, other_blob_name: str) -> tuple[str, dict]:
+    def check_claim(self, blob_name: str) -> tuple[str, dict]:
         logger.debug(f"Checking claims from {blob_name}")
+        parts = self.storage.parse_blob_path(blob_name)
+        other_blob_name = self.storage.unparse_blob_path((Stage.DIFF_CLEAN.value, parts.company, parts.policy, parts.timestamp), ".json")
         prompter = ClaimCheckerBuilder(self.storage, self.embedder, self.executor.llm)
         messages = prompter.build_prompt(blob_name, other_blob_name)
         # Always annotate this as a FACT because the parser needs to validate the individual items, which are always facts.
