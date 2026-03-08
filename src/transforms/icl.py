@@ -13,8 +13,8 @@ from schemas.judge.v0 import MODULE as JUDGE_MODULE
 from schemas.summary.v2 import Substantive
 from schemas.summary.v4 import Summary
 
-from scripts.labeling.brief_labels import BriefLabelV2
-from scripts.labeling.summary_labels import SummaryLabelV1
+from scripts.labeling.brief_labels import BriefLabelV3
+from scripts.labeling.summary_labels import SummaryLabelV2
 from src.adapters.llm.protocol import Message
 from src.services.blob import BlobService, load_validated_json_blob
 from src.stages import Stage
@@ -124,7 +124,7 @@ class JudgeDataLoader(LabeledDataLoader):
         gold_list = []
         labels = self.load_labels(version, stage)
         for label in labels:
-            gold_list.append(label['metadata'] | label['fields'] | SummaryLabelV1.from_dict(label).model_dump())
+            gold_list.append(label['metadata'] | label['fields'] | SummaryLabelV2.from_dict(label).model_dump())
         gold = pd.DataFrame.from_records(gold_list)  # type: ignore
 
         # Add this for easy linking
@@ -189,10 +189,10 @@ class JudgeDataLoader(LabeledDataLoader):
 
 
     def load_icl(self, prompt_version: str) -> List[Message]:
-        pass
+        raise NotImplementedError()
 
     def pick_icl(self, version: str) -> pd.DataFrame:
-        pass
+        raise NotImplementedError()
 
 
 class SummaryDataLoader(LabeledDataLoader):
@@ -221,7 +221,7 @@ class SummaryDataLoader(LabeledDataLoader):
         gold_list = []
         labels = self.load_labels(version, stage)
         for label in labels:
-            gold_list.append(label['metadata'] | label['fields'] | SummaryLabelV1.from_dict(label).model_dump())
+            gold_list.append(label['metadata'] | label['fields'] | SummaryLabelV2.from_dict(label).model_dump())
         gold = pd.DataFrame.from_records(gold_list)  # type: ignore
 
         # Add this for easy linking
@@ -289,6 +289,11 @@ class SummaryDataLoader(LabeledDataLoader):
 
     def pick_icl(self, prompt_version: str = "") -> pd.DataFrame:
         y_pred = self.load_pred_labels()  # TODO: use the seach by metadata feature
+        
+        # Return empty DataFrame if no predictions exist
+        if y_pred.empty:
+            return pd.DataFrame(columns=["label", "blob_key", "text", "feedback"])
+        
         y_pred["practically_substantive"] = y_pred["practically_substantive"].astype(bool)
 
         labels = self.load_all_true_labels()
@@ -318,11 +323,15 @@ class SummaryDataLoader(LabeledDataLoader):
     def load_icl(self, prompt_version: str = "") -> List[Message]:
         """Load ground truth labels from evaluation dataset."""
         icl = self.pick_icl(prompt_version)
+        
+        # Return empty list if no ICL data available
+        if icl.empty:
+            return []
 
         examples = []
         for row in icl.itertuples():
             examples.append(Message("user", row.text)) # type: ignore
-            dummy = Summary(practically_substantive=Substantive(rating=False, reason=row.feedback))
+            dummy = Summary(practically_substantive=Substantive(rating=False, reason=row.feedback)) # type: ignore
             examples.append(Message("assistant", dummy.model_dump_json()))
         return examples
 
@@ -341,7 +350,7 @@ class BriefDataLoader(LabeledDataLoader):
         gold_list = []
         labels = self.load_labels(version, stage)
         for label in labels:
-            gold_list.append(label['metadata'] | BriefLabelV2.from_dict(label).model_dump())
+            gold_list.append(label['metadata'] | BriefLabelV3.from_dict(label).model_dump())
         gold = pd.DataFrame.from_records(gold_list)  # type: ignore
 
         # Add this for easy linking
@@ -412,6 +421,11 @@ class BriefDataLoader(LabeledDataLoader):
         labels = labels.drop(columns=lineage_groups, errors='ignore')
 
         y_pred = self.load_pred_labels()  # TODO: use the seach by metadata feature  # TODO: need to cache this!
+        
+        # Return empty DataFrame if no predictions exist
+        if y_pred.empty:
+            return pd.DataFrame(columns=["label", "blob_key", "text", "feedback"])
+        
         y_pred["practically_substantive"] = y_pred["practically_substantive"].astype(bool)
         if prompt_version:
             y_latest = y_pred[y_pred["brief_prompt_version"] == prompt_version]
@@ -427,7 +441,10 @@ class BriefDataLoader(LabeledDataLoader):
 
         errors = merged[(merged["FP"] | merged["FN"]) & merged["feedback"].notna()]
         weights = errors["FP"] * 2 + errors["FN"] + 1
-        icl = errors.sample(3, weights=weights, random_state=12345)
+        if not errors.empty:
+            icl = errors.sample(3, weights=weights, random_state=12345)
+        else:
+            icl = errors.copy()
 
         diffs = []
         for key in icl['blob_path_true']:
@@ -440,12 +457,16 @@ class BriefDataLoader(LabeledDataLoader):
     def load_icl(self, prompt_version: str = "") -> List[Message]:
         """Load ground truth labels from evaluation dataset."""
         icl = self.pick_icl(prompt_version)
+        
+        # Return empty list if no ICL data available
+        if icl.empty:
+            return []
 
         examples = []
         formatter = StandardDiffFormatter()
         for row in icl.itertuples():
-            doc = DiffDoc.model_validate_json(row.text)
+            doc = DiffDoc.model_validate_json(row.text)  # type: ignore
             examples.append(Message("user", formatter.format_doc(doc)))
-            dummy = Brief(memos=[Memo(section_memo="", running_memo=row.feedback)])
+            dummy = Brief(memos=[Memo(section_memo="", running_memo=row.feedback)])  # type: ignore
             examples.append(Message("assistant", dummy.model_dump_json()))
         return examples

@@ -67,7 +67,7 @@ You should respond only with valid JSON:
 class JudgeBuilder:
     storage: BlobService
 
-    def build_prompt(self, brief_blob_name: str, summary_blob_name: str, facts_blob_name: str | None) -> Iterator[PromptMessages]:
+    def build_prompt(self, brief_blob_name: str, summary_blob_name: str, facts_blob_name: str = "") -> Iterator[PromptMessages]:
         examples: list = [] # self.read_examples()
 
         # Get Summary
@@ -78,7 +78,7 @@ class JudgeBuilder:
         assert isinstance(summary, SummaryV4)
 
         # Get Facts
-        if facts_blob_name is not None:
+        if facts_blob_name:
             facts = load_validated_json_blob(facts_blob_name, PROOF_MODULE, self.storage)
             assert isinstance(facts, Fact) or isinstance(facts, Proof)
             facts = facts if isinstance(facts, Proof) else Proof(facts=[facts])
@@ -93,7 +93,7 @@ class JudgeBuilder:
 
 
     @classmethod
-    def _format_prompt(cls, brief: Brief, summary: SummaryV4, facts: Proof | None):
+    def _format_prompt(cls, brief: Brief | Memo, summary: SummaryV4, facts: Proof | None):
         plaintext_summary = cls._format_summary(summary, brief)
         plaintext_facts = cls._format_proof(facts) if facts is not None else "None"
         formatted = [plaintext_summary,
@@ -103,7 +103,7 @@ class JudgeBuilder:
 
 
     @classmethod
-    def _format_summary(cls, summary: SummaryV4, brief: Brief):
+    def _format_summary(cls, summary: SummaryV4, brief: Brief | Memo):
         formatted = ["Preliminary analysis:",
                      "Is the change practically substantive?",
                      str(summary.practically_substantive.rating),
@@ -136,7 +136,7 @@ class Judge:
         summary_blob_name = self.storage.unparse_blob_path((Stage.SUMMARY_CLEAN.value, parts.company, parts.policy, parts.timestamp, "latest.json"))
         prompter = JudgeBuilder(self.storage)
         if parts.stage != Stage.FACTCHECK_CLEAN.value:
-            facts_blob_name = None  # Just passing along summary with no factchecking.
+            facts_blob_name = ""  # Just passing along summary with no factchecking.
         messages = prompter.build_prompt(brief_blob_name, summary_blob_name, facts_blob_name)
         return self.executor.execute_prompts(messages, JUDGE_MODULE, JUDGE_SCHEMA_VERSION, PROMPT_VERSION)
 

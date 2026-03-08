@@ -1,6 +1,7 @@
 import os
 import pytest
 
+from schemas.brief.v2 import Memo, BRIEF_VERSION
 from schemas.judge.v1 import Judgement
 from schemas.summary.v4 import Summary as SummaryV4, VERSION as SUMMARY_VERSION
 from schemas.summary.v2 import Substantive
@@ -50,6 +51,10 @@ class TestJudgeIntegration:
     def test_judge_all_sustained(self, fake_storage, llm_transform):
         """Test judging obviously substantive changes."""
         # Arrange - clear substantive change
+        # Create brief for the judge
+        from schemas.brief.v2 import Brief
+        brief = Brief(memos=[Memo(section_memo="Policy analysis", running_memo="Significant changes detected")])
+        
         summary = SummaryV4(practically_substantive=Substantive(
                     rating=True,
                     reason="Service now requires government-issued ID for all users, mandatory arbitration added, and users lose right to sue."
@@ -68,9 +73,17 @@ class TestJudgeIntegration:
                       reason="Section on right to sue has been removed").model_dump()
         ])
         
-        summary_blob = "obviously_substantive_summary.json"
-        facts_blob = "obviously_substantive_facts.json"
+        # Use proper stage paths
+        from src.stages import Stage
+        brief_blob = f"{Stage.BRIEF_CLEAN.value}/test_company/test_policy/20240101000000/latest.json"
+        summary_blob = f"{Stage.SUMMARY_CLEAN.value}/test_company/test_policy/20240101000000/latest.json"
+        facts_blob = f"{Stage.FACTCHECK_CLEAN.value}/test_company/test_policy/20240101000000/latest.json"
         
+        fake_storage.upload_text_blob(
+            brief.model_dump_json(),
+            brief_blob,
+            metadata={"schema_version": BRIEF_VERSION}
+        )
         fake_storage.upload_text_blob(
             summary.model_dump_json(), 
             summary_blob, 
@@ -88,7 +101,7 @@ class TestJudgeIntegration:
         )
         
         # Act
-        result_json, metadata = judge.judge(facts_blob, summary_blob)
+        result_json, metadata = judge.judge(facts_blob)
         
         # Assert
         result = Judgement.model_validate_json(result_json)
@@ -96,6 +109,10 @@ class TestJudgeIntegration:
 
     def test_judge_obviously_nonsubstantive(self, fake_storage, llm_transform):
         # Arrange
+        # Create brief for the judge
+        from schemas.brief.v2 import Brief
+        brief = Brief(memos=[Memo(section_memo="Policy analysis", running_memo="Changes claimed but need verification")])
+        
         summary = SummaryV4(practically_substantive=Substantive(
             rating=True,
             reason="Service now requires government-issued ID for all users, mandatory arbitration added, and users lose right to sue."
@@ -112,9 +129,18 @@ class TestJudgeIntegration:
                       veracity=False,
                       reason="On further inspection, document describes the right but does not revoke it.").model_dump()
         ])
-        summary_blob = "nonsubstantive_summary.json"
-        facts_blob = "nonsubstantive_facts.json"
         
+        # Use proper stage paths
+        from src.stages import Stage
+        brief_blob = f"{Stage.BRIEF_CLEAN.value}/test_company/test_policy/20240101000001/latest.json"
+        summary_blob = f"{Stage.SUMMARY_CLEAN.value}/test_company/test_policy/20240101000001/latest.json"
+        facts_blob = f"{Stage.FACTCHECK_CLEAN.value}/test_company/test_policy/20240101000001/latest.json"
+        
+        fake_storage.upload_text_blob(
+            brief.model_dump_json(),
+            brief_blob,
+            metadata={"schema_version": BRIEF_VERSION}
+        )
         fake_storage.upload_text_blob(
             summary.model_dump_json(), 
             summary_blob, 
@@ -132,7 +158,7 @@ class TestJudgeIntegration:
         )
         
         # Act
-        result_json, metadata = judge.judge(facts_blob, summary_blob)
+        result_json, metadata = judge.judge(facts_blob)
         
         # Assert
         result = Judgement.model_validate_json(result_json)
@@ -141,6 +167,10 @@ class TestJudgeIntegration:
     def test_judge_with_conflicting_evidence(self, fake_storage, llm_transform):
         """Test judging when initial analysis and facts might conflict."""
         # Arrange - summary says substantive, but facts are weak
+        # Create brief for the judge
+        from schemas.brief.v2 import Brief
+        brief = Brief(memos=[Memo(section_memo="Privacy policy overhaul detected", running_memo="Major changes to data sharing")])
+        
         summary = SummaryV4(practically_substantive=Substantive(
                     rating=True,
                     reason="Major privacy policy overhaul with significant data sharing changes."
@@ -160,9 +190,17 @@ class TestJudgeIntegration:
                       reason="Data sharing terms are identical between versions").model_dump(),
         ])
         
-        summary_blob = "conflicting_summary.json"
-        facts_blob = "conflicting_facts.json"
+        # Use proper stage paths
+        from src.stages import Stage
+        brief_blob = f"{Stage.BRIEF_CLEAN.value}/test_company/test_policy/20240101000002/latest.json"
+        summary_blob = f"{Stage.SUMMARY_CLEAN.value}/test_company/test_policy/20240101000002/latest.json"
+        facts_blob = f"{Stage.FACTCHECK_CLEAN.value}/test_company/test_policy/20240101000002/latest.json"
         
+        fake_storage.upload_text_blob(
+            brief.model_dump_json(),
+            brief_blob,
+            metadata={"schema_version": BRIEF_VERSION}
+        )
         fake_storage.upload_text_blob(
             summary.model_dump_json(), 
             summary_blob, 
@@ -180,7 +218,7 @@ class TestJudgeIntegration:
         )
         
         # Act
-        result_json, metadata = judge.judge(facts_blob, summary_blob)
+        result_json, metadata = judge.judge(facts_blob)
         
         # Assert - judge should reconcile the conflict
         result = Judgement.model_validate_json(result_json)

@@ -211,3 +211,14 @@ class SummaryLabelV1(SummaryLabelBase):
             practically_substantive_true=pst,
             practically_substantive_pred=psp
         )
+
+class SummaryLabelV2(SummaryLabelV1):
+    feedback: str
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        v1 = SummaryLabelV1.from_dict(label)
+        feedback = label['responses'].get('feedback', [{}])[0].get('value', "")
+        return cls(practically_substantive_true = v1.practically_substantive_true,
+                   practically_substantive_pred = v1.practically_substantive_pred,
+                   feedback = feedback)

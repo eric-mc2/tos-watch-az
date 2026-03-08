@@ -8,7 +8,7 @@ VERSION = "v2"
 
 class Substantive(BaseModel):
     rating: bool
-    reason: str = Field(..., min_length=1)
+    reason: str
 
 @register(MODULE, VERSION)
 class Summary(SummaryBase):

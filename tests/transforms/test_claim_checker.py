@@ -5,6 +5,7 @@ import pytest
 from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact
 from schemas.fact.v1 import Fact
 from schemas.llmerror.v1 import LLMError
+from src.stages import Stage
 from src.transforms.factcheck.claim_checker import ClaimCheckerBuilder, ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
@@ -91,9 +92,12 @@ def sample_diffs():
 BlobNames = namedtuple("BlobNames", ["single_claim_blob", "multi_claims_blob", "diffs_blob"])
 
 @pytest.fixture
-def blob_names() -> BlobNames:
+def blob_names(fake_storage) -> BlobNames:
     """Sample blob names for testing."""
-    return BlobNames("claim.json", "claims.json", "diff.json")
+    single_name = fake_storage.unparse_blob_path((Stage.CLAIM_RAW.value, "c","p","123456789","claim.json"))
+    multi_name = fake_storage.unparse_blob_path((Stage.CLAIM_RAW.value, "c","p","123456789","claims.json"))
+    diff_name = fake_storage.unparse_blob_path((Stage.DIFF_CLEAN.value, "c","p","123456789.json"))
+    return BlobNames(single_name, multi_name, diff_name)
 
 @pytest.fixture
 def upload_test_data(fake_storage, sample_claims, sample_claim, sample_diffs, blob_names):
@@ -181,7 +185,7 @@ class TestClaimChecker:
         )
         
         # Act
-        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob)
         
         # Assert
         assert result_json is not None
@@ -210,7 +214,7 @@ class TestClaimChecker:
         )
 
         # Act
-        result_json, metadata = checker.check_claim(blob_names.single_claim_blob, blob_names.diffs_blob)
+        result_json, metadata = checker.check_claim(blob_names.single_claim_blob)
 
         # Assert
         assert result_json is not None
@@ -246,7 +250,7 @@ class TestClaimChecker:
         )
 
         # Act
-        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob)
 
         # Assert
         results = [Fact.model_validate(x) for x in json.loads(result_json)['chunks']]
@@ -270,7 +274,7 @@ class TestClaimChecker:
         llm_service.adapter.set_response_static("{'foo'")
 
         # Act
-        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob, blob_names.diffs_blob)
+        result_json, metadata = checker.check_claim(blob_names.multi_claims_blob)
 
         # Assert
         [LLMError.model_validate(x) for x in json.loads(result_json)['chunks']]

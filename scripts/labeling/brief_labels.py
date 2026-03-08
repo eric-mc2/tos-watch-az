@@ -268,6 +268,27 @@ class BriefLabelV2(BriefLabelV1):
                  notes_good = None)
         return v2
 
+class BriefLabelV3(BriefLabelV2):
+    feedback: str
+
+    @classmethod
+    def from_dict(cls, label: dict):
+        v2 = super().from_dict(label)
+        v3 = cls.migrate(v2)
+        feedback = label['responses'].get('feedback',[{}])[0].get('value', "")
+        v3.feedback = feedback
+        return v3
+
+    @classmethod
+    def migrate(cls, v2: BriefLabelV2) -> Self:
+        if not isinstance(v2, BriefLabelV2):
+            v2 = BriefLabelV2.migrate(v2)
+        v3 = cls(practically_substantive_true = v2.practically_substantive_true,
+                 practically_substantive_pred = v2.practically_substantive_pred,
+                 notes_good = v2.notes_good,
+                 feedback = "")
+        return v3
+
 
 def optional_bool(value: str) -> Optional[bool]:
     return {'True': True, 'False': False, "unsure": None}.get(value, None)

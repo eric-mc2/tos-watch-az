@@ -3,12 +3,14 @@ import pytest
 from schemas.brief.v0 import BRIEF_MODULE
 from schemas.brief.v2 import Memo, Brief, merge_memos
 from schemas.llmerror.v1 import LLMError
+from schemas.summary.v4 import Summary, Substantive, VERSION as SUMMARY_SCHEMA_VERSION
 from src.stages import Stage
 from src.transforms.differ import DiffSection, DiffDoc
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.fake_client import FakeLLMAdapter
 from src.services.blob import BlobService
 from src.services.llm import LLMService, TOKEN_LIMIT
+from src.transforms.icl import BriefDataLoader
 from src.transforms.llm_transform import LLMTransform, create_llm_parser
 from src.transforms.summary.briefer import BriefBuilder, Briefer
 
@@ -18,6 +20,13 @@ def fake_storage():
     adapter = FakeStorageAdapter()
     adapter.create_container()
     service = BlobService(adapter)
+    # Because of ICL we have to add some fake examples.
+    service.upload_text_blob(
+        Summary(practically_substantive=Substantive(rating=True, reason='because')).model_dump_json(),
+        service.unparse_blob_path((Stage.SUMMARY_CLEAN.value,"c","p","123","abc.json")),
+        metadata={"schema_version": SUMMARY_SCHEMA_VERSION},
+    )
+
     return service
 
 
@@ -36,7 +45,7 @@ class TestBriefBuilder:
 
     def test_single_short(self, fake_storage, fake_llm):
         # Arrange
-        builder = BriefBuilder(fake_storage, fake_llm)
+        builder = BriefBuilder(fake_storage, BriefDataLoader(fake_storage), fake_llm)
         data = DiffDoc(diffs=[DiffSection(index=0, before="before", after="after")])
         
         blob_name = f"{Stage.DIFF_CLEAN.value}/company/policy/12345.json"
@@ -49,7 +58,7 @@ class TestBriefBuilder:
 
     def test_multiple_short(self, fake_storage, fake_llm, llm_transform):
         # Arrange
-        builder = BriefBuilder(fake_storage, fake_llm)
+        builder = BriefBuilder(fake_storage, BriefDataLoader(fake_storage), fake_llm)
         data = DiffDoc(diffs=[DiffSection(index=0, before="before", after="after")]*10)
 
         blob_name = f"{Stage.DIFF_CLEAN.value}/company/policy/12345.json"
@@ -62,7 +71,7 @@ class TestBriefBuilder:
 
     def test_single_long(self, fake_storage, fake_llm, llm_transform):
         # Arrange
-        builder = BriefBuilder(fake_storage, fake_llm)
+        builder = BriefBuilder(fake_storage, BriefDataLoader(fake_storage), fake_llm)
         data = DiffDoc(diffs=[DiffSection(index=0,
                                           before="before"*int(TOKEN_LIMIT*.9),
                                           after="after")])
@@ -77,7 +86,7 @@ class TestBriefBuilder:
 
     def test_multiple_long(self, fake_storage, fake_llm, llm_transform):
         # Arrange
-        builder = BriefBuilder(fake_storage, fake_llm)
+        builder = BriefBuilder(fake_storage, BriefDataLoader(fake_storage), fake_llm)
         data = DiffDoc(diffs=[DiffSection(index=0,
                                           before="before" * int(TOKEN_LIMIT * .9),
                                           after="after")]*3)

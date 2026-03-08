@@ -73,12 +73,12 @@ def validate_files() -> dict:
                 if not any((b.stage == Stage.SUMMARY_CLEAN.value for b in blobs[key])):
                     evals_missing.setdefault(key, {version}).add("summary")
 
-    evals_missing = {k: list(v) for k,v in evals_missing.items()}  # sets are not json serializable
+    evals_missing_files = {k: list(v) for k,v in evals_missing.items()}  # sets are not json serializable
     return {"Missing Briefs Count": missing_brief_count,
             "Missing Brief Files": missing_brief_files,
             "Missing Summary Count": missing_summary_count,
             "Missing Summary Files": missing_summary_files,
-            "Evals Missing": evals_missing}
+            "Evals Missing": evals_missing_files}
 
 
 def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):

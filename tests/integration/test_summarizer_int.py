@@ -40,7 +40,7 @@ class TestSummarizerInt:
         storage.upload_json_blob(data.model_dump_json(), "test.json")
 
         # Act
-        summarizer = Summarizer(storage, SummaryDataLoader(storage), transform)
+        summarizer = Summarizer(storage, transform)
         txt, meta = summarizer.summarize("test.json")
 
         # Assert
