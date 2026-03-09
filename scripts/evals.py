@@ -17,13 +17,9 @@ from src.utils.app_utils import load_env_vars
 from scripts.metrics.summary_metrics import SummaryMetrics
 from scripts.metrics.brief_metrics import BriefMetrics
 from scripts.metrics.judge_metrics import JudgeMetrics
+from src.utils.log_utils import silence_loggers
 
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('argilla').setLevel(logging.WARNING)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('azure').setLevel(logging.WARNING)
-
+silence_loggers()
 
 def main():
     load_env_vars()

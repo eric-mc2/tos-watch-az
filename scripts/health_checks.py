@@ -11,26 +11,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 from src.transforms.icl import SummaryDataLoader
-from src.adapters.embedding.client import SentenceTransformerAdapter
-from src.adapters.http.client import RequestsAdapter
-from src.adapters.llm.client import ClaudeAdapter
-from src.adapters.storage.client import AzureStorageAdapter
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
-from src.services.blob import BlobService, RunBlobPath
-from src.services.embedding import EmbeddingService
-from src.services.llm import LLMService
+from src.services.blob import RunBlobPath
 from src.utils.app_utils import load_env_vars
 from src.utils.log_utils import setup_logger
-from src.utils.path_utils import extract_policy
 from src.stages import Stage
-from src.transforms.seeds import STATIC_URLS
-
-# TODO: refactor to properly used DI services and dev/stage/prod
 
 setup_logger(__name__, logging.WARNING)
-logging.getLogger("azure").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"

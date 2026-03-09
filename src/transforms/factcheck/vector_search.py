@@ -8,7 +8,7 @@ from src.transforms.differ import DiffDoc, DiffSection
 from src.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__, logging.DEBUG)
-logging.getLogger("faiss").setLevel(logging.WARNING)
+# Import after silencing faiss logs.
 import faiss  # type: ignore
 
 

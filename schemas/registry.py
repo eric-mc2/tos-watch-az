@@ -50,3 +50,9 @@ def _version_compare(a: str, b: str) -> int:
         return -1
     else:
         return 1
+
+def increment_version(version: str) -> str:
+    return _format_version(_parse_version(version) - 1)
+
+def decrement_version(version: str) -> str:
+    return _format_version(_parse_version(version) + 1)

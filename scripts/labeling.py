@@ -6,23 +6,9 @@ from scripts.labeling.summary_labels import SummaryV1Dataset
 from src.container import ServiceContainer
 
 from src.utils.app_utils import load_env_vars
+from src.utils.log_utils import silence_loggers
 
-# TODO: Want to double the number of briefer labels to ~50 to have legit stats.
-#       Try not to blow up job queue!
-#       ALSO: Want to get 3-5 ICL examples. So over-label by 3-5 count.
-#       And then basically the ICL thing should PICK from existing Evals labels.
-#       And remove them from the evals set.
-#       Basically filter by criteria (FP, FN, etc) and order by length.
-# TODO: No I don't necessarily need summary labels because I'm labeling the summary stage in briefer.
-#       But I do need separate evals and ICL. Because briefer will first focus on examples that
-#       are wrong on the merits of the notes whereas summary will focus on examples that are
-#       wrong on the merits of the summary.
-
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('argilla').setLevel(logging.INFO)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('azure').setLevel(logging.WARNING)
+silence_loggers()
 
 
 if __name__ == "__main__":

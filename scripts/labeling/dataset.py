@@ -36,12 +36,6 @@ class DatasetBase:
         Args:
             name: Dataset name (e.g., 'summary_v1', 'brief_v1')
             split: Data split - 'icl' for training examples or 'eval' for evaluation
-        
-        Note:
-            TODO: Implement automatic split logic based on metrics optimization.
-            For now, manually specify split when downloading. The split determines
-            whether data is reserved for ICL examples (never used in evals) or
-            available for evaluation.
         """
         dataset = self.client.datasets(name)
         if dataset is None:

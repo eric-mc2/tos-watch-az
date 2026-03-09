@@ -3,6 +3,7 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterator, List, cast
+from collections import OrderedDict
 
 import pandas as pd
 
@@ -26,13 +27,25 @@ class LabeledDataLoader(ABC):
     """Base class for loading labeled data from disk."""
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
     DATA_DIR = PROJECT_ROOT / "data"
+    _cache: OrderedDict
     data_subdir: str = "eval"
+    MAX_CACHE = 5
 
     storage: BlobService
 
     def __init__(self, storage: BlobService):
         self.storage = storage
+        self._cache = OrderedDict()
 
+    def _cache_get(self, key):
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        return self._cache.get(key)
+
+    def _cache_add(self, key, value) -> None:
+        self._cache[key] = value
+        if len(self._cache) > self.MAX_CACHE:
+            self._cache.popitem(last=False)
 
     def load_labels(self, version: str = "", stage: str = "") -> list[dict]:
         if not version and not stage:
@@ -49,7 +62,6 @@ class LabeledDataLoader(ABC):
                     with open(self.DATA_DIR / self.data_subdir / version / "records.json") as f:
                         data.extend(json.load(f))
         return data
-
 
     def _find_label_file(self, version: str) -> str:
         """Find records.json file for given version in data subdirectory."""
@@ -147,6 +159,9 @@ class JudgeDataLoader(LabeledDataLoader):
 
     def load_pred_labels(self) -> pd.DataFrame:
         """Load predictions from JUDGE_CLEAN stage."""
+        predictions_df = self._cache_get(Stage.JUDGE_CLEAN.value)
+        if predictions_df is not None:
+            return predictions_df
         blobs = self.storage.adapter.list_blobs()
         clean_blobs = [b for b in blobs
                        if b.startswith(Stage.JUDGE_CLEAN.value)
@@ -168,6 +183,7 @@ class JudgeDataLoader(LabeledDataLoader):
         if "AzureWebJobsParentId" in predictions_df.columns:
             predictions_df = predictions_df.drop(columns=["AzureWebJobsParentId"])
         predictions_df = predictions_df.drop_duplicates()
+        self._cache_add(Stage.JUDGE_CLEAN.value, predictions_df)
         return predictions_df
 
     def load_raw_exists(self) -> pd.DataFrame:
@@ -245,6 +261,9 @@ class SummaryDataLoader(LabeledDataLoader):
 
     def load_pred_labels(self) -> pd.DataFrame:
         """Load predictions from SUMMARY_CLEAN stage."""
+        predictions_df = self._cache_get(Stage.SUMMARY_CLEAN.value)
+        if predictions_df is not None:
+            return predictions_df
         blobs = self.storage.adapter.list_blobs()
         clean_blobs = [b for b in blobs
                        if b.startswith(Stage.SUMMARY_CLEAN.value)
@@ -266,6 +285,7 @@ class SummaryDataLoader(LabeledDataLoader):
         if "AzureWebJobsParentId" in predictions_df.columns:
             predictions_df = predictions_df.drop(columns=["AzureWebJobsParentId"])
         predictions_df = predictions_df.drop_duplicates()
+        self._cache_add(Stage.SUMMARY_CLEAN.value, predictions_df)
         return predictions_df
 
 
@@ -288,7 +308,7 @@ class SummaryDataLoader(LabeledDataLoader):
 
 
     def pick_icl(self, prompt_version: str = "") -> pd.DataFrame:
-        y_pred = self.load_pred_labels()  # TODO: use the seach by metadata feature
+        y_pred = self.load_pred_labels()
         
         # Return empty DataFrame if no predictions exist
         if y_pred.empty:
@@ -373,6 +393,9 @@ class BriefDataLoader(LabeledDataLoader):
 
     def load_pred_labels(self) -> pd.DataFrame:
         """Load predictions from SUMMARY_CLEAN stage."""
+        predictions_df = self._cache_get(Stage.SUMMARY_CLEAN.value)
+        if predictions_df is not None:
+            return predictions_df
         blobs = self.storage.adapter.list_blobs()
         clean_blobs = [b for b in blobs
                        if b.startswith(Stage.SUMMARY_CLEAN.value)
@@ -394,6 +417,7 @@ class BriefDataLoader(LabeledDataLoader):
         if "AzureWebJobsParentId" in predictions_df.columns:
             predictions_df = predictions_df.drop(columns=["AzureWebJobsParentId"])
         predictions_df = predictions_df.drop_duplicates()
+        self._cache_add(Stage.SUMMARY_CLEAN.value, predictions_df)
         return predictions_df
 
 
@@ -420,7 +444,7 @@ class BriefDataLoader(LabeledDataLoader):
         lineage_groups = ['brief_schema_version', 'brief_prompt_version', 'brief_model_version']
         labels = labels.drop(columns=lineage_groups, errors='ignore')
 
-        y_pred = self.load_pred_labels()  # TODO: use the seach by metadata feature  # TODO: need to cache this!
+        y_pred = self.load_pred_labels()
         
         # Return empty DataFrame if no predictions exist
         if y_pred.empty:

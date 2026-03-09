@@ -25,10 +25,6 @@ load_env_vars()
 app = func.FunctionApp()
 
 logger = setup_logger(__name__, logging.DEBUG)
-logging.getLogger('azure').setLevel(logging.WARNING)
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
-
 container = ServiceContainer.create()
 
 @app.orchestration_trigger(context_name="context")

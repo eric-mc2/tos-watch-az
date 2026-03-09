@@ -4,18 +4,18 @@ import random
 import time
 from pathlib import Path
 
+from schemas.registry import decrement_version
 from src.container import ServiceContainer
 from src.stages import Stage
-from src.transforms.seeds import STATIC_URLS
 from src.utils.app_utils import load_env_vars
-from src.transforms.icl import SummaryDataLoader, BriefDataLoader, LabeledDataLoader
+from src.utils.log_utils import silence_loggers
 from src.utils.path_utils import extract_policy
+from src.transforms.icl import SummaryDataLoader, BriefDataLoader, LabeledDataLoader
+from src.transforms.seeds import STATIC_URLS
+from src.transforms.summary.summarizer import PROMPT_VERSION as SUMMARY_VERSION
+from src.transforms.summary.briefer import PROMPT_VERSION as BRIEFER_VERSION
 
-logging.getLogger('httpcore').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('argilla').setLevel(logging.WARNING)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('azure').setLevel(logging.WARNING)
+silence_loggers()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -32,8 +32,8 @@ def trigger_random(n: int, stage: str):
         loader = SummaryDataLoader(container.storage)
 
     exclude = []
-    icl = loader.load_labels(stage=stage)
-    exclude.extend([x['blob_path'] for x in icl])
+    previous_sample = loader.load_blob_keys(stage=stage)
+    exclude.extend([x['blob_key'] for x in previous_sample])
 
     m = 0
     while m < n:
@@ -42,8 +42,7 @@ def trigger_random(n: int, stage: str):
         policy = extract_policy(url)
         timestamp = '0'*len(time.strftime("%Y%m%d%H%M%S"))
 
-        # TODO: verify exclusion
-        blob_path = container.storage.unparse_blob_path((Stage.DIFF_CLEAN.value, company, policy, timestamp), ".json")
+        blob_path = "/".join((company, policy, timestamp))
         if blob_path not in exclude:
             trigger_url(url, container, company, policy, timestamp)
             m += 1
@@ -63,9 +62,13 @@ def trigger_labels(label_name: str):
         Stage.get_transform_name(Stage.SUMMARY_CLEAN.value): SummaryDataLoader,
         Stage.get_transform_name(Stage.BRIEF_CLEAN.value): BriefDataLoader,
     }
-    
+    prompt_version = {
+        Stage.get_transform_name(Stage.SUMMARY_CLEAN.value): decrement_version(SUMMARY_VERSION),
+        Stage.get_transform_name(Stage.BRIEF_CLEAN.value): decrement_version(BRIEFER_VERSION),
+    }
+
     loader = loaders[stage](storage)
-    labels = loader.load_eval_labels(label_version=label_name, prompt_version="v9") # TODO: dont hardcode
+    labels = loader.load_eval_labels(label_version=label_name, prompt_version=prompt_version[stage])
     
     # Touch blobs for all labeled examples
     for record in labels.blob_path:

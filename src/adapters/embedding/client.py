@@ -3,7 +3,7 @@ import os
 from typing import Optional, Any
 import numpy as np
 import numpy.typing as npt
-from sentence_transformers import SentenceTransformer # TODO: Cover import in integration test
+from sentence_transformers import SentenceTransformer
 
 from src.utils.log_utils import setup_logger
 
