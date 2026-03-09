@@ -97,8 +97,11 @@ class SnapshotScraper:
                 logger.debug("Cleaning html.")
                 cleaned_html = self.extract_main_text(html_content, encoding=detected_encoding or None)
 
-                self.storage.upload_html_blob(cleaned_html, blob_name)
-                logger.info(f"Saved snapshot to blob: {blob_name}")
+                if "ask the publisher" in cleaned_html.lower():
+                    logger.warning(f"Snapshot from archive.org is paywalled. Skipping {blob_name}")
+                else:
+                    self.storage.upload_html_blob(cleaned_html, blob_name)
+                    logger.info(f"Saved snapshot to blob: {blob_name}")
 
             except HTTPError as e:
                 if e.response.status_code == 403:
