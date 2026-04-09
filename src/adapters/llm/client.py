@@ -52,13 +52,13 @@ class ClaudeAdapter(LLMProtocol):
             logger.warning("Multiple LLM outputs")
         txt = response.content[0].text # type:ignore
         return txt
-    
+
 
     def count_tokens(self, system: str, messages: list[Message]) -> int:
         client = self._get_client()
         response = client.messages.count_tokens(**self._config_messages(system, messages))
         return response.input_tokens
-    
+
 
     def _config_messages(self, system: str, messages: list[Message]) -> dict:
         return dict(
@@ -70,11 +70,11 @@ class ClaudeAdapter(LLMProtocol):
             }],
             messages=[MessageParam(content=m.content, role=m.role) for m in messages]
         )
-    
+
     def _config_messages_for_model(self, system: str, messages: list[Message]) -> dict:
         return self._config_messages(system, messages) | dict(max_tokens=self.max_output)
-            
-    
+
+
     def get_max_output(self) -> int:
         return self.max_output
 
