@@ -7,7 +7,6 @@ import pytest
 from typing import Optional, List
 from dataclasses import dataclass
 
-from src.transforms.icl import SummaryDataLoader
 from src.services.blob import BlobService
 from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
@@ -116,7 +115,7 @@ def run_pipeline_stage_summarizer(fake_storage, llm_transform, brief_clean_path,
     """Run summarizer stage: BRIEF_CLEAN -> SUMMARY_RAW."""
     from src.transforms.summary.summarizer import Summarizer
 
-    summarizer = Summarizer(fake_storage, SummaryDataLoader(fake_storage), llm_transform)
+    summarizer = Summarizer(fake_storage, llm_transform)
 
     processor = create_llm_activity_processor(
         fake_storage,
@@ -177,7 +176,6 @@ def run_pipeline_stage_claim_checker(fake_storage, llm_transform, fake_embedding
         claim_checker.check_claim,
         Stage.FACTCHECK_RAW.value,
         "claim_checker",
-        paired_input_stage=Stage.DIFF_CLEAN.value
     )
     
     processor({'task_id': claim_clean_path, 'company': company, 'policy': policy, 'timestamp': timestamp})
@@ -239,8 +237,8 @@ def generate_test_cases():
         DiffSection(index=1, before="We share data.", after="We sell data.")
     ]
     two_long_diffs = [
-        DiffSection(index=0, before="A" * (TOKEN_LIMIT//3), after="B" * (TOKEN_LIMIT//3)),
-        DiffSection(index=1, before="C" * (TOKEN_LIMIT//3), after="D" * (TOKEN_LIMIT//3))
+        DiffSection(index=0, before="AA B " * (TOKEN_LIMIT//3), after="BB C " * (TOKEN_LIMIT//3)),
+        DiffSection(index=1, before="CC D" * (TOKEN_LIMIT//3), after="DD C " * (TOKEN_LIMIT//3))
     ]
     empty_diff = []
 

@@ -2,7 +2,7 @@ import json
 from collections import namedtuple
 import pytest
 
-from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact
+from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact, Proof, merge_facts, FACT_MODULE
 from schemas.fact.v1 import Fact
 from schemas.llmerror.v1 import LLMError
 from src.stages import Stage
@@ -12,9 +12,9 @@ from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.fake_client import FakeLLMAdapter
 from src.adapters.embedding.fake_client import FakeEmbeddingAdapter
 from src.services.blob import BlobService
-from src.services.llm import LLMService
+from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
-from src.transforms.llm_transform import LLMTransform
+from src.transforms.llm_transform import LLMTransform, create_llm_parser
 
 
 @pytest.fixture
@@ -278,3 +278,106 @@ class TestClaimChecker:
 
         # Assert
         [LLMError.model_validate(x) for x in json.loads(result_json)['chunks']]
+
+    def test_zero_claims(self, fake_storage, llm_service, llm_transform,
+                         embedding_service, blob_names):
+        """Test handling of empty claims list."""
+        # Arrange
+        checker = ClaimChecker(
+            storage=fake_storage,
+            executor=llm_transform,
+            embedder=embedding_service
+        )
+        
+        empty_claims = ClaimsV1(claims=[])
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/p/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/p/123.json"
+        
+        fake_storage.upload_text_blob(
+            empty_claims.model_dump_json(), 
+            claims_blob, 
+            metadata={"schema_version": CLAIM_VERSION}
+        )
+        
+        sample_diffs = DiffDoc(diffs=[
+            DiffSection(
+                index=0,
+                before="Old text.",
+                after="New text."
+            )
+        ])
+        fake_storage.upload_text_blob(
+            sample_diffs.model_dump_json(),
+            diffs_blob,
+            metadata={}
+        )
+        
+        # Configure fake LLM (shouldn't be called)
+        llm_service.adapter.set_response_static(
+            Fact(claim="should not appear", veracity=True, reason="N/A").model_dump_json()
+        )
+        
+        # Act
+        result_json, metadata = checker.check_claim(claims_blob)
+        
+        # Assert - should handle empty claims gracefully
+        assert result_json is not None
+
+    def test_long_diffs_chunking(self, fake_storage, llm_service, llm_transform,
+                                  embedding_service):
+        """Test claim checking with very long diffs that require chunking."""
+        # Arrange
+        checker = ClaimChecker(
+            storage=fake_storage,
+            executor=llm_transform,
+            embedder=embedding_service
+        )
+        
+        claims = ClaimsV1(claims=["The document has been significantly expanded"])
+        
+        # Create diffs that exceed TOKEN_LIMIT
+        long_diffs = DiffDoc(diffs=[
+            DiffSection(
+                index=0,
+                before="Old terms. " * (TOKEN_LIMIT // 3),
+                after="New expanded terms. " * (TOKEN_LIMIT // 3)
+            ),
+            DiffSection(
+                index=1,
+                before="Additional old content. " * (TOKEN_LIMIT // 3),
+                after="Additional new content. " * (TOKEN_LIMIT // 3)
+            )
+        ])
+        
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/p/456/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/p/456.json"
+        
+        fake_storage.upload_text_blob(
+            claims.model_dump_json(), 
+            claims_blob, 
+            metadata={"schema_version": CLAIM_VERSION}
+        )
+        fake_storage.upload_text_blob(
+            long_diffs.model_dump_json(), 
+            diffs_blob, 
+            metadata={}
+        )
+        
+        # Configure fake LLM
+        llm_service.adapter.set_response_static(
+            Fact(claim="The document has been significantly expanded", 
+                 veracity=True, 
+                 reason="Document size increased").model_dump_json()
+        )
+        
+        # Act
+        result_json, metadata = checker.check_claim(claims_blob)
+        parser = create_llm_parser(llm_service, FACT_MODULE, merge_facts)
+        result_json, metadata = parser(result_json, metadata)
+        
+        # Assert - should successfully process despite large input
+        assert result_json is not None
+        result = Proof.model_validate_json(result_json)
+        assert len(result.facts) > 0
+        assert all(f.claim == "The document has been significantly expanded" for f in result.facts)
+        assert all(f.veracity == True for f in result.facts)

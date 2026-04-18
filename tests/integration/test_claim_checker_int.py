@@ -3,13 +3,14 @@ import pytest
 
 from schemas.fact.v0 import PROOF_MODULE
 from schemas.fact.v1 import Claims as ClaimsV1, CLAIMS_VERSION as CLAIM_VERSION, Fact, Proof, merge_facts
+from src.stages import Stage
 from src.transforms.factcheck.claim_checker import ClaimChecker
 from src.transforms.differ import DiffDoc, DiffSection
 from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.adapters.llm.client import ClaudeAdapter
 from src.adapters.embedding.client import SentenceTransformerAdapter
 from src.services.blob import BlobService
-from src.services.llm import LLMService
+from src.services.llm import LLMService, TOKEN_LIMIT
 from src.services.embedding import EmbeddingService
 from src.transforms.llm_transform import LLMTransform, create_llm_parser
 from src.utils.app_utils import load_env_vars
@@ -57,7 +58,7 @@ def embedding_service(embedding_adapter):
 def llm_transform(fake_storage, llm_service):
     return LLMTransform(fake_storage, llm_service)
 
-@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
+# @pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip integration tests in CI")
 class TestClaimCheckerIntegration:
     """Integration tests using real LLM and embedding adapters with fake storage."""
     
@@ -82,8 +83,8 @@ class TestClaimCheckerIntegration:
             )
         ])
         
-        claims_blob = "obvious_true_claims.json"
-        diffs_blob = "obvious_true_diffs.json"
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/obvious_true_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/obvious_true_claims/123.json"
         
         fake_storage.upload_text_blob(
             claims.model_dump_json(), 
@@ -103,7 +104,7 @@ class TestClaimCheckerIntegration:
         )
         
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(claims_blob)
         
         # Assert
         # Since we send one prompt, we get un-chunked response
@@ -133,8 +134,8 @@ class TestClaimCheckerIntegration:
             )
         ])
         
-        claims_blob = "obvious_false_claims.json"
-        diffs_blob = "obvious_false_diffs.json"
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/obvious_false_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/obvious_false_claims/123.json"
         
         fake_storage.upload_text_blob(
             claims.model_dump_json(), 
@@ -154,7 +155,7 @@ class TestClaimCheckerIntegration:
         )
         
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(claims_blob)
         
         # Assert
         result = Fact.model_validate_json(result_json)
@@ -191,8 +192,8 @@ class TestClaimCheckerIntegration:
             )
         ])
         
-        claims_blob = "rag_claims.json"
-        diffs_blob = "rag_diffs.json"
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/rag_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/rag_claims/123.json"
         
         fake_storage.upload_text_blob(
             claims.model_dump_json(), 
@@ -212,7 +213,7 @@ class TestClaimCheckerIntegration:
         )
         
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(claims_blob)
         
         # Assert - just verify it completes successfully
         result = Fact.model_validate_json(result_json)
@@ -246,8 +247,8 @@ class TestClaimCheckerIntegration:
             )
         ])
         
-        claims_blob = "multi_claims.json"
-        diffs_blob = "multi_diffs.json"
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/multi_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/multi_claims/123.json"
         
         fake_storage.upload_text_blob(
             claims.model_dump_json(), 
@@ -267,7 +268,7 @@ class TestClaimCheckerIntegration:
         )
         
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(claims_blob)
         parser = create_llm_parser(llm_transform.llm, PROOF_MODULE, merge_facts)
         result_json, metadata = parser(result_json, metadata)
         
@@ -298,8 +299,8 @@ class TestClaimCheckerIntegration:
             ),
         ])
 
-        claims_blob = "multi_claims.json"
-        diffs_blob = "multi_diffs.json"
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/multi_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/multi_claims/123.json"
 
         fake_storage.upload_text_blob(
             claims.model_dump_json(),
@@ -319,7 +320,7 @@ class TestClaimCheckerIntegration:
         )
 
         # Act
-        result_json, metadata = checker.check_claim(claims_blob, diffs_blob)
+        result_json, metadata = checker.check_claim(claims_blob)
         parser = create_llm_parser(llm_transform.llm, PROOF_MODULE, merge_facts)
         result_json, metadata = parser(result_json, metadata)
 
@@ -328,3 +329,99 @@ class TestClaimCheckerIntegration:
         assert len(result.facts) == 2
         assert any(x.veracity for x in result.facts)
         assert not all(x.veracity for x in result.facts)
+
+    def test_zero_claims(self, fake_storage, llm_transform,
+                         embedding_service):
+        """Test handling of empty claims list - should be a no-op."""
+        # Arrange
+        claims = ClaimsV1(claims=[])
+        
+        diffs = DiffDoc(diffs=[
+            DiffSection(
+                index=0,
+                before="Users must be at least 13 years old.",
+                after="Users must be at least 18 years old."
+            )
+        ])
+        
+        claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/zero_claims/123/latest.json"
+        diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/zero_claims/123.json"
+        
+        fake_storage.upload_text_blob(
+            claims.model_dump_json(), 
+            claims_blob, 
+            metadata={"schema_version": CLAIM_VERSION}
+        )
+        fake_storage.upload_text_blob(
+            diffs.model_dump_json(), 
+            diffs_blob, 
+            metadata={}
+        )
+        
+        checker = ClaimChecker(
+            storage=fake_storage,
+            executor=llm_transform,
+            embedder=embedding_service
+        )
+        
+        # Act
+        result_json, metadata = checker.check_claim(claims_blob)
+        
+        # Assert - should return empty response or skip
+        # The exact behavior depends on implementation
+        assert result_json is not None
+
+
+    # Commented out because might not be necessary to re-test chunking logic already covered in unit tests.
+    # def test_long_diffs_chunking(self, fake_storage, llm_transform,
+    #                               embedding_service):
+    #     """Test claim checking with very long diffs that require chunking."""
+    #     # Arrange
+    #     claims = ClaimsV1(claims=[
+    #         "The terms and conditions have been significantly expanded"
+    #     ])
+        
+    #     # Create diffs that exceed TOKEN_LIMIT to force chunking
+    #     long_diffs = [
+    #         DiffSection(
+    #             index=0,
+    #             before="Old terms. " * (TOKEN_LIMIT // 3),
+    #             after="New expanded terms. " * (TOKEN_LIMIT // 3)
+    #         ),
+    #         DiffSection(
+    #             index=1,
+    #             before="Additional old content. " * (TOKEN_LIMIT // 3),
+    #             after="Additional new content. " * (TOKEN_LIMIT // 3)
+    #         )
+    #     ]
+        
+    #     diffs = DiffDoc(diffs=long_diffs)
+        
+    #     claims_blob = f"{Stage.CLAIM_CLEAN.value}/c/long_diffs/123/latest.json"
+    #     diffs_blob = f"{Stage.DIFF_CLEAN.value}/c/long_diffs/123.json"
+        
+    #     fake_storage.upload_text_blob(
+    #         claims.model_dump_json(), 
+    #         claims_blob, 
+    #         metadata={"schema_version": CLAIM_VERSION}
+    #     )
+    #     fake_storage.upload_text_blob(
+    #         diffs.model_dump_json(), 
+    #         diffs_blob, 
+    #         metadata={}
+    #     )
+        
+    #     checker = ClaimChecker(
+    #         storage=fake_storage,
+    #         executor=llm_transform,
+    #         embedder=embedding_service
+    #     )
+        
+    #     # Act
+    #     result_json, metadata = checker.check_claim(claims_blob)
+        
+    #     # Assert - should successfully process despite large input
+    #     result = Fact.model_validate_json(result_json)
+    #     assert result.claim is not None
+    #     assert result.veracity is not None
+    #     assert result.reason is not None

@@ -7,7 +7,7 @@ from typing import Callable, Iterable, Optional, List
 import ulid  # type: ignore
 
 from schemas.base import SchemaBase
-from schemas.brief.v0 import BRIEF_MODULE
+from schemas.brief.v0 import BRIEF_MODULE, MEMO_MODULE
 from schemas.chunking import ChunkedResponse
 from schemas.llmerror.v1 import LLMError
 from schemas.registry import load_schema
@@ -179,10 +179,7 @@ def create_llm_activity_processor(storage: BlobService,
         upstream_metadata = storage.adapter.load_metadata(blob_name)
         
         # Judge needs summary blob from earlier stage
-        if paired_input_stage == Stage.DIFF_CLEAN.value:
-            paired_blob_name = f"{paired_input_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}.json"
-            output, metadata = transform_fn(blob_name, paired_blob_name)
-        elif paired_input_stage is not None:
+        if paired_input_stage == Stage.JUDGE_CLEAN.value:
             paired_blob_name = f"{paired_input_stage}/{in_path.company}/{in_path.policy}/{in_path.timestamp}/latest.json"
             output, metadata = transform_fn(blob_name, paired_blob_name)
         else:
@@ -294,6 +291,9 @@ def create_llm_parser[T: SchemaBase](llm: LLMService,
             if module_key == FACT_MODULE:
                 # Unfortunate custom logic: chunked facts arrive as facts and are turned into proofs.
                 stage_metadata['module_name'] = PROOF_MODULE
+            elif module_key == MEMO_MODULE:
+                # Chunked memos (individual Memo objects) get merged into a Brief
+                stage_metadata['module_name'] = BRIEF_MODULE
             elif module_key == BRIEF_MODULE:
                 stage_metadata['module_name'] = BRIEF_MODULE
             # Auto-discovers schema.merge if exists

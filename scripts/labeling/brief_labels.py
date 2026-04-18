@@ -260,9 +260,10 @@ class BriefLabelV2(BriefLabelV1):
         return v2
 
     @classmethod
-    def migrate(cls, v1: BriefLabelV1) -> Self:
+    def migrate(cls, v1: BriefLabelBase) -> Self:
         if not isinstance(v1, BriefLabelV1):
             raise TypeError(f"Expected BriefLabelV1, got {type(v1)}")
+        v1 = cast(BriefLabelV1, v1)
         v2 = cls(practically_substantive_true = v1.practically_substantive_true,
                  practically_substantive_pred = v1.practically_substantive_pred,
                  notes_good = None)
@@ -280,9 +281,11 @@ class BriefLabelV3(BriefLabelV2):
         return v3
 
     @classmethod
-    def migrate(cls, v2: BriefLabelV2) -> Self:
+    def migrate(cls, v2: BriefLabelBase) -> Self:
         if not isinstance(v2, BriefLabelV2):
             v2 = BriefLabelV2.migrate(v2)
+        else:
+            v2 = cast(BriefLabelV2, v2)
         v3 = cls(practically_substantive_true = v2.practically_substantive_true,
                  practically_substantive_pred = v2.practically_substantive_pred,
                  notes_good = v2.notes_good,

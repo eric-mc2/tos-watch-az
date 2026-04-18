@@ -117,7 +117,3 @@ class LLMService:
         prompt_length = len(system) + sum([len(m.content) for m in messages])
         if prompt_length >= CONTEXT_WINDOW:
             logger.error(f"Prompt length {prompt_length} exceeds context window {CONTEXT_WINDOW}")
-        if prompt_length >= TOKEN_LIMIT:
-            logger.error(f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")
-            raise ValueError(
-                f"Prompt length {prompt_length} exceeds rate limit of {TOKEN_LIMIT} / minute.")  # TODO: dont let this crash the circuit

@@ -46,7 +46,7 @@ tasks:
   tests-stage:
     desc: Run all tests emulating github actions staging env.
     cmds:
-      - act -W '.github/workflows/test.yml' --rm
+      - act -W '.github/workflows/test.yml' --rm --secret-file .env.dev
       - defer: |
             docker ps -q --filter "ancestor={{.IMAGE}}" \
               | xargs -r docker stop
