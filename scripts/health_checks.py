@@ -7,89 +7,69 @@ import os
 import argparse
 from collections import Counter
 from azure import durable_functions as df  # type: ignore
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from datetime import datetime
 
-from src.adapters.http.client import RequestsAdapter
-from src.adapters.llm.client import ClaudeAdapter
-from src.adapters.storage.client import AzureStorageAdapter
+from src.transforms.icl import SummaryDataLoader
 from src.container import ServiceContainer
 from src.orchestration.orchestrator import WORKFLOW_CONFIGS
-from src.services.blob import BlobService
-from src.services.llm import LLMService
+from src.services.blob import RunBlobPath
 from src.utils.app_utils import load_env_vars
 from src.utils.log_utils import setup_logger
-from src.utils.path_utils import extract_policy
 from src.stages import Stage
-from src.transforms.seeds import STATIC_URLS
-
-# TODO: refactor to properly used DI services and dev/stage/prod
 
 setup_logger(__name__, logging.WARNING)
-logging.getLogger("azure").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-load_env_vars()
 
 KILL_CIRCUIT = "KILL_CIRCUIT"
 KILL_ALL = "KILL_ALL"
 
-def validate_files(env, *args, **kwargs) -> dict:
-    # TODO: Consolidate environment handling into service container?
-    conn_key = "APP_BLOB_CONNECTION_STRING" if env == "PROD" else "AzureWebJobsStorage"
-    storage = BlobService(AzureStorageAdapter(conn_key))
-    http = RequestsAdapter()
-    llm = LLMService(ClaudeAdapter())
-    container = ServiceContainer.create_container(storage, http, llm)
-    try:
-        blobs = set(container.storage.adapter.list_blobs())
-    except RuntimeError as e:
-        return {"error": str(e)}
-    urls = STATIC_URLS
-    missing_metadata: list[str] = []
-    missing_snaps: list[str] = []
-    missing_docs: list[str] = []
-    missing_trees: list[str] = []
-    missing_diff: list[str] = []
-    meta_counter, snap_counter = 0, 0
-    for company, url_list in urls.items():
-        for url in url_list:
-            meta_counter += 1
-            policy = extract_policy(url)
-            blob_name = f"{Stage.META.value}/{company}/{policy}/manifest.json"
-            if blob_name not in blobs:
-                missing_metadata.append(blob_name)
-                continue
-            metadata = container.storage.load_json_blob(blob_name)
-            assert isinstance(metadata, list)
-            meta = container.wayback_transform.sample_wayback_metadata(metadata, company, policy)
-            for row in meta:
-                timestamp = row['timestamp']
-                snap_counter += 1
-                blob_name = f"{Stage.SNAP.value}/{company}/{policy}/{timestamp}.html"
-                if blob_name not in blobs:
-                    missing_snaps.append(blob_name)
-                blob_name = f"{Stage.DOCTREE.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_trees.append(blob_name)
-                blob_name = f"{Stage.DOCCHUNK.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_docs.append(blob_name)
-                blob_name = f"{Stage.DIFF_RAW.value}/{company}/{policy}/{timestamp}.json"
-                if blob_name not in blobs:
-                    missing_diff.append(blob_name)
-    return {"Missing Metadata Count": f"{len(missing_metadata)}/{meta_counter}",
-            "Missing Metadata Files":  missing_metadata,
-            "Missing Snapshot Count": f"{len(missing_snaps)}/{snap_counter}",
-             "Missing Snapshot Files": missing_snaps,
-            "Missing Trees Count": f"{len(missing_trees)}/{snap_counter}",
-             "Missing Trees Files": missing_trees,
-            "Missing Docs Count": f"{len(missing_docs)}/{snap_counter}",
-             "Missing Docs Files": missing_docs,
-            "Missing Diffs Count": f"{len(missing_diff)}/{snap_counter}",
-             "Missing Diffs Files": missing_diff,
-     }
+def validate_files() -> dict:
+    container = ServiceContainer.create_real()
+    blobs: dict[tuple, list] = {}
+    metas: dict[tuple, list] = {}
+    for blob in container.storage.adapter.list_blobs():
+        parts = container.storage.parse_blob_path(blob)
+        key = (parts.company, parts.policy, parts.timestamp)
+        meta = container.storage.adapter.load_metadata(blob)
+        if isinstance(parts, RunBlobPath) and parts.run_id == "latest":
+            continue
+        blobs.setdefault(key, []).append(parts)
+        metas.setdefault(key, []).append(meta)
+
+    missing_brief_count = 0
+    missing_brief_files = []
+    missing_summary_count = 0
+    missing_summary_files = []
+    for key, bbs in blobs.items():
+        if not any((b.stage == Stage.BRIEF_CLEAN.value for b in bbs)):
+            missing_brief_count += 1
+            missing_brief_files.append(key)
+        if not any((b.stage == Stage.SUMMARY_CLEAN.value for b in bbs)):
+            missing_summary_count += 1
+            missing_summary_files.append(key)
+
+    loader = SummaryDataLoader(container.storage)
+    evals = {version: loader.load_blob_keys(version) for version in loader.find_all_versions()}
+    evals_missing = {}
+    for version, keys in evals.items():
+        for key in keys:
+            if key not in blobs:
+                evals_missing[key] = {version}
+            else:
+                if not any((b.stage == Stage.BRIEF_CLEAN.value for b in blobs[key])):
+                    evals_missing.setdefault(key, {version}).add("brief")
+                if not any((b.stage == Stage.SUMMARY_CLEAN.value for b in blobs[key])):
+                    evals_missing.setdefault(key, {version}).add("summary")
+
+    evals_missing_files = {k: list(v) for k,v in evals_missing.items()}  # sets are not json serializable
+    return {"Missing Briefs Count": missing_brief_count,
+            "Missing Brief Files": missing_brief_files,
+            "Missing Summary Count": missing_summary_count,
+            "Missing Summary Files": missing_summary_files,
+            "Evals Missing": evals_missing_files}
 
 
-def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
+def kill_all(workflow_type: str, reason: str = KILL_CIRCUIT):
     """
     Terminate all running orchestrations.
     
@@ -101,17 +81,16 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
         dict with count of terminated orchestrations and their details
     """
     # Get all running/pending orchestrations
-    in_flight = list_in_flight(
-        env=env,
+    tasks = list_tasks(
         workflow_type=workflow_type,
         runtimes="Running", #["Running", "Pending", "Suspended", "ContinuedAsNew"]
     )
     
-    if in_flight['count'] == 0:
+    if tasks['count'] == 0:
         return {"count": 0, "terminated": [], "message": "No orchestrations to terminate"}
     
     terminated = []
-    for task in in_flight['tasks']:
+    for task in tasks['tasks']:
         instance_id = task.get('instance_id')
         should_terminate = instance_id is not None and task['name'] == "orchestrator"
         if reason == KILL_CIRCUIT:
@@ -123,7 +102,7 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
         if should_terminate:
             try:
                 # Use REST API to terminate
-                url = f"{_get_app_url(env)}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
+                url = f"{_get_app_url()}/runtime/webhooks/durabletask/instances/{instance_id}/terminate"
                 params = {
                     'reason': reason,
                     'code': os.environ.get("AZURE_FUNCTION_MASTER_KEY")
@@ -146,7 +125,117 @@ def kill_all(env: str, workflow_type: str, reason: str = KILL_CIRCUIT):
     }
 
 
-def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
+class HttpHandler(BaseHTTPRequestHandler):
+    def __init__(self, workflow_type, runtimes, *args, **kwargs):
+        self.workflow_type = workflow_type
+        self.runtimes = runtimes
+        super().__init__(*args, **kwargs)
+    
+    def do_GET(self):
+        """Handle GET requests."""
+        if self.path == "/":
+            try:
+                print(f"[{datetime.now().isoformat()}] Fetching task data...")
+                tasks = list_tasks(self.workflow_type, self.runtimes)
+                
+                response_data = {
+                    "data": tasks,
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": None
+                }
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(response_data, indent=2)
+                self.wfile.write(response.encode())
+                
+            except Exception as e:
+                print(f"[{datetime.now().isoformat()}] Error fetching data: {e}")
+                
+                error_data = {
+                    "data": [],
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": str(e)
+                }
+                
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(error_data, indent=2)
+                self.wfile.write(response.encode())
+        elif self.path == "/files":
+            try:
+                print(f"[{datetime.now().isoformat()}] Fetching files validation data...")
+                files_data = validate_files()
+                
+                response_data = {
+                    "data": files_data,
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": None
+                }
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(response_data, indent=2)
+                self.wfile.write(response.encode())
+                
+            except Exception as e:
+                print(f"[{datetime.now().isoformat()}] Error fetching files data: {e}")
+                
+                error_data = {
+                    "data": {},
+                    "fetched_at": datetime.now().isoformat(),
+                    "error": str(e)
+                }
+                
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                response = json.dumps(error_data, indent=2)
+                self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+    
+    def log_message(self, format, *args):
+        """Override to customize logging."""
+        print(f"[{datetime.now().isoformat()}] {format % args}")
+
+
+def server(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None):
+    # Create handler with environment parameters
+    def handler(*args, **kwargs):
+        return HttpHandler(workflow_type, runtimes, *args, **kwargs)
+    
+    # Start HTTP server
+    port = 8000
+    server = HTTPServer(("localhost", port), handler)
+    print(f"\nDevelopment server running at http://localhost:{port}")
+    print(f"  Routes:")
+    print(f"    /       - Task data")
+    print(f"    /files  - File validation data")
+    print("Data is fetched per request (no polling)")
+    print("Press Ctrl+C to stop\n")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        server.shutdown()
+
+
+def list_tasks(workflow_type: Optional[str] = None, runtimes: Optional[str|list[str]] = None) -> dict:
     params = {}
 
     if runtimes is None:
@@ -155,7 +244,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
 
     params['code'] = str(os.environ.get("AZURE_FUNCTION_MASTER_KEY"))
    
-    data = _list_in_flight_paged(params, env)
+    data = _list_tasks_paged(params)
 
     data = [dict(
             name = t.get('name'),
@@ -179,8 +268,8 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
 
     names = Counter([t['name'] for t in filtered_data])
     statuses = Counter([t['runtime_status'] for t in filtered_data])
-    # TODO: Add waiting for circuit reporting
     throttled = Counter([t['custom_status'] is not None and 'Throttled' in t.get('custom_status', '') for t in filtered_data])
+    waiting = Counter([t['custom_status'] is not None and 'Waiting' in t.get('custom_status', '') for t in filtered_data])
     workflows = Counter([t['input_data'].get('workflow_type') for t in filtered_data])
     companies = Counter([t['input_data'].get('company') for t in filtered_data])
 
@@ -190,6 +279,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
         summary = dict(names = names,
                        statuses = statuses,
                        throttled = throttled,
+                       waiting = waiting,
                        workflows = workflows,
                        companies = companies),
     )
@@ -197,7 +287,7 @@ def list_in_flight(env: str, workflow_type: Optional[str] = None, runtimes: Opti
     return formatted
 
 
-def _list_in_flight_paged(params, env, pages = None, next_token=None):
+def _list_tasks_paged(params, pages = None, next_token=None):
     if pages is None:
         pages = []
     
@@ -205,60 +295,60 @@ def _list_in_flight_paged(params, env, pages = None, next_token=None):
     if next_token is not None:
         headers["x-ms-continuation-token"] = next_token
 
-    resp = requests.get(_get_app_url(env) + "/runtime/webhooks/durabletask/instances", 
+    resp = requests.get(_get_app_url() + "/runtime/webhooks/durabletask/instances",
                         params=params,
                         headers=headers)
     resp.raise_for_status()
     pages.extend(resp.json())
     next_page = resp.headers.get("x-ms-continuation-token")
     if next_page:
-        return _list_in_flight_paged(params, env, pages, next_token=next_page)
+        return _list_tasks_paged(params, pages, next_token=next_page)
     else:
         return pages
 
 
-def _get_app_url(env):
-    if env == "PROD":
-        app_url = os.environ.get('WEBSITE_HOSTNAME')
-        if not app_url:
-            raise RuntimeError("Environment variable WEBSITE_HOSTNAME not set.")
-    else:
-        app_url = "http://127.0.0.1:7071"
-    return app_url
+def _get_app_url():
+    return os.environ.get('WEBSITE_HOSTNAME')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='health_checks',
                     description='List in flight tasks (run az login before)')
-    subparsers = parser.add_subparsers(required=True)
+    subparsers = parser.add_subparsers(required=True, dest='action')
 
-    parser_tasks = subparsers.add_parser('tasks', help='list running tasks')
+    parser_monitor = subparsers.add_parser('monitor', help='list running tasks (live)')
+    parser_monitor.add_argument("--workflow_type")
+    parser_monitor.add_argument("--env", choices=["DEV","PROD"], default="DEV")
+    parser_monitor.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
+
+    parser_tasks = subparsers.add_parser('tasks', help='list running tasks (static)')
     parser_tasks.add_argument("--workflow_type")
     parser_tasks.add_argument("--output")
-    parser_tasks.add_argument("--env", choices=["DEV","PROD"])
+    parser_tasks.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_tasks.add_argument("--runtimes", action='append', default=None, choices=df.OrchestrationRuntimeStatus._member_names_)
-    parser_tasks.set_defaults(func=list_in_flight)
-
-    parser_files = subparsers.add_parser('files', help='list missing files')
-    parser_files.add_argument("--output")
-    parser_files.add_argument("--env", choices=["DEV","PROD"])
-    parser_files.set_defaults(func=validate_files)
 
     parser_kill = subparsers.add_parser('kill', help='terminate all running orchestrations')
     parser_kill.add_argument("--workflow_type", required=True, choices=WORKFLOW_CONFIGS, help='only terminate specific workflow type')
     parser_kill.add_argument("--output")
-    parser_kill.add_argument("--env", choices=["DEV","PROD"])
+    parser_kill.add_argument("--env", choices=["DEV","PROD"], default="DEV")
     parser_kill.add_argument("--reason", default=KILL_CIRCUIT, help='termination reason')
     parser_kill.set_defaults(func=kill_all)
 
     args = parser.parse_args()
-    
-    # Extract function arguments
-    func_kwargs = {k: v for k, v in vars(args).items() if k not in ['func', 'output']}
-    output = args.func(**func_kwargs)
 
-    if args.output:
+    os.environ["TARGET_ENV"] = args.env
+    load_env_vars()
+
+    if args.action == "monitor":
+        server(args.workflow_type, args.runtimes)
+        output = None
+    elif args.action == "tasks":
+        output = list_tasks(args.workflow_type, args.runtimes)
+    elif args.action == "kill":
+        output = kill_all(args.workflow_type, args.reason)
+
+    if hasattr(args, 'output') and args.output:
         with open(args.output, "w") as f:
             json.dump(output, f, indent=2)
     else:

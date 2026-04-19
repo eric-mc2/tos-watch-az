@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pydantic import BaseModel
 from os.path import basename
-from typing import Iterable
+from typing import Iterator
 
 from src.utils.log_utils import setup_logger
 from schemas.docchunk.v1 import DocChunk
@@ -16,6 +16,9 @@ class DiffSection(BaseModel):
     index: int
     before: str
     after: str
+
+    def __len__(self) -> int:
+        return len(self.before) + len(self.after)
 
 class DiffDoc(BaseModel):
     diffs: list[DiffSection]
@@ -34,11 +37,13 @@ class Differ:
             if diff:
                 self.save_diff(after, diff, span_diff)
 
-    def find_diff_peers(self, blob_name: str) -> Iterable[tuple[str, str]]:
+    def find_diff_peers(self, blob_name: str) -> Iterator[tuple[str, str]]:
+        blob_name = blob_name.removeprefix(f"{self.storage.container}/")
         path = self.storage.parse_blob_path(blob_name)
+        # nb: Trailing slash prevents same-prefixed policy collision like policy-safety vs policy-privacy
         peers = sorted([x for x in self.storage.adapter.list_blobs() if
-                        x.startswith(f"{Stage.DOCCHUNK.value}/{path.company}/{path.policy}")])
-        idx = peers.index(blob_name)
+                        x.startswith(f"{Stage.DOCCHUNK.value}/{path.company}/{path.policy}/")])
+        idx = peers.index(blob_name)  # throws if missing
         if idx >= 1:
             yield peers[idx - 1], blob_name
         if idx + 1 < len(peers):
@@ -121,8 +126,8 @@ class Differ:
         """Helper function to diff line-based files."""
         # A is a sequence of semantic lines. B is a sequence of lines.
         diffs = []
-        matcher = difflib.SequenceMatcher(lambda x: x.isspace(), chunks_a, chunks_b)
-        for outer_idx, (outer_tag, i1, i2, j1, j2) in enumerate(matcher.get_opcodes()):
+        outer_matcher = difflib.SequenceMatcher(lambda x: x.isspace(), chunks_a, chunks_b)
+        for outer_idx, (outer_tag, i1, i2, j1, j2) in enumerate(outer_matcher.get_opcodes()):
             # This aligns the two sequences as best as possible.
             alines, blines = chunks_a[i1:i2], chunks_b[j1:j2]
             # Some of the lines themselves have newlines in them. So let's normalize.
@@ -133,8 +138,8 @@ class Differ:
                 line_a = alines[inner_idx] if inner_idx < len(alines) else ""
                 line_b = blines[inner_idx] if inner_idx < len(blines) else ""
                 # Now we diff a sentence. (Don't ignore whitespace so we can properly recombine word boundaries)
-                matcher = difflib.SequenceMatcher(None, line_a, line_b)
-                for inner_tag, ii1, ii2, jj1, jj2 in matcher.get_opcodes():
+                inner_matcher = difflib.SequenceMatcher(None, line_a, line_b)
+                for inner_tag, ii1, ii2, jj1, jj2 in inner_matcher.get_opcodes():
                     diffs.append(dict(tag=inner_tag, idx=outer_idx,
                                i1=i1, i2=i2, j1=j1, j2=j2,
                                ii1=ii1, ii2=ii2, jj1=jj1, jj2=jj2,

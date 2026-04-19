@@ -5,10 +5,18 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+from schemas.base import SchemaBase
+from schemas.registry import load_schema, load_max_schema, _version_compare
+from src.stages import Stage
 from src.utils.log_utils import setup_logger
 from src.adapters.storage.protocol import BlobStorageProtocol
+from src.utils.metadata_utils import extract_stage_metadata
 
 logger = setup_logger(__name__, logging.INFO)
+
+BlobPath = namedtuple("BlobPath", ['stage', 'company', 'policy', 'timestamp'])
+RunBlobPath = namedtuple("RunBlobPath", ['stage', 'company', 'policy', 'timestamp', 'run_id'])
 
 class BlobService:
     adapter: BlobStorageProtocol
@@ -21,18 +29,16 @@ class BlobService:
             self.adapter.create_container()
 
     # Domain Specific Parsing
-    def parse_blob_path(self, path: str):
+    def parse_blob_path(self, path: str) -> BlobPath | RunBlobPath:
         path = path.removeprefix(f"{self.container}/")
         blob_path = Path(path)
         if len(blob_path.parts) == 4:
-            BlobPath = namedtuple("BlobPath", ['stage', 'company', 'policy', 'timestamp'])
             return BlobPath(
                 blob_path.parts[0],
                 blob_path.parts[1],
                 blob_path.parts[2],
                 blob_path.stem)
         elif len(blob_path.parts) == 5:
-            RunBlobPath = namedtuple("RunBlobPath", ['stage', 'company', 'policy', 'timestamp', 'run_id'])
             return RunBlobPath(
                 blob_path.parts[0],
                 blob_path.parts[1],
@@ -44,8 +50,8 @@ class BlobService:
 
 
     @staticmethod
-    def unparse_blob_path(path: tuple):
-        return '/'.join(path)
+    def unparse_blob_path(path: tuple, suffix: str = ""):
+        return '/'.join(path) + suffix
 
 
     # Domain Specific Queries
@@ -132,6 +138,10 @@ class BlobService:
     def upload_text_blob(self, data: str, blob_name: str, metadata: Optional[dict]=None) -> None:
         data_bytes = data.encode('utf-8')
         content_type = 'text/plain; charset=utf-8'
+        if not isinstance(data, str):
+            raise TypeError(f"Expected string data got {type(data)}: {data}")
+        if not isinstance(blob_name, str):
+            raise TypeError(f"Expected string blob_name got {type(blob_name)}: {blob_name}")
         self.upload_blob(data_bytes, blob_name, content_type, metadata)
 
 
@@ -160,3 +170,19 @@ class BlobService:
         logger.debug(f"Deleting blob {blob_name}")
         self.adapter.remove_blob(blob_name)
 
+
+def load_validated_json_blob(blob_name: str, module_name: str, storage: BlobService) -> SchemaBase:
+    # Extract identifiers
+    txt = storage.load_text_blob(blob_name)
+    metadata = storage.adapter.load_metadata(blob_name)
+    stage_metadata = extract_stage_metadata(metadata, tag=module_name)
+    schema_version = stage_metadata["schema_version"]  # This is pretty much guaranteed to exist
+    metadata_module_name = stage_metadata.get("module_name")   # This might not always exist
+    # Find and load schema
+    schema = load_schema(module_name, schema_version, metadata_module_name)
+    data = schema.model_validate_json(txt)
+    # Double-check if
+    max_schema = load_max_schema(module_name, metadata_module_name)
+    if _version_compare(schema_version, max_schema.VERSION()) < 0 and hasattr(max_schema, "migrate"):
+        data = max_schema.migrate(data)
+    return data

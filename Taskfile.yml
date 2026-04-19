@@ -4,6 +4,7 @@ version: '3'
 
 vars:
   GREETING: Hello, world!
+  IMAGE: mcr.microsoft.com/azure-storage/azurite:latest
 
 tasks:
   default:
@@ -33,7 +34,7 @@ tasks:
       - pytest tests/integration
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
-      RUNTIME_ENV: "DEV"
+      RUNTIME_ENV: DEV
     interactive: true
 
   tests-all:
@@ -45,13 +46,20 @@ tasks:
   tests-stage:
     desc: Run all tests emulating github actions staging env.
     cmds:
-      - act -W '.github/workflows/test.yml' --rm
+      - act -W '.github/workflows/test.yml' --rm --secret-file .env.dev
+      - defer: |
+            docker ps -q --filter "ancestor={{.IMAGE}}" \
+              | xargs -r docker stop
+            docker ps -aq --filter "ancestor={{.IMAGE}}" \
+              | xargs -r docker rm
     interactive: true
 
   run-dev:
     desc: Run function app in dev mode
     cmds:
       - func start
+    env:
+      TARGET_ENV: STAGE
 
   run-prod:
     desc: Run function app in production mode
@@ -59,6 +67,11 @@ tasks:
       - func start
     env:
       TARGET_ENV: PROD
+
+  monitor:
+    desc: List current jobs in Azure runtime
+    cmds:
+      - python -m scripts.health_checks monitor {{.CLI_ARGS}}
 
   list-jobs:
     desc: List current jobs in Azure runtime

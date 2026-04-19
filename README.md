@@ -207,11 +207,11 @@ Commit and push the new version IF you want it to run in produciton.
 ```bash
 
 # Check running / pending tasks
-task list-jobs -- --output [filename] tasks --env {DEV,PROD} --workflow_type [STAGE]
+task list-jobs -- --output [filename] --env {DEV,PROD} --workflow_type [STAGE]
 # (note: the '--' syntax passes [args] to the underlying CLI app: task [command] -- [args])
 
 # Check missing blob outputs
-task list-missing -- --output [filename] files
+task list-missing -- --output [filename]
 
 # Check circuit breaker status
 curl https://[your-function-app].azurewebsites.net/api/check_circuit_breaker?code=[function-key]
@@ -220,5 +220,5 @@ curl https://[your-function-app].azurewebsites.net/api/check_circuit_breaker?cod
 curl -X POST https://[your-function-app].azurewebsites.net/api/reset_circuit_breaker?workflow_type=[type]&code=[function-key]
 
 # Kill running / paused tasks in a given pipeline stage
-task kill-jobs -- --output [filename] killall --env {DEV,PROD} --workflow_type [STAGE]
+task kill-jobs -- --output [filename] --env {DEV,PROD} --workflow_type [STAGE]
 ```

@@ -1,5 +1,8 @@
 {
   "version": "2.0",
+  "concurrency": {
+    "dynamicConcurrencyEnabled": false
+  },
   "logging": {
     "applicationInsights": {
       "enableLiveMetrics": false,
@@ -16,27 +19,36 @@
       "Host": "Error",
       "Host.Aggregator": "Warning",
       "Function": "Error",
-      "Function.hello_world.User": "Debug",
-      "Function.seed_urls.User": "Debug",
-      "Function.meta_blob_trigger.User": "Debug",
-      "Function.test_failure_trigger.User": "Debug",
-      "Function.test_failure_processor.User": "Debug",
-      "Function.meta_processor.User": "Debug",
-      "Function.scraper_blob_trigger.User": "Debug",
-      "Function.scraper_processor.User": "Debug",
-      "Function.parse_snap.User": "Debug",
-      "Function.annotate_snap.User": "Debug",
-      "Function.batch_diff.User": "Debug",
-      "Function.create_summarizer_prompt.User": "Debug",
-      "Function.summarizer_blob_trigger.User": "Debug",
-      "Function.summarizer_processor.User": "Debug",
-      "Function.parse_summary.User": "Debug",
-      "Function.in_flight.User": "Debug",
-      "Function.validate.User": "Debug",
       "Function.orchestrator.User": "Debug",
       "Function.rate_limiter.User": "Debug",
       "Function.circuit_breaker.User": "Debug",
-      "src": "Debug"
+      "Function.meta_trigger.User": "Debug",
+      "Function.meta_processor.User": "Debug",
+      "Function.scraper_blob_trigger.User": "Debug",
+      "Function.scraper_processor.User": "Debug",
+      "Function.scraper_scheduled_trigger.User": "Debug",
+      "Function.scraper_scheduled_processor.User": "Debug",
+      "Function.parse_snap.User": "Debug",
+      "Function.annotate_snap.User": "Debug",
+      "Function.single_diff.User": "Debug",
+      "Function.clean_diffs.User": "Debug",
+      "Function.summarizer_blob_trigger.User": "Debug",
+      "Function.summarizer_processor.User": "Debug",
+      "Function.parse_summary.User": "Debug",
+      "Function.claim_extractor_blob_trigger.User": "Debug",
+      "Function.claim_extractor_processor.User": "Debug",
+      "Function.parse_claims.User": "Debug",
+      "Function.claim_checker_blob_trigger.User": "Debug",
+      "Function.claim_checker_processor.User": "Information",
+      "Function.parse_factcheck.User": "Debug",
+      "Function.judge_blob_trigger.User": "Debug",
+      "Function.judge_processor.User": "Debug",
+      "Function.parse_judge.User": "Debug",
+      "src": "Debug",
+      "src.adapters": "Warning",
+      "src.orchestration": "Warning",
+      "src.services": "Warning",
+      "src.transforms": "Debug"
     },
     "console": {
       "isEnabled": true
@@ -47,7 +59,10 @@
       "hubName": "RateLimitedHub",
       "storageProvider": {
         "connectionStringName": "AzureWebJobsStorage"
-      }
+      },
+      "maxConcurrentOrchestratorFunctions": 1,
+      "maxConcurrentActivityFunctions": 1,
+      "extendedSessionsEnabled": false
     }
   },
   "extensionBundle": {

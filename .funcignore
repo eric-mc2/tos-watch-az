@@ -1,9 +1,9 @@
-# Argilla artifacts
-data/
-
 # Git files
 .git*
 .gitignore
+
+# Non-artifact data
+data/metrics/
 
 # Secrets
 *.secrets

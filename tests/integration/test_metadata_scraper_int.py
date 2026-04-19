@@ -1,4 +1,5 @@
 import pytest
+import os
 from src.transforms.metadata_scraper import MetadataScraper
 from src.services.blob import BlobService
 from src.adapters.http.client import RequestsAdapter
@@ -6,6 +7,8 @@ from src.adapters.storage.fake_client import FakeStorageAdapter
 from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
 from src.utils.path_utils import extract_policy
+
+RUNTIME_ENV = os.environ.get("RUNTIME_ENV", "PROD")
 
 @pytest.fixture
 def prod_http_client():
@@ -29,6 +32,7 @@ def metadata_scraper(fake_blob_service, prod_http_client):
         http_client=prod_http_client,
     )
 
+@pytest.mark.skipif(RUNTIME_ENV != "DEV", reason="Skip for CI")
 class TestMetadataScraperIntegration:
     """Integration tests for end-to-end behavior"""
 

@@ -7,6 +7,9 @@ class Message:
     role: Literal["user", "assistant"]
     content: str
 
+    def __len__(self):
+        return len(self.content)
+
 @dataclass
 class PromptMessages:
     system: str
@@ -16,5 +19,11 @@ class PromptMessages:
 class LLMProtocol(Protocol):
 
     def call(self, system: str, messages: list[Message]) -> str: ...
+    
+    def count_tokens(self, system: str, messages: list[Message]) -> int: ...
 
     def close(self) -> None: ...
+
+    def get_max_output(self) -> int: ...
+
+    def get_model_version(self) -> str: ...

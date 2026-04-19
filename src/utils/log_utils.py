@@ -6,13 +6,24 @@ from datetime import datetime
 current_time = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
 LOG_PATH = os.path.join('logs', f"app-{current_time}.log")
 
-def setup_logger(name, loglvl = logging.INFO):
+def setup_logger(name, loglvl = logging.INFO) -> logging.Logger:
     log_fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     logging.basicConfig(level=loglvl, format=log_fmt)
     logger = logging.getLogger(name)
     logger.setLevel(loglvl)
     _setup_logfile(logger, loglvl, log_fmt)
+    silence_loggers()
     return logger
+
+
+def silence_loggers():
+    logging.getLogger('argilla').setLevel(logging.WARNING)
+    logging.getLogger('azure').setLevel(logging.WARNING)
+    logging.getLogger("faiss").setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+
 
 def _setup_logfile(logger, loglvl, log_fmt):
     # Add file handler to tee logs to shared file. But not in real life because it's not thread safe.

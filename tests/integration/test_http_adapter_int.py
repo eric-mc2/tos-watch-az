@@ -1,12 +1,7 @@
 import pytest
 from requests.exceptions import HTTPError
-from src.transforms.snapshot_scraper import SnapshotScraper
-from src.services.blob import BlobService
 from src.adapters.http.client import RequestsAdapter
-from src.adapters.storage.fake_client import FakeStorageAdapter
-from src.stages import Stage
 from src.transforms.seeds import STATIC_URLS
-from src.utils.path_utils import extract_policy
 
 
 @pytest.fixture

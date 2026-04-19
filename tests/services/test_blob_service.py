@@ -168,6 +168,15 @@ def test_upload_metadata(blob_service):
     assert loaded_metadata["updated"] == "2024-01-01"
 
 
+def test_metadata_conversion(blob_service):
+    metadata = {"updated": "2024-01-01", "flag": True}
+    blob_service.upload_text_blob("content", "test/file.txt", metadata)
+        
+    loaded_metadata = blob_service.adapter.load_metadata("test/file.txt")
+    assert loaded_metadata["updated"] == "2024-01-01"
+    assert loaded_metadata['flag'] is True
+
+
 def test_remove_blob(blob_service):
     """Test removing a blob."""
     blob_service.upload_text_blob("content", "test/delete.txt")

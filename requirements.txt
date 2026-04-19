@@ -3,6 +3,7 @@
 # azure-monitor-opentelemetry 
 
 anthropic
+argilla
 azure-functions
 azure-functions-durable
 azure-storage-blob
@@ -10,6 +11,7 @@ beautifulsoup4
 bleach
 chardet
 go-task-bin
+faiss-cpu
 microsoft-python-type-stubs @ git+https://github.com/microsoft/python-type-stubs.git
 mypy
 pandas
@@ -20,6 +22,7 @@ pytest
 python-dotenv
 requests
 scikit-learn
+sentence-transformers
 types-bleach
 types-requests
 ulid

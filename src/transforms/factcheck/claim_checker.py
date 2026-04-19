@@ -1,0 +1,109 @@
+import json
+import logging
+from dataclasses import dataclass, asdict
+from typing import Iterator
+
+from schemas.fact.v0 import CLAIMS_MODULE
+from schemas.fact.v1 import Claims as ClaimsV1, FACT_VERSION as FACT_SCHEMA_VERSION, FACT_MODULE
+from src.adapters.llm.protocol import Message, PromptMessages
+from src.services.blob import BlobService, load_validated_json_blob
+from src.services.embedding import EmbeddingService
+from src.services.llm import TOKEN_LIMIT, LLMService
+from src.stages import Stage
+from src.transforms.differ import DiffDoc
+from src.transforms.factcheck.vector_search import Indexer
+from src.transforms.llm_transform import LLMTransform
+from src.transforms.summary.diff_chunker import DiffChunker, StandardDiffFormatter
+from src.utils.log_utils import setup_logger
+
+logger = setup_logger(__name__, logging.DEBUG)
+
+PROMPT_VERSION = "v3"
+SYSTEM_PROMPT = """
+Your role is the expert fact checker. Your task is to verify whether a document entails a specific claim.
+The document represents a diff: additions and removals between different versions of a source document.
+The claims are typically related to *changes* between document versions.
+
+INPUT FORMAT:
+{"claim": "claim a ...", "document": "ToS diff ..."}
+
+Old document sections are prefixed with (-)
+while new document sections are prefixed with (+). If the document is short you will see
+both (+) and (-) together, but if the document is long you may only see the (+) part or the (-) part
+at a time.
+
+OUTPUT FORMAT:
+You should respond with valid json:
+{
+    "claim": "The verbatim input claim.", 
+    "veracity": bool, 
+    "reason": "One sentence describing why claim is true or not."
+}  
+"""
+
+@dataclass
+class ClaimCheckerBuilder:
+    storage: BlobService
+    embedder: EmbeddingService
+    llm: LLMService
+
+    def build_prompt(self, blob_name: str, diff_blob_name: str) -> Iterator[PromptMessages]:
+        examples: list = []  # self.read_examples() for future ICL
+        claims = load_validated_json_blob(blob_name, CLAIMS_MODULE, self.storage)
+        assert isinstance(claims, ClaimsV1)
+
+        if not claims.claims:
+            # No actual claims found.
+            return
+
+        # Build RAG index once for all claims
+        indexer = Indexer(storage=self.storage, embedder=self.embedder)
+        indexer.build(diff_blob_name)
+        logger.info(f"Built index with {indexer.get_index_size()} entries")
+
+        # For each claim, retrieve relevant diffs and create prompt
+        for claim in claims.claims:
+            # Use RAG to find relevant document sections
+            # TODO: incorporate citations supplied by summarizer in retrieval
+            relevant_diffs = indexer.search(claim)
+            
+            chunker = DiffChunker(self.llm, TOKEN_LIMIT, StandardDiffFormatter())
+            chunks = chunker.chunk_diff(SYSTEM_PROMPT, [], relevant_diffs)
+
+            for chunk in chunks:
+                prompt_data = dict(
+                    claim=claim,
+                    document=[asdict(c) for c in chunk],  # XXX: Hope this format conversion is ok??
+                )
+                prompt = Message("user", json.dumps(prompt_data))
+                yield PromptMessages(
+                    system=SYSTEM_PROMPT,
+                    history=examples,
+                    current=prompt
+                )
+    
+    @staticmethod
+    def _format_diffs(diff_doc: DiffDoc) -> str:
+        """Format DiffDoc into readable context for the LLM."""
+        if not diff_doc.diffs:
+            return "No relevant document sections found."
+        formatter = StandardDiffFormatter()
+        return formatter.format_doc(diff_doc)
+
+
+@dataclass
+class ClaimChecker:
+    storage: BlobService
+    executor: LLMTransform
+    embedder: EmbeddingService
+
+    def check_claim(self, blob_name: str) -> tuple[str, dict]:
+        logger.debug(f"Checking claims from {blob_name}")
+        parts = self.storage.parse_blob_path(blob_name)
+        other_blob_name = self.storage.unparse_blob_path((Stage.DIFF_CLEAN.value, parts.company, parts.policy, parts.timestamp), ".json")
+        prompter = ClaimCheckerBuilder(self.storage, self.embedder, self.executor.llm)
+        messages = prompter.build_prompt(blob_name, other_blob_name)
+        # Always annotate this as a FACT because the parser needs to validate the individual items, which are always facts.
+        # It becomes a PROOF when the parser merges the FACTS / chunks together.
+        return self.executor.execute_prompts(messages, FACT_MODULE, FACT_SCHEMA_VERSION, PROMPT_VERSION)
+

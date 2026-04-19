@@ -19,6 +19,8 @@ class SnapshotScraper:
 
     @staticmethod
     def decode_html(resp: Response):
+        # TODO: A couple docs have really bad encoding like meta/cybersecurity/20260220
+        
         # Handle encoding properly
         # First, try to detect the actual encoding from the response
         import re
@@ -57,6 +59,7 @@ class SnapshotScraper:
     def extract_main_text(html_content, encoding='utf-8'):
         """Extract main content from HTML with proper encoding handling"""
         # Parse with BeautifulSoup, explicitly handling encoding
+        # TODO: Silence warning UserWarning: You provided Unicode markup but also provided a value for from_encoding. Your from_encoding will be ignored.
         soup = BeautifulSoup(html_content, "html.parser", from_encoding=encoding)
 
         # Try to find the main content; fallback to body text
@@ -94,8 +97,11 @@ class SnapshotScraper:
                 logger.debug("Cleaning html.")
                 cleaned_html = self.extract_main_text(html_content, encoding=detected_encoding or None)
 
-                self.storage.upload_html_blob(cleaned_html, blob_name)
-                logger.info(f"Saved snapshot to blob: {blob_name}")
+                if "ask the publisher" in cleaned_html.lower():
+                    logger.warning(f"Snapshot from archive.org is paywalled. Skipping {blob_name}")
+                else:
+                    self.storage.upload_html_blob(cleaned_html, blob_name)
+                    logger.info(f"Saved snapshot to blob: {blob_name}")
 
             except HTTPError as e:
                 if e.response.status_code == 403:
